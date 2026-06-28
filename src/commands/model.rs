@@ -183,7 +183,10 @@ impl ModelCommands {
                 ctx.config.insert_model(model_id, model_config);
 
                 println!("\nModel '{}' configured successfully!", model.id);
-                println!("Note: Provider selection will be completed in the next phase.");
+                println!("Configure a provider to complete setup:");
+                println!("  granite-cli provider setup <provider-id>");
+                println!("Then set the provider_id in models.yaml, or run:");
+                println!("  granite-cli configure <tool-id>");
 
                 Ok(())
             }
