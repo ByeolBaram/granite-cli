@@ -5,7 +5,22 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopLevelConfig {
+    pub routing: RoutingConfig,
+    pub shell: ShellConfig,
+}
+
+impl Default for TopLevelConfig {
+    fn default() -> Self {
+        Self {
+            routing: RoutingConfig::default(),
+            shell: ShellConfig::default(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -159,13 +174,11 @@ impl Config {
             if !val.is_empty() {
                 let path = PathBuf::from(&val);
 
-                // Check: Does the parent exist (or is there no parent, e.g. root)?
-                // map_or(true, ...) means: If None -> true; Else check inner exists
                 let has_valid_parent = path.parent().map_or(true, |p| p.exists());
 
                 let valid_dir =
-                    (!path.exists() && has_valid_parent) ||  // Can create new dir in existing parent (or root)
-                    (path.exists() && path.is_dir());        // Already exists as directory
+                    (!path.exists() && has_valid_parent) ||
+                    (path.exists() && path.is_dir());
 
                 if !valid_dir {
                     anyhow::bail!("Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.", val);
@@ -212,121 +225,271 @@ impl Config {
         Ok(())
     }
 
-    /*-- pub -- */
-
-    pub fn load() -> Result<Self> {
-        Self::ensure_directories()?;
-        let path = Self::config_path()?;
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read config file: {}", path.display()))?;
-            let config: Config =
-                serde_yaml::from_str(&content).with_context(|| "Failed to parse config file")?;
-            Ok(config)
-        } else {
-            Ok(Config::default())
-        }
+    fn load_yaml_from_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read config file: {}", path.display()))?;
+        let config: T = serde_yaml::from_str(&content)
+            .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
+        Ok(config)
     }
 
-    pub fn save(&self) -> Result<()> {
-        Self::ensure_directories()?;
-        let path = Self::config_path()?;
-        let content = serde_yaml::to_string(self)
+    fn save_yaml_to_file<T: serde::Serialize>(path: &Path, data: &T) -> Result<()> {
+        let content = serde_yaml::to_string(data)
             .with_context(|| "Failed to serialize config")?;
-        fs::write(&path, content)
+        fs::write(path, content)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
         Ok(())
     }
 
-    pub fn save_model(&self, model_id: &str, model_config: &ModelConfig) -> Result<()> {
+    fn load_dir<K: std::hash::Hash + Eq + ToString, V: serde::de::DeserializeOwned>(
+        dir: &Path,
+        into_key: impl Fn(&str) -> K + Copy,
+    ) -> Result<HashMap<K, V>> {
+        let mut map = HashMap::new();
+        if !dir.exists() {
+            return Ok(map);
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "yaml") {
+                let file_name = path.file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if let Ok(config) = Self::load_yaml_from_file::<V>(&path) {
+                    map.insert(into_key(&file_name), config);
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    pub fn new() -> Result<Self> {
         Self::ensure_directories()?;
-        let path = Self::models_dir()?.join(format!("{}.yaml", model_id));
-        let content = serde_yaml::to_string(model_config)
-            .with_context(|| "Failed to serialize model config")?;
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write model config: {}", path.display()))?;
+
+        let mut config = Config::default();
+
+        // Load top-level config.yaml for shell and routing
+        let top_level_path = Self::config_path()?;
+        if top_level_path.exists() {
+            if let Ok(top_config) = Self::load_yaml_from_file::<TopLevelConfig>(&top_level_path) {
+                config.shell = top_config.shell;
+                config.routing = top_config.routing;
+            }
+        } else {
+            config.save()?;
+        }
+
+        // Load component files
+        config.models = Self::load_dir(
+            &Self::models_dir()?,
+            |s| s.to_string(),
+        )?;
+        config.providers = Self::load_dir(
+            &Self::providers_dir()?,
+            |s| s.to_string(),
+        )?;
+        config.capabilities = Self::load_dir(
+            &Self::capabilities_dir()?,
+            |s| s.to_string(),
+        )?;
+        config.tools = Self::load_dir(
+            &Self::tools_dir()?,
+            |s| s.to_string(),
+        )?;
+
+        Ok(config)
+    }
+
+    fn save(&self) -> Result<()> {
+        // Save top-level config.yaml with shell and routing
+        let top_level_path = Self::config_path()?;
+        let top_config = TopLevelConfig {
+            routing: self.routing.clone(),
+            shell: self.shell.clone(),
+        };
+        Self::save_yaml_to_file(&top_level_path, &top_config)?;
+
+        // Save individual model files
+        for (id, model) in &self.models {
+            let path = Self::models_dir()?.join(format!("{}.yaml", id));
+            Self::save_yaml_to_file(&path, model)?;
+        }
+
+        // Save individual provider files
+        for (id, provider) in &self.providers {
+            let path = Self::providers_dir()?.join(format!("{}.yaml", id));
+            Self::save_yaml_to_file(&path, provider)?;
+        }
+
+        // Save individual capability files
+        for (id, capability) in &self.capabilities {
+            let path = Self::capabilities_dir()?.join(format!("{}.yaml", id));
+            Self::save_yaml_to_file(&path, capability)?;
+        }
+
+        // Save individual tool files
+        for (id, tool) in &self.tools {
+            let path = Self::tools_dir()?.join(format!("{}.yaml", id));
+            Self::save_yaml_to_file(&path, tool)?;
+        }
+
         Ok(())
     }
 
-    pub fn load_model(model_id: &str) -> Result<Option<ModelConfig>> {
-        let path = Self::models_dir()?.join(format!("{}.yaml", model_id));
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read model config: {}", path.display()))?;
-            let config: ModelConfig =
-                serde_yaml::from_str(&content).with_context(|| "Failed to parse model config")?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
+    // -- Model --
+
+    pub fn get_model(&self, id: &str) -> Option<&ModelConfig> {
+        self.models.get(id)
+    }
+
+    pub fn insert_model(&mut self, id: &str, config: ModelConfig) {
+        self.models.insert(id.to_string(), config);
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save model config: {}", e);
         }
     }
 
-    pub fn save_provider(&self, provider_id: &str, provider_config: &ProviderConfig) -> Result<()> {
-        Self::ensure_directories()?;
-        let path = Self::providers_dir()?.join(format!("{}.yaml", provider_id));
-        let content = serde_yaml::to_string(provider_config)
-            .with_context(|| "Failed to serialize provider config")?;
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write provider config: {}", path.display()))?;
-        Ok(())
-    }
-
-    pub fn load_provider(provider_id: &str) -> Result<Option<ProviderConfig>> {
-        let path = Self::providers_dir()?.join(format!("{}.yaml", provider_id));
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read provider config: {}", path.display()))?;
-            let config: ProviderConfig =
-                serde_yaml::from_str(&content).with_context(|| "Failed to parse provider config")?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
+    pub fn remove_model(&mut self, id: &str) {
+        self.models.remove(id);
+        let path = Self::models_dir().ok().and_then(|d| {
+            let p = d.join(format!("{}.yaml", id));
+            if p.exists() { Some(p) } else { None }
+        });
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p);
+        }
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save model config: {}", e);
         }
     }
 
-    pub fn save_capability(&self, capability_id: &str, capability_config: &CapabilityConfig) -> Result<()> {
-        Self::ensure_directories()?;
-        let path = Self::capabilities_dir()?.join(format!("{}.yaml", capability_id));
-        let content = serde_yaml::to_string(capability_config)
-            .with_context(|| "Failed to serialize capability config")?;
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write capability config: {}", path.display()))?;
-        Ok(())
-    }
-
-    pub fn load_capability(capability_id: &str) -> Result<Option<CapabilityConfig>> {
-        let path = Self::capabilities_dir()?.join(format!("{}.yaml", capability_id));
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read capability config: {}", path.display()))?;
-            let config: CapabilityConfig =
-                serde_yaml::from_str(&content).with_context(|| "Failed to parse capability config")?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
+    pub fn update_model(&mut self, id: &str, f: impl FnOnce(&mut ModelConfig)) {
+        if let Some(model) = self.models.get_mut(id) {
+            f(model);
+            if let Err(e) = self.save() {
+                eprintln!("Warning: failed to save model config: {}", e);
+            }
         }
     }
 
-    pub fn save_tool(&self, tool_id: &str, tool_config: &ToolConfig) -> Result<()> {
-        Self::ensure_directories()?;
-        let path = Self::tools_dir()?.join(format!("{}.yaml", tool_id));
-        let content = serde_yaml::to_string(tool_config)
-            .with_context(|| "Failed to serialize tool config")?;
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write tool config: {}", path.display()))?;
-        Ok(())
+    // -- Provider --
+
+    pub fn get_provider(&self, id: &str) -> Option<&ProviderConfig> {
+        self.providers.get(id)
     }
 
-    pub fn load_tool(tool_id: &str) -> Result<Option<ToolConfig>> {
-        let path = Self::tools_dir()?.join(format!("{}.yaml", tool_id));
-        if path.exists() {
-            let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read tool config: {}", path.display()))?;
-            let config: ToolConfig =
-                serde_yaml::from_str(&content).with_context(|| "Failed to parse tool config")?;
-            Ok(Some(config))
-        } else {
-            Ok(None)
+    pub fn insert_provider(&mut self, id: &str, config: ProviderConfig) {
+        self.providers.insert(id.to_string(), config);
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save provider config: {}", e);
         }
+    }
+
+    pub fn remove_provider(&mut self, id: &str) {
+        self.providers.remove(id);
+        let path = Self::providers_dir().ok().and_then(|d| {
+            let p = d.join(format!("{}.yaml", id));
+            if p.exists() { Some(p) } else { None }
+        });
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p);
+        }
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save provider config: {}", e);
+        }
+    }
+
+    pub fn update_provider(&mut self, id: &str, f: impl FnOnce(&mut ProviderConfig)) {
+        if let Some(provider) = self.providers.get_mut(id) {
+            f(provider);
+            if let Err(e) = self.save() {
+                eprintln!("Warning: failed to save provider config: {}", e);
+            }
+        }
+    }
+
+    // -- Capability --
+
+    pub fn get_capability(&self, id: &str) -> Option<&CapabilityConfig> {
+        self.capabilities.get(id)
+    }
+
+    pub fn insert_capability(&mut self, id: &str, config: CapabilityConfig) {
+        self.capabilities.insert(id.to_string(), config);
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save capability config: {}", e);
+        }
+    }
+
+    pub fn remove_capability(&mut self, id: &str) {
+        self.capabilities.remove(id);
+        let path = Self::capabilities_dir().ok().and_then(|d| {
+            let p = d.join(format!("{}.yaml", id));
+            if p.exists() { Some(p) } else { None }
+        });
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p);
+        }
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save capability config: {}", e);
+        }
+    }
+
+    pub fn update_capability(&mut self, id: &str, f: impl FnOnce(&mut CapabilityConfig)) {
+        if let Some(capability) = self.capabilities.get_mut(id) {
+            f(capability);
+            if let Err(e) = self.save() {
+                eprintln!("Warning: failed to save capability config: {}", e);
+            }
+        }
+    }
+
+    // -- Tool --
+
+    pub fn get_tool(&self, id: &str) -> Option<&ToolConfig> {
+        self.tools.get(id)
+    }
+
+    pub fn insert_tool(&mut self, id: &str, config: ToolConfig) {
+        self.tools.insert(id.to_string(), config);
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save tool config: {}", e);
+        }
+    }
+
+    pub fn remove_tool(&mut self, id: &str) {
+        self.tools.remove(id);
+        let path = Self::tools_dir().ok().and_then(|d| {
+            let p = d.join(format!("{}.yaml", id));
+            if p.exists() { Some(p) } else { None }
+        });
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p);
+        }
+        if let Err(e) = self.save() {
+            eprintln!("Warning: failed to save tool config: {}", e);
+        }
+    }
+
+    pub fn update_tool(&mut self, id: &str, f: impl FnOnce(&mut ToolConfig)) {
+        if let Some(tool) = self.tools.get_mut(id) {
+            f(tool);
+            if let Err(e) = self.save() {
+                eprintln!("Warning: failed to save tool config: {}", e);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+
+    #[test]
+    fn test_config_default_shell_detection() {
+        let config = Config::default();
+        assert!(!config.shell.shell.is_empty());
+        assert!(!config.shell.export_format.is_empty());
     }
 }

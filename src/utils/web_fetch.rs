@@ -13,8 +13,6 @@ pub async fn fetch_markdown(url: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_fetch_requires_url() {
         // Basic compilation check - actual network tests would need a mock server

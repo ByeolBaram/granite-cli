@@ -129,13 +129,37 @@ struct ConfigureArgs {
     reset: bool,
 }
 
+pub struct AppContext {
+    pub config: config::Config,
+}
+
+impl AppContext {
+    pub fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            config: config::Config::new()?,
+        })
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Some(Commands::Model(subcmd)) => run_model_command(subcmd).await,
-        Some(Commands::Capability(subcmd)) => run_capability_command(subcmd).await,
+        Some(Commands::Model(subcmd)) => {
+            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_model_command(&mut ctx, subcmd).await
+        }
+        Some(Commands::Capability(subcmd)) => {
+            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_capability_command(&mut ctx, subcmd).await
+        }
         Some(Commands::Provider(_)) => {
             println!("Provider management will be available in Phase 2.");
             Ok(())
@@ -170,7 +194,7 @@ async fn main() {
     }
 }
 
-async fn run_model_command(subcmd: ModelSubcommands) -> anyhow::Result<()> {
+async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
@@ -183,18 +207,18 @@ async fn run_model_command(subcmd: ModelSubcommands) -> anyhow::Result<()> {
                 }
                 None => None,
             };
-            ModelCommands::list(filter)
+            ModelCommands::list(ctx, filter)
         }
-        ModelSubcommands::Info { model_id } => ModelCommands::info(&model_id),
-        ModelSubcommands::Setup { model_id } => ModelCommands::setup(&model_id),
+        ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
+        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id),
     }
 }
 
-async fn run_capability_command(subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
+async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
     match subcmd {
-        CapabilitySubcommands::List => CapabilityCommands::list(),
-        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(&capability_id),
-        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(&capability_id),
+        CapabilitySubcommands::List => CapabilityCommands::list(ctx),
+        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
+        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id),
     }
 }
 

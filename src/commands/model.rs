@@ -5,7 +5,7 @@ use dialoguer::{Confirm, Input};
 pub struct ModelCommands;
 
 impl ModelCommands {
-    pub fn list(filter_type: Option<ModelType>) -> Result<()> {
+    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
         let registry = &*registry::MODEL_REGISTRY;
         let models = registry.list();
 
@@ -20,26 +20,54 @@ impl ModelCommands {
         }
 
         println!();
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE");
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "----", "------", "----", "-------", "----");
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "STATUS");
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "----", "------", "----", "-------", "----", "------");
 
         for model in &filtered {
+            let status = if ctx.config.models.contains_key(&model.id) {
+                "CONFIGURED"
+            } else {
+                "BUNDLED"
+            };
             println!(
-                "{:<35} {:<18} {:<8} {:<12} {:<12}",
+                "{:<35} {:<18} {:<8} {:<12} {:<12} {}",
                 model.id,
                 model.family,
                 format!("{}B", model.size / 1_000_000_000),
                 format!("{}", model.context_length),
                 model.model_type.to_string(),
+                status,
             );
         }
 
+        // Show configured models not in the registry
+        let mut extra_configured = Vec::new();
+        for id in ctx.config.models.keys() {
+            if registry.get(id).is_none() {
+                extra_configured.push(id.clone());
+            }
+        }
+        extra_configured.sort();
+
+        if !extra_configured.is_empty() {
+            println!();
+            println!("Additional configured models:");
+            for id in &extra_configured {
+                println!("  - {} (CONFIGURED)", id);
+            }
+        }
+
         println!();
-        println!("Total: {} models", filtered.len());
+        let extra_suffix = if extra_configured.is_empty() {
+            String::new()
+        } else {
+            format!(", {} additional configured", extra_configured.len())
+        };
+        println!("Total: {} models{}", filtered.len(), extra_suffix);
         Ok(())
     }
 
-    pub fn info(model_id: &str) -> Result<()> {
+    pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
         let registry = &*registry::MODEL_REGISTRY;
 
         match registry.get(model_id) {
@@ -78,6 +106,15 @@ impl ModelCommands {
                     println!("  - {}", cap);
                 }
 
+                // Show configuration state
+                if let Some(configured) = ctx.config.get_model(model_id) {
+                    println!("\nConfiguration:");
+                    println!("  Provider: {:?}", configured.provider_id);
+                    println!("  Variant: {:?}", configured.variant);
+                    println!("  Enabled: {}", configured.enabled);
+                    println!("  API Key: {}", masked(configured.api_key.as_deref()));
+                }
+
                 Ok(())
             }
             None => {
@@ -91,7 +128,7 @@ impl ModelCommands {
         }
     }
 
-    pub fn setup(model_id: &str) -> Result<()> {
+    pub fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
         let registry = &*registry::MODEL_REGISTRY;
 
         match registry.get(model_id) {
@@ -121,22 +158,17 @@ impl ModelCommands {
                 let selected_variant = &model.variants[variant_index];
                 println!("\nSelected: {} / {}", selected_variant.format, selected_variant.precision);
 
-                let overwrite = if let Ok(Some(existing)) = crate::config::Config::load_model(model_id) {
+                if let Some(existing) = ctx.config.get_model(model_id) {
                     if existing.enabled {
-                        Confirm::new()
+                        let overwrite = Confirm::new()
                             .with_prompt(&format!("Model '{}' is already configured. Overwrite?", model_id))
                             .default(false)
-                            .interact()?
-                    } else {
-                        true
+                            .interact()?;
+                        if !overwrite {
+                            println!("Model setup skipped.");
+                            return Ok(());
+                        }
                     }
-                } else {
-                    true
-                };
-
-                if !overwrite {
-                    println!("Model setup skipped.");
-                    return Ok(());
                 }
 
                 let model_config = crate::config::ModelConfig {
@@ -148,8 +180,7 @@ impl ModelCommands {
                     enabled: true,
                 };
 
-                let config = crate::config::Config::load()?;
-                config.save_model(model_id, &model_config)?;
+                ctx.config.insert_model(model_id, model_config);
 
                 println!("\nModel '{}' configured successfully!", model.id);
                 println!("Note: Provider selection will be completed in the next phase.");
@@ -165,5 +196,13 @@ impl ModelCommands {
                 anyhow::bail!("Model not found");
             }
         }
+    }
+}
+
+fn masked(api_key: Option<&str>) -> String {
+    match api_key {
+        Some(key) if key.len() > 8 => format!("{}****{}", &key[..4], &key[key.len() - 4..]),
+        Some(_) => "****".to_string(),
+        None => "(not set)".to_string(),
     }
 }
