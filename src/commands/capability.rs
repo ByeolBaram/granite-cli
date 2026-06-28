@@ -1,4 +1,4 @@
-use crate::registry::{self, Registry};
+use crate::registry::{self, Registry, providers::Registry as ProviderRegistryTrait};
 use anyhow::Result;
 use dialoguer::Confirm;
 use std::collections::HashMap;
@@ -74,7 +74,8 @@ impl CapabilityCommands {
                 if !cap.dependencies.is_empty() {
                     println!("\nDependencies:");
                     for dep in &cap.dependencies {
-                        println!("  - {}", dep);
+                        let status = Self::check_dep_status(ctx, dep);
+                        println!("  - {} {}", dep, status);
                     }
                 }
 
@@ -134,7 +135,7 @@ impl CapabilityCommands {
         }
     }
 
-    pub fn setup(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
+    pub async fn setup(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
         let registry = &*registry::CAPABILITY_REGISTRY;
 
         match registry.get(capability_id) {
@@ -143,43 +144,203 @@ impl CapabilityCommands {
                 println!("Name: {}", cap.name);
                 println!("Description: {}", cap.description);
                 println!();
-                println!("This capability requires:");
+
+                // Check dependencies
+                println!("Checking dependencies:");
+                let mut all_satisfied = true;
 
                 for dep in &cap.dependencies {
-                    println!("  - {}", dep);
+                    let status = Self::check_dep_status(ctx, dep);
+                    println!("  - {} {}", dep, status);
+                    if status == " [MISSING]" {
+                        all_satisfied = false;
+                    }
                 }
 
-                println!();
-                println!("Full capability setup will be implemented in Phase 2.");
-                println!("For now, this capability can be referenced in tool configurations.");
-
-                let continue_anyway = Confirm::new()
-                    .with_prompt("Add capability placeholder to configuration?")
-                    .default(true)
-                    .interact()?;
-
-                if continue_anyway {
-                    let capability_config = crate::config::CapabilityConfig {
-                        capability_id: cap.id.clone(),
-                        enabled: true,
-                        config: HashMap::new(),
-                    };
-
-                    ctx.config.insert_capability(capability_id, capability_config);
-
-                    println!("\nCapability '{}' placeholder saved.", cap.id);
-                    println!("Note: Full setup (dependency resolution, hooks) will be available in Phase 2.");
+                // Use DI factory to validate dependencies
+                let factory = crate::di::Factory::new(ctx.config.clone());
+                match factory.resolve_capability_deps(capability_id).await {
+                    Ok(resolution) => {
+                        if !resolution.unresolved.is_empty() {
+                            println!("\nUnresolved dependencies:");
+                            for unresolved in &resolution.unresolved {
+                                println!("  - {}:", unresolved.capability_id);
+                                for msg in &unresolved.missing {
+                                    println!("      {}", msg);
+                                }
+                            }
+                        } else {
+                            println!("\nAll dependencies satisfied.");
+                        }
+                    }
+                    Err(e) => {
+                        println!("\nDependency check error: {}", e);
+                    }
                 }
+
+                if !all_satisfied {
+                    println!("\nSome dependencies are missing. You may want to:");
+                    println!("  - Configure required models: granite-cli model setup <model-id>");
+                    println!("  - Configure required providers: granite-cli provider setup <provider-id>");
+                    println!("  - Install required external tools");
+                    println!();
+
+                    let continue_anyway = Confirm::new()
+                        .with_prompt("Continue with setup anyway?")
+                        .default(false)
+                        .interact()?;
+
+                    if !continue_anyway {
+                        println!("Capability setup cancelled.");
+                        return Ok(());
+                    }
+                }
+
+                // Run on_setup hook
+                println!("\nRunning setup hooks...");
+                if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
+                    let result = capability.on_setup(&factory).await;
+                    if let Err(e) = result {
+                        println!("Warning: on_setup hook failed: {}", e);
+                    }
+                }
+
+                // Prompt for capability-specific configuration
+                let mut config_map = HashMap::new();
+
+                if cap.hooks.contains(&"runtime_bindings".to_string()) {
+                    let enabled = Confirm::new()
+                        .with_prompt(&format!("Enable '{}' capability?", cap.name))
+                        .default(true)
+                        .interact()?;
+
+                    if enabled {
+                        println!("\nCapability {} will be available at tool launch time.", cap.name);
+                        config_map.insert("enabled".to_string(), "true".to_string());
+
+                        // Get runtime bindings to show what will be injected
+                        if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
+                            let bindings = capability.runtime_bindings();
+                            if !bindings.is_empty() {
+                                println!("\nRuntime bindings (environment variables at launch):");
+                                for binding in &bindings {
+                                    println!("  {}={}", binding.key, binding.value);
+                                }
+                            }
+                        }
+                    } else {
+                        println!("\nCapability {} is disabled.", cap.name);
+                        config_map.insert("enabled".to_string(), "false".to_string());
+                    }
+                } else {
+                    let enabled = Confirm::new()
+                        .with_prompt(&format!("Enable '{}' capability?", cap.name))
+                        .default(true)
+                        .interact()?;
+
+                    if enabled {
+                        config_map.insert("enabled".to_string(), "true".to_string());
+                    } else {
+                        config_map.insert("enabled".to_string(), "false".to_string());
+                    }
+                }
+
+                let capability_config = crate::config::CapabilityConfig {
+                    capability_id: cap.id.clone(),
+                    enabled: config_map.get("enabled").map(|v| v == "true").unwrap_or(true),
+                    config: config_map,
+                };
+
+                ctx.config.insert_capability(capability_id, capability_config);
+
+                println!("\nCapability '{}' configured successfully!", cap.id);
 
                 Ok(())
             }
             None => {
-                eprintln!("Error: Capability '{}' not found in registry.", capability_id);
-                println!("\nAvailable capabilities:");
-                for cap in registry.list() {
-                    println!("  - {}", cap.id);
+                // Check if it's a configured-only capability
+                if let Some(configured) = ctx.config.get_capability(capability_id) {
+                    println!("\nCapability: {}", capability_id);
+                    println!("Enabled: {}", configured.enabled);
+                    if !configured.config.is_empty() {
+                        println!("\nCurrent Settings:");
+                        for (k, v) in &configured.config {
+                            println!("  {} = {}", k, v);
+                        }
+                    }
+                    println!("\nNote: This capability is configured but not found in the bundled registry.");
+
+                    let overwrite = Confirm::new()
+                        .with_prompt("Reconfigure this capability?")
+                        .default(false)
+                        .interact()?;
+
+                    if overwrite {
+                        println!("\nPlease remove the existing config first:");
+                        println!("  granite-cli capability remove {}", capability_id);
+                        println!("Then run setup again.");
+                    }
+
+                    Ok(())
+                } else {
+                    eprintln!("Error: Capability '{}' not found in registry.", capability_id);
+                    println!("\nAvailable capabilities:");
+                    for cap in registry.list() {
+                        println!("  - {}", cap.id);
+                    }
+                    anyhow::bail!("Capability not found");
                 }
-                anyhow::bail!("Capability not found");
+            }
+        }
+    }
+
+    fn check_dep_status(ctx: &crate::AppContext, dep: &registry::capabilities::Dependency) -> &'static str {
+        match dep {
+            registry::capabilities::Dependency::Model { id, required: _ } => {
+                if registry::MODEL_REGISTRY.get(id).is_some()
+                    || ctx.config.models.contains_key(id.as_str())
+                {
+                    " [OK]"
+                } else {
+                    " [MISSING]"
+                }
+            }
+            registry::capabilities::Dependency::Provider { id, required: _ } => {
+                if ctx.config.providers.contains_key(id.as_str())
+                    || ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, id).is_some()
+                {
+                    " [OK]"
+                } else {
+                    " [MISSING]"
+                }
+            }
+            registry::capabilities::Dependency::ExternalTool { name: _, check_command } => {
+                let parts: Vec<&str> = check_command.split_whitespace().collect();
+                let available = if parts.is_empty() {
+                    false
+                } else {
+                    std::process::Command::new(&parts[0])
+                        .args(&parts[1..])
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false)
+                };
+
+                if available {
+                    " [OK]"
+                } else {
+                    println!("       (command: {})", check_command);
+                    " [MISSING]"
+                }
+            }
+            registry::capabilities::Dependency::Capability { id, required: _ } => {
+                if registry::CAPABILITY_REGISTRY.get(id).is_some()
+                    || ctx.config.capabilities.contains_key(id.as_str())
+                {
+                    " [OK]"
+                } else {
+                    " [MISSING]"
+                }
             }
         }
     }

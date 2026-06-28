@@ -1,7 +1,20 @@
+pub mod docling;
+pub mod vision;
+pub mod speech;
+pub mod compiler;
+
+pub use docling::DoclingCapability;
+pub use vision::VisionCapability;
+pub use speech::SpeechCapability;
+pub use compiler::CompilerCapability;
+
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::collections::HashMap;
 use anyhow::Result;
+
+use crate::registry;
+use crate::registry::Registry;
 
 #[async_trait]
 pub trait Capability: Send + Sync {
@@ -22,6 +35,24 @@ pub trait Capability: Send + Sync {
     fn runtime_bindings(&self) -> Vec<EnvBinding> { vec![] }
 }
 
+/// Resolve a capability instance from the static registry.
+pub fn resolve_capability_from_registry(id: &str) -> Result<Box<dyn Capability>> {
+    registry::CAPABILITY_REGISTRY
+        .get(id)
+        .ok_or_else(|| anyhow::anyhow!("Capability '{}' not found in registry", id))?;
+
+    let capability: Box<dyn Capability> = match id {
+        "docling" => Box::new(DoclingCapability::new()),
+        "vision" => Box::new(VisionCapability::new()),
+        "speech" => Box::new(SpeechCapability::new()),
+        "compiler" => Box::new(CompilerCapability::new()),
+        _ => anyhow::bail!("No implementation registered for capability '{}'", id),
+    };
+
+    Ok(capability)
+}
+
+#[derive(Clone)]
 pub enum Dependency {
     Model { id: String, required: bool },
     Provider { id: String, required: bool },
