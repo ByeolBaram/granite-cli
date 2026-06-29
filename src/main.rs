@@ -3,13 +3,15 @@ pub mod registry;
 pub mod capabilities;
 pub mod commands;
 pub mod utils;
+pub mod di;
+pub mod providers;
 
 use clap::{Parser, Subcommand};
-use commands::{ModelCommands, CapabilityCommands};
+use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
 
 #[derive(Parser, Debug)]
 #[command(name = "granite-cli")]
-#[command(about = "Offload work to Granite models, harden skills, launch agents", long_about = None)]
+#[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -25,7 +27,7 @@ enum Commands {
     #[command(subcommand)]
     Capability(CapabilitySubcommands),
 
-    /// Provider management (Phase 2)
+    /// Provider management commands
     #[command(subcommand)]
     Provider(ProviderSubcommands),
 
@@ -46,14 +48,10 @@ enum Commands {
         args: Vec<String>,
     },
 
-    /// REPL chatbot (Phase 2)
+    /// REPL chatbot for interacting with models
     Run {
         /// Optional model ID
         model_id: Option<String>,
-
-        /// Launch TUI mode
-        #[arg(short, long)]
-        tui: bool,
     },
 }
 
@@ -160,30 +158,39 @@ async fn main() {
             });
             run_capability_command(&mut ctx, subcmd).await
         }
-        Some(Commands::Provider(_)) => {
-            println!("Provider management will be available in Phase 2.");
-            Ok(())
+        Some(Commands::Provider(subcmd)) => {
+            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_provider_command(&mut ctx, subcmd).await
         }
         Some(Commands::Configure(args)) => run_configure(args).await,
         Some(Commands::Launch { .. }) => {
             println!("Tool launching will be available in Phase 3.");
             Ok(())
         }
-        Some(Commands::Run { .. }) => {
-            println!("Chatbot will be available in Phase 2.");
-            Ok(())
+        Some(Commands::Run { model_id }) => {
+            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            commands::run::RunChatbot::run(&mut ctx, model_id).await
         }
         None => {
             println!("granite-cli - Universal Model Adapter with Capabilities");
-            println!("\nUsage: granite-cli <command> [subcommand] [options]");
-            println!("\nAvailable commands:");
+            println!();
+            println!("Usage: granite-cli <command> [subcommand] [options]");
+            println!();
+            println!("Available commands:");
             println!("  model        Model management (list, info, setup)");
             println!("  capability   Capability management (list, info, setup)");
-            println!("  provider     Provider management (Phase 2)");
-            println!("  configure    Configure tools (Phase 2-3)");
+            println!("  provider     Provider management (list, setup, health)");
+            println!("  configure    Configure tools (Phase 3)");
             println!("  launch       Launch tool with overlay (Phase 3)");
-            println!("  run          REPL chatbot (Phase 2)");
-            println!("\nTry 'granite-cli model list' to get started.");
+            println!("  run          REPL chatbot");
+            println!();
+            println!("Try 'granite-cli model list' to get started.");
             Ok(())
         }
     };
@@ -218,7 +225,15 @@ async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcomma
     match subcmd {
         CapabilitySubcommands::List => CapabilityCommands::list(ctx),
         CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
-        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id),
+        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
+    }
+}
+
+async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
+    match subcmd {
+        ProviderSubcommands::List => ProviderCommands::list(ctx),
+        ProviderSubcommands::Setup { provider_id } => ProviderCommands::setup(ctx, &provider_id).await,
+        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
     }
 }
 
