@@ -22,6 +22,11 @@ sys-info = "0.9"
 html2md = "0.2"
 futures = "0.3"
 thiserror = "2"
+inventory = "0.3"
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
