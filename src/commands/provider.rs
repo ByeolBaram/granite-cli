@@ -211,7 +211,6 @@ impl ProviderCommands {
             .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found in configuration", provider_id))?;
 
         let endpoint = &provider_config.endpoint;
-        let api_key = provider_config.api_key.as_deref();
 
         // Create a temporary provider config for health check
         let temp_config = crate::providers::ProviderMetadata {

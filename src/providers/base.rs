@@ -1,6 +1,5 @@
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
-use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 

@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
 
-#[macro_use]
+// Hoist paste macro for use in our own macros
 extern crate paste;
 
 #[derive(Parser, Debug)]
