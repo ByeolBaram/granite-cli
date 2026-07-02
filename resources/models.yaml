@@ -1,0 +1,161 @@
+# Granite 3.1 family - Text Models
+- id: granite-3.1-3b-instruct
+  family: "Granite"
+  version: "3.1"
+  size: 3460000000
+  context_length: 8192
+  model_type: "Text"
+  huggingface_repo: "ibm-granite/granite-3.1-3b-instruct"
+  required_provider_capabilities:
+    - OpenAIChat
+    - OllamaChat
+  variants:
+    - format: GGUF
+      precision: Q4_K_M
+      size_gb: 1.9
+      huggingface_path: "ibm-granite/granite-3.1-3b-instruct-GGUF/granite-3.1-3b-instruct-Q4_K_M.gguf"
+    - format: GGUF
+      precision: Q8_0
+      size_gb: 3.4
+      huggingface_path: "ibm-granite/granite-3.1-3b-instruct-GGUF/granite-3.1-3b-instruct-Q8_0.gguf"
+    - format: safetensors
+      precision: BF16
+      size_gb: 6.6
+      huggingface_path: "ibm-granite/granite-3.1-3b-instruct"
+  description: "Granite 3.1 3B instruct-tuned model for text generation."
+  tags:
+    - instruct
+    - text
+    - efficient
+
+# Granite 3.1 family - Text Models
+- id: granite-3.1-8b-instruct
+  family: "Granite"
+  version: "3.1"
+  size: 8290000000
+  context_length: 8192
+  model_type: "Text"
+  huggingface_repo: "ibm-granite/granite-3.1-8b-instruct"
+  required_provider_capabilities:
+    - OpenAIChat
+    - OllamaChat
+  variants:
+    - format: GGUF
+      precision: Q4_K_M
+      size_gb: 4.9
+      huggingface_path: "ibm-granite/granite-3.1-8b-instruct-GGUF/granite-3.1-8b-instruct-Q4_K_M.gguf"
+    - format: GGUF
+      precision: Q8_0
+      size_gb: 8.3
+      huggingface_path: "ibm-granite/granite-3.1-8b-instruct-GGUF/granite-3.1-8b-instruct-Q8_0.gguf"
+    - format: safetensors
+      precision: BF16
+      size_gb: 16.0
+      huggingface_path: "ibm-granite/granite-3.1-8b-instruct"
+  description: "Granite 3.1 8B instruct-tuned model for general-purpose text generation."
+  tags:
+    - instruct
+    - text
+    - general-purpose
+
+# Granite 3.1 family - Text Models
+- id: granite-3.1-20b-instruct
+  family: "Granite"
+  version: "3.1"
+  size: 20700000000
+  context_length: 8192
+  model_type: "Text"
+  huggingface_repo: "ibm-granite/granite-3.1-20b-instruct"
+  required_provider_capabilities:
+    - OpenAIChat
+    - OllamaChat
+  variants:
+    - format: GGUF
+      precision: Q4_K_M
+      size_gb: 12.8
+      huggingface_path: "ibm-granite/granite-3.1-20b-instruct-GGUF/granite-3.1-20b-instruct-Q4_K_M.gguf"
+    - format: GGUF
+      precision: Q5_K_M
+      size_gb: 14.7
+      huggingface_path: "ibm-granite/granite-3.1-20b-instruct-GGUF/granite-3.1-20b-instruct-Q5_K_M.gguf"
+    - format: safetensors
+      precision: BF16
+      size_gb: 40.0
+      huggingface_path: "ibm-granite/granite-3.1-20b-instruct"
+  description: "Granite 3.1 20B instruct-tuned model for complex reasoning tasks."
+  tags:
+    - instruct
+    - text
+    - reasoning
+
+# Granite Vision Model
+- id: granite-vision-3.1-8b
+  family: "Granite Vision"
+  version: "3.1"
+  size: 8290000000
+  context_length: 4096
+  model_type: "Vision"
+  huggingface_repo: "ibm-granite/granite-vision-3.1-8b"
+  required_provider_capabilities:
+    - OpenAIChat
+  variants:
+    - format: safetensors
+      precision: BF16
+      size_gb: 16.0
+      huggingface_path: "ibm-granite/granite-vision-3.1-8b"
+  description: "Granite Vision 3.1 8B for visual analysis and image understanding."
+  tags:
+    - vision
+    - image
+    - multimodal
+
+# Granite Speech Model
+- id: granite-speech-1.0
+  family: "Granite Speech"
+  version: "1.0"
+  size: 3000000000
+  context_length: 3000
+  model_type: "Speech"
+  huggingface_repo: "ibm-granite/granite-speech-1.0"
+  required_provider_capabilities:
+    - OllamaChat
+  variants:
+    - format: GGUF
+      precision: Q4_K_M
+      size_gb: 1.6
+      huggingface_path: "ibm-granite/granite-speech-1.0-GGUF/granite-speech-1.0-Q4_K_M.gguf"
+    - format: GGUF
+      precision: Q8_0
+      size_gb: 2.9
+      huggingface_path: "ibm-granite/granite-speech-1.0-GGUF/granite-speech-1.0-Q8_0.gguf"
+  description: "Granite Speech 1.0 for audio transcription and translation."
+  tags:
+    - speech
+    - audio
+    - transcription
+
+# Granite Guardian Model (Safety/Moderation)
+- id: granite-guardian-3.1-8b
+  family: "Granite Guardian"
+  version: "3.1"
+  size: 8290000000
+  context_length: 128000
+  model_type: "Text"
+  huggingface_repo: "ibm-granite/granite-guardian-3.1-8b"
+  required_provider_capabilities:
+    - OpenAIChat
+    - OllamaChat
+  variants:
+    - format: GGUF
+      precision: Q4_K_M
+      size_gb: 4.9
+      huggingface_path: "ibm-granite/granite-guardian-3.1-8b-GGUF/granite-guardian-3.1-8b-Q4_K_M.gguf"
+    - format: safetensors
+      precision: BF16
+      size_gb: 16.0
+      huggingface_path: "ibm-granite/granite-guardian-3.1-8b"
+  description: "Granite Guardian 3.1 8B for safety classification and content moderation."
+  tags:
+    - guardian
+    - safety
+    - moderation
