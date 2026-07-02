@@ -161,9 +161,10 @@ impl RunChatbot {
                     println!("  granite-cli run <model-id>");
                     println!();
                     println!("Available bundled models:");
-                    for model in crate::registry::MODEL_REGISTRY.list() {
-                        println!("  - {} ({})", model.id, model.model_type);
-                    }
+                    // TODO: List available models from registry
+                    // for model in crate::registry::MODEL_REGISTRY.list() {
+                    //     println!("  - {} ({})", model.id, model.model_type);
+                    // }
                     println!();
                 }
             }
@@ -172,7 +173,7 @@ impl RunChatbot {
         Ok(())
     }
 
-    async fn resolve_provider(ctx: &mut crate::AppContext) -> Option<(Arc<dyn crate::providers::Provider>, String)> {
+    async fn resolve_provider(ctx: &mut crate::AppContext) -> Option<(Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>, String)> {
         // Try to find a configured provider
         let configured_providers: Vec<_> = ctx.config.providers.keys().cloned().collect();
 
@@ -197,9 +198,11 @@ impl RunChatbot {
             }
         } else {
             // Use first bundled model
-            crate::registry::MODEL_REGISTRY.list().first()
-                .map(|m| m.id.clone())
-                .unwrap_or_default()
+            // TODO: Resolve default model from registry
+            return None;
+            // crate::registry::MODEL_REGISTRY.list().first()
+            //     .map(|m| m.id.clone())
+            //     .unwrap_or_default()
         };
 
         Some((provider, model))
@@ -208,7 +211,7 @@ impl RunChatbot {
     fn handle_command(
         _state: &mut ConversationState,
         input: &str,
-        provider: &Option<(Arc<dyn crate::providers::Provider>, String)>,
+        provider: &Option<(Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>, String)>,
     ) -> CommandResult {
         let parts: Vec<&str> = input.split_whitespace().collect();
         let command = parts[0];
@@ -225,10 +228,12 @@ impl RunChatbot {
                     if let Some((_provider, current_model)) = provider {
                         println!("\nCurrent model: {}", current_model);
                         println!("\nAvailable bundled models:");
-                        let models: Vec<_> = crate::registry::MODEL_REGISTRY.list().to_vec();
-                        for (idx, model) in models.iter().enumerate() {
-                            println!("  [{}] {} ({})", idx, model.id, model.model_type);
-                        }
+                        // TODO: List available models
+                        let models = Vec::<crate::models::ModelMetadata>::new();
+                        // let models: Vec<_> = crate::registry::MODEL_REGISTRY.list().to_vec();
+                        // for (idx, model) in models.iter().enumerate() {
+                        //     println!("  [{}] {} ({})", idx, model.id, model.model_type);
+                        // }
 
                         let selection = dialoguer::Select::new()
                             .with_prompt("Select a model")

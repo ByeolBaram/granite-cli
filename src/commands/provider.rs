@@ -1,14 +1,19 @@
-use crate::registry::{self, AuthType, providers::Registry as ProviderRegistryTrait};
-use crate::providers::{HealthStatus, Provider as _};
+// Third Party
 use anyhow::Result;
 use dialoguer::{Confirm, Input};
+
+// Local
+use crate::registry::{self, AuthType, Registry as ProviderRegistryTrait};
+use crate::providers::{HealthStatus, ProviderMetadata};
 
 pub struct ProviderCommands;
 
 impl ProviderCommands {
     /// List all providers from the static registry, indicating which are configured.
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        let providers = registry::PROVIDER_REGISTRY.list();
+        // TODO: Use the real registry
+        let providers = Vec::<ProviderMetadata>::new();
+        // let providers = registry::PROVIDER_REGISTRY.list();
 
         println!();
         println!("{:<20} {:<10} {:<35} {}", "ID", "TYPE", "ENDPOINT", "STATUS");
@@ -31,12 +36,13 @@ impl ProviderCommands {
         }
 
         // Show configured providers not in the registry
-        let mut extra_configured = Vec::new();
-        for id in ctx.config.providers.keys() {
-            if ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, id).is_none() {
-                extra_configured.push(id.clone());
-            }
-        }
+        let mut extra_configured = Vec::<String>::new();
+        // TODO: Get configured providers from the registry
+        // for id in ctx.config.providers.keys() {
+        //     if ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, id).is_none() {
+        //         extra_configured.push(id.clone());
+        //     }
+        // }
         extra_configured.sort();
 
         if !extra_configured.is_empty() {
@@ -211,50 +217,44 @@ impl ProviderCommands {
         let endpoint = &provider_config.endpoint;
         let api_key = provider_config.api_key.as_deref();
 
-        let status = match provider_config.name.to_lowercase().as_str() {
-            "openai" => {
-                let provider = crate::providers::OpenAiCompatProvider::new(
-                    provider_id, "temp", endpoint.clone(),
-                    api_key.unwrap_or("").to_string()
-                );
-                provider.health_check().await?
-            }
-            "anthropic" => {
-                let provider = crate::providers::AnthropicProvider::new(
-                    provider_id, "temp", endpoint.clone(),
-                    api_key.unwrap_or("").to_string()
-                );
-                provider.health_check().await?
-            }
-            "ollama" => {
-                let provider = crate::providers::OllamaProvider::new(
-                    provider_id, "temp", endpoint.clone()
-                );
-                provider.health_check().await?
-            }
-            "ibm watsonx.ai" => {
-                let provider = crate::providers::OpenAiCompatProvider::new(
-                    provider_id, "temp", endpoint.clone(),
-                    api_key.unwrap_or("").to_string()
-                );
-                provider.health_check().await?
-            }
+        // Create a temporary provider config for health check
+        let temp_config = crate::providers::base::ProviderConfig {
+            id: provider_id.to_string(),
+            name: "temp".to_string(),
+            description: String::new(),
+            provider_type: if provider_config.provider_type.to_lowercase() == "local" {
+                crate::providers::ProviderType::Local
+            } else {
+                crate::providers::ProviderType::Hosted
+            },
+            default_endpoint: endpoint.clone(),
+            api_capabilities: vec![],
+            supported_formats: vec![],
+            supported_precisions: vec![],
+            authentication: vec![],
+            tags: vec![],
+        };
+
+        // Determine which provider implementation to use
+        let factory_id = match provider_config.name.to_lowercase().as_str() {
+            "ollama" => "ollama",
+            "anthropic" => "anthropic",
+            "openai" => "openai",
+            "ibm watsonx.ai" => "watsonx",
             _ => {
-                let is_local = provider_config.provider_type.to_lowercase() == "local";
-                if is_local {
-                    let provider = crate::providers::OllamaProvider::new(
-                        provider_id, "temp", endpoint.clone()
-                    );
-                    provider.health_check().await?
+                if provider_config.provider_type.to_lowercase() == "local" {
+                    "ollama"
                 } else {
-                    let provider = crate::providers::OpenAiCompatProvider::new(
-                        provider_id, "temp", endpoint.clone(),
-                        api_key.unwrap_or("").to_string()
-                    );
-                    provider.health_check().await?
+                    "openai"
                 }
             }
         };
+
+        let provider = crate::providers::PROVIDER_FACTORY
+            .construct(factory_id, &temp_config)
+            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
+
+        let status = provider.health_check().await?;
 
         Ok(status)
     }

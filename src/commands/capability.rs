@@ -1,4 +1,4 @@
-use crate::registry::{self, Registry, providers::Registry as ProviderRegistryTrait};
+use crate::registry::{self, Registry};
 use anyhow::Result;
 use dialoguer::Confirm;
 use std::collections::HashMap;
@@ -65,7 +65,6 @@ impl CapabilityCommands {
                 println!("Capability: {}", cap.id);
                 println!("Name: {}", cap.name);
                 println!("Description: {}", cap.description);
-                println!("Version: {}", cap.version);
 
                 if !cap.tags.is_empty() {
                     println!("\nTags: {}", cap.tags.join(", "));
@@ -79,21 +78,14 @@ impl CapabilityCommands {
                     }
                 }
 
-                if !cap.hooks.is_empty() {
-                    println!("\nExecution Hooks:");
-                    for hook in &cap.hooks {
-                        let desc = match hook.as_str() {
-                            "on_setup" => "One-time initialization",
-                            "on_configure" => "Runs during tool configuration",
-                            "on_pre_launch" => "Runs before tool launches",
-                            "on_post_launch" => "Runs after tool starts",
-                            "on_shutdown" => "Cleanup when tool exits",
-                            "runtime_bindings" => "Returns environment variables",
-                            _ => "Unknown hook",
-                        };
-                        println!("  - {}: {}", hook, desc);
-                    }
-                }
+                // Note: Hooks are now implemented as trait methods, not metadata fields
+                println!("\nExecution Hooks:");
+                println!("  - on_setup: One-time initialization");
+                println!("  - on_configure: Runs during tool configuration");
+                println!("  - on_pre_launch: Runs before tool launches");
+                println!("  - on_post_launch: Runs after tool starts");
+                println!("  - on_shutdown: Cleanup when tool exits");
+                println!("  - runtime_bindings: Returns environment variables");
 
                 // Show configuration state
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
@@ -208,41 +200,28 @@ impl CapabilityCommands {
                 // Prompt for capability-specific configuration
                 let mut config_map = HashMap::new();
 
-                if cap.hooks.contains(&"runtime_bindings".to_string()) {
-                    let enabled = Confirm::new()
-                        .with_prompt(&format!("Enable '{}' capability?", cap.name))
-                        .default(true)
-                        .interact()?;
+                let enabled = Confirm::new()
+                    .with_prompt(&format!("Enable '{}' capability?", cap.name))
+                    .default(true)
+                    .interact()?;
 
-                    if enabled {
-                        println!("\nCapability {} will be available at tool launch time.", cap.name);
-                        config_map.insert("enabled".to_string(), "true".to_string());
+                if enabled {
+                    println!("\nCapability {} will be available at tool launch time.", cap.name);
+                    config_map.insert("enabled".to_string(), "true".to_string());
 
-                        // Get runtime bindings to show what will be injected
-                        if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
-                            let bindings = capability.runtime_bindings();
-                            if !bindings.is_empty() {
-                                println!("\nRuntime bindings (environment variables at launch):");
-                                for binding in &bindings {
-                                    println!("  {}={}", binding.key, binding.value);
-                                }
+                    // Get runtime bindings to show what will be injected
+                    if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
+                        let bindings = capability.runtime_bindings();
+                        if !bindings.is_empty() {
+                            println!("\nRuntime bindings (environment variables at launch):");
+                            for binding in &bindings {
+                                println!("  {}={}", binding.key, binding.value);
                             }
                         }
-                    } else {
-                        println!("\nCapability {} is disabled.", cap.name);
-                        config_map.insert("enabled".to_string(), "false".to_string());
                     }
                 } else {
-                    let enabled = Confirm::new()
-                        .with_prompt(&format!("Enable '{}' capability?", cap.name))
-                        .default(true)
-                        .interact()?;
-
-                    if enabled {
-                        config_map.insert("enabled".to_string(), "true".to_string());
-                    } else {
-                        config_map.insert("enabled".to_string(), "false".to_string());
-                    }
+                    println!("\nCapability {} is disabled.", cap.name);
+                    config_map.insert("enabled".to_string(), "false".to_string());
                 }
 
                 let capability_config = crate::config::CapabilityConfig {
@@ -294,9 +273,9 @@ impl CapabilityCommands {
         }
     }
 
-    fn check_dep_status(ctx: &crate::AppContext, dep: &registry::capabilities::Dependency) -> &'static str {
+    fn check_dep_status(ctx: &crate::AppContext, dep: &crate::registry::CapabilityDependency) -> &'static str {
         match dep {
-            registry::capabilities::Dependency::Model { id, required: _ } => {
+            crate::registry::CapabilityDependency::Model { id, required: _ } => {
                 if registry::MODEL_REGISTRY.get(id).is_some()
                     || ctx.config.models.contains_key(id.as_str())
                 {
@@ -305,16 +284,16 @@ impl CapabilityCommands {
                     " [MISSING]"
                 }
             }
-            registry::capabilities::Dependency::Provider { id, required: _ } => {
+            crate::registry::CapabilityDependency::Provider { id, required: _ } => {
                 if ctx.config.providers.contains_key(id.as_str())
-                    || ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, id).is_some()
+                    || Registry::get(&*registry::PROVIDER_REGISTRY, id).is_some()
                 {
                     " [OK]"
                 } else {
                     " [MISSING]"
                 }
             }
-            registry::capabilities::Dependency::ExternalTool { name: _, check_command } => {
+            crate::registry::CapabilityDependency::ExternalTool { name: _, check_command } => {
                 let parts: Vec<&str> = check_command.split_whitespace().collect();
                 let available = if parts.is_empty() {
                     false
@@ -333,7 +312,7 @@ impl CapabilityCommands {
                     " [MISSING]"
                 }
             }
-            registry::capabilities::Dependency::Capability { id, required: _ } => {
+            crate::registry::CapabilityDependency::Capability { id, required: _ } => {
                 if registry::CAPABILITY_REGISTRY.get(id).is_some()
                     || ctx.config.capabilities.contains_key(id.as_str())
                 {

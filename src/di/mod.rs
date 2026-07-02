@@ -29,7 +29,7 @@ fn content_hash<T: serde::Serialize>(item: &T) -> String {
 /// Cached resolved instance.
 struct CachedInstance {
     _content_hash: String,
-    instance: Arc<dyn Provider>,
+    instance: Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>,
 }
 
 /// Factory — the central DI container that lazily resolves providers,
@@ -50,7 +50,7 @@ impl Factory {
     }
 
     /// Resolve a configured provider from config and cache it.
-    pub async fn resolve_configured_provider(&self, id: &str) -> Result<Arc<dyn Provider>> {
+    pub async fn resolve_configured_provider(&self, id: &str) -> Result<Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>> {
         // Check cache first
         {
             let cache = self.provider_cache.read().unwrap();
@@ -68,7 +68,7 @@ impl Factory {
         };
 
         let provider = self.create_provider_from_config(&provider_config)?;
-        let provider_arc: Arc<dyn Provider> = Arc::from(provider);
+        let provider_arc: Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>> = Arc::from(provider);
 
         // Cache the result
         {
@@ -92,7 +92,7 @@ impl Factory {
 
     /// Resolve a registered model ID and return the provider that can serve it.
     /// Falls back to configured providers if the model has a provider assigned.
-    pub async fn resolve_model_provider(&self, model_id: &str) -> Result<Option<Arc<dyn Provider>>> {
+    pub async fn resolve_model_provider(&self, model_id: &str) -> Result<Option<Arc<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>>> {
         let model_def = registry::MODEL_REGISTRY.get(model_id);
         if model_def.is_none() {
             return Ok(None);
@@ -116,7 +116,7 @@ impl Factory {
 
     /// Resolve a capability instance from the static registry.
     /// Returns a boxed capability if found.
-    pub fn resolve_capability_registry(&self, id: &str) -> Result<Box<dyn Capability>> {
+    pub fn resolve_capability_registry(&self, id: &str) -> Result<Box<dyn crate::capabilities::Capability<Config = crate::capabilities::base::CapabilityConfig>>> {
         crate::capabilities::resolve_capability_from_registry(id)
     }
 
@@ -146,38 +146,44 @@ impl Factory {
     }
 
     /// Create a provider instance from its configuration.
-    fn create_provider_from_config(&self, config: &ProviderConfig) -> Result<Box<dyn Provider>> {
-        let endpoint = &config.endpoint;
-        let api_key = config.api_key.as_deref().unwrap_or("");
+    fn create_provider_from_config(&self, config: &ProviderConfig) -> Result<Box<dyn crate::providers::Provider<Config = crate::providers::base::ProviderConfig>>> {
+        // Convert DI ProviderConfig to providers::ProviderConfig
+        let provider_config = crate::providers::base::ProviderConfig {
+            id: config.provider_id.clone(),
+            name: config.name.clone(),
+            description: String::new(),
+            provider_type: if config.provider_type.to_lowercase() == "local" {
+                crate::providers::ProviderType::Local
+            } else {
+                crate::providers::ProviderType::Hosted
+            },
+            default_endpoint: config.endpoint.clone(),
+            api_capabilities: vec![],
+            supported_formats: vec![],
+            supported_precisions: vec![],
+            authentication: vec![],
+            tags: vec![],
+        };
 
-        let provider: Box<dyn Provider> = match config.name.to_lowercase().as_str() {
-            "openai" => Box::new(crate::providers::OpenAiCompatProvider::new(
-                &config.provider_id, &config.name, endpoint.clone(), api_key.to_string(),
-            )),
-            "anthropic" => Box::new(crate::providers::AnthropicProvider::new(
-                &config.provider_id, &config.name, endpoint.clone(), api_key.to_string(),
-            )),
-            "ollama" => Box::new(crate::providers::OllamaProvider::new(
-                &config.provider_id, &config.name, endpoint.clone(),
-            )),
-            "watsonx" => Box::new(crate::providers::OpenAiCompatProvider::new(
-                &config.provider_id, &config.name, endpoint.clone(), api_key.to_string(),
-            )),
+        // Use the factory to construct the provider
+        let provider_id = config.name.to_lowercase();
+        let provider_id = match provider_id.as_str() {
+            "openai" => "openai",
+            "anthropic" => "anthropic",
+            "ollama" => "ollama",
+            "watsonx" => "watsonx",
             _ => {
-                let is_local = config.provider_type.to_lowercase() == "local";
-                if is_local {
-                    Box::new(crate::providers::OllamaProvider::new(
-                        &config.provider_id, &config.name, endpoint.clone(),
-                    ))
+                if config.provider_type.to_lowercase() == "local" {
+                    "ollama"
                 } else {
-                    Box::new(crate::providers::OpenAiCompatProvider::new(
-                        &config.provider_id, &config.name, endpoint.clone(), api_key.to_string(),
-                    ))
+                    "openai"
                 }
             }
         };
 
-        Ok(provider)
+        crate::providers::PROVIDER_FACTORY
+            .construct(provider_id, &provider_config)
+            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))
     }
 }
 

@@ -1,122 +1,217 @@
-pub mod docling;
-pub mod vision;
-pub mod speech;
-pub mod compiler;
+pub mod base;
+// TODO: mod <implementation mod>;
 
-pub use docling::DoclingCapability;
-pub use vision::VisionCapability;
-pub use speech::SpeechCapability;
-pub use compiler::CompilerCapability;
+// Re-export capability implementations
+// TODO: pub use <implementation mod>::<Name>Capability;
 
-use async_trait::async_trait;
-use std::path::PathBuf;
+use base::{CapabilityConfig, CapabilityMetadata};
+use crate::registry::ConfigConstructable;
 use std::collections::HashMap;
-use anyhow::Result;
+use std::sync::LazyLock;
 
-use crate::registry;
-use crate::registry::Registry;
+/*-- Public API --------------------------------------------------------------*/
 
-#[async_trait]
-pub trait Capability: Send + Sync {
-    // Metadata
-    fn id(&self) -> &str;
-    fn name(&self) -> &str;
-    fn description(&self) -> &str;
-    fn dependencies(&self) -> Vec<Dependency>;
+// Re-export types from base
+pub use base::{
+    Capability, ConfigureResult, Dependency, EnvBinding, Factory, LaunchContext, ToolConfig,
+};
 
-    // Execution hooks (all optional with NoOp defaults)
-    async fn on_setup(&self, _factory: &dyn Factory) -> Result<()> { Ok(()) }
-    async fn on_configure(&self, _tool: &ToolConfig) -> Result<ConfigureResult> {
-        Ok(ConfigureResult::default())
-    }
-    async fn on_pre_launch(&self, _context: &LaunchContext) -> Result<()> { Ok(()) }
-    async fn on_post_launch(&self, _context: &LaunchContext) -> Result<()> { Ok(()) }
-    async fn on_shutdown(&self, _context: &LaunchContext) -> Result<()> { Ok(()) }
-    fn runtime_bindings(&self) -> Vec<EnvBinding> { vec![] }
+/*-- Capability Configuration Storage ----------------------------------------*/
+
+/// Global storage for capability configurations.
+static CAPABILITY_CONFIGS: LazyLock<HashMap<String, CapabilityConfig>> = LazyLock::new(|| {
+    load_bundled_capabilities()
+        .into_iter()
+        .map(|cfg| (cfg.id.clone(), cfg))
+        .collect()
+});
+
+/*-- Custom Metadata Provider for Capabilities ------------------------------*/
+
+/// Custom metadata provider that looks up config by ID
+struct CapabilityMetadataProvider {
+    id: String,
 }
 
-/// Resolve a capability instance from the static registry.
-pub fn resolve_capability_from_registry(id: &str) -> Result<Box<dyn Capability>> {
-    registry::CAPABILITY_REGISTRY
+impl CapabilityMetadataProvider {
+    fn new(id: String) -> Self {
+        Self { id }
+    }
+}
+
+// We need to manually implement the internal trait
+trait CapabilityMetadataProviderTrait: Send + Sync {
+    fn describe(&self) -> CapabilityMetadata;
+    fn construct(
+        &self,
+        cfg: &CapabilityConfig,
+    ) -> Box<dyn base::Capability<Config = CapabilityConfig>>;
+}
+
+impl CapabilityMetadataProviderTrait for CapabilityMetadataProvider {
+    fn describe(&self) -> CapabilityMetadata {
+        CAPABILITY_CONFIGS
+            .get(&self.id)
+            .map(config_to_metadata)
+            .unwrap_or_else(|| CapabilityMetadata {
+                id: self.id.clone(),
+                name: String::new(),
+                description: String::new(),
+                dependencies: vec![],
+                tags: vec![],
+            })
+    }
+
+    fn construct(
+        &self,
+        _cfg: &CapabilityConfig,
+    ) -> Box<dyn base::Capability<Config = CapabilityConfig>> {
+        let config = CAPABILITY_CONFIGS
+            .get(&self.id)
+            .expect("Capability config not found");
+
+        // Route to the correct capability implementation based on ID
+        match self.id.as_str() {
+            // "docling" => Box::new(DoclingCapability::new(config)),
+            // "vision" => Box::new(VisionCapability::new(config)),
+            // "speech" => Box::new(SpeechCapability::new(config)),
+            // "compiler" => Box::new(CompilerCapability::new(config)),
+            _ => panic!("Unknown capability: {}", self.id),
+        }
+    }
+}
+
+/// Convert a CapabilityConfig to CapabilityMetadata
+fn config_to_metadata(config: &CapabilityConfig) -> CapabilityMetadata {
+    CapabilityMetadata {
+        id: config.id.clone(),
+        name: config.name.clone(),
+        description: config.description.clone(),
+        dependencies: config.dependencies.clone(),
+        tags: config.tags.clone(),
+    }
+}
+
+/*-- Custom Capability Factory -----------------------------------------------*/
+
+/// Custom capability factory that uses our metadata provider
+pub struct CustomCapabilityFactory {
+    registry: HashMap<String, Box<dyn CapabilityMetadataProviderTrait>>,
+}
+
+impl CustomCapabilityFactory {
+    fn new() -> Self {
+        Self {
+            registry: HashMap::new(),
+        }
+    }
+
+    fn register(&mut self, id: String) {
+        self.registry
+            .insert(id.clone(), Box::new(CapabilityMetadataProvider::new(id)));
+    }
+
+    pub(crate) fn construct(
+        &self,
+        name: &str,
+        cfg: &CapabilityConfig,
+    ) -> Result<Box<dyn base::Capability<Config = CapabilityConfig>>, String> {
+        self.registry
+            .get(name)
+            .map(|x| x.construct(cfg))
+            .ok_or_else(|| format!("Unknown capability: {}", name))
+    }
+
+    pub(crate) fn get(&self, name: &str) -> Option<CapabilityMetadata> {
+        self.registry.get(name).map(|x| x.describe())
+    }
+
+    pub(crate) fn list(&self) -> HashMap<&str, CapabilityMetadata> {
+        self.registry
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.describe()))
+            .collect()
+    }
+}
+
+/*-- Factory Registration ----------------------------------------------------*/
+
+/// Global capability factory with all capabilities registered.
+pub static CAPABILITY_FACTORY: LazyLock<CustomCapabilityFactory> = LazyLock::new(|| {
+    let mut factory = CustomCapabilityFactory::new();
+
+    // Register each capability by ID
+    for id in CAPABILITY_CONFIGS.keys() {
+        factory.register(id.clone());
+    }
+
+    factory
+});
+
+/*-- Capability Loading ------------------------------------------------------*/
+
+fn load_bundled_capabilities() -> Vec<CapabilityConfig> {
+    vec![]
+}
+
+/*-- Backward Compatibility Helper ------------------------------------------*/
+
+/// Resolve a capability instance from the factory (replaces old registry lookup).
+pub fn resolve_capability_from_registry(
+    id: &str,
+) -> anyhow::Result<Box<dyn Capability<Config = CapabilityConfig>>> {
+    let config = CAPABILITY_CONFIGS
         .get(id)
         .ok_or_else(|| anyhow::anyhow!("Capability '{}' not found in registry", id))?;
 
-    let capability: Box<dyn Capability> = match id {
-        "docling" => Box::new(DoclingCapability::new()),
-        "vision" => Box::new(VisionCapability::new()),
-        "speech" => Box::new(SpeechCapability::new()),
-        "compiler" => Box::new(CompilerCapability::new()),
-        _ => anyhow::bail!("No implementation registered for capability '{}'", id),
-    };
-
-    Ok(capability)
+    CAPABILITY_FACTORY
+        .construct(id, config)
+        .map_err(|e| anyhow::anyhow!("Failed to construct capability: {}", e))
 }
 
-#[derive(Clone)]
-pub enum Dependency {
-    Model { id: String, required: bool },
-    Provider { id: String, required: bool },
-    ExternalTool { name: String, check_command: String },
-    Capability { id: String, required: bool },
-}
+/*-- tests -------------------------------------------------------------------*/
 
-impl std::fmt::Display for Dependency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Dependency::Model { id, required } => {
-                write!(f, "Model: {}{}", id, if *required { " (required)" } else { "" })
-            }
-            Dependency::Provider { id, required } => {
-                write!(f, "Provider: {}{}", id, if *required { " (required)" } else { "" })
-            }
-            Dependency::ExternalTool { name, check_command } => {
-                write!(f, "ExternalTool: {} ({})", name, check_command)
-            }
-            Dependency::Capability { id, required } => {
-                write!(f, "Capability: {}{}", id, if *required { " (required)" } else { "" })
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_capability_factory_loads_capabilities() {
+        let list = CAPABILITY_FACTORY.list();
+        assert!(list.len() >= 4, "Should have at least 4 capabilities");
     }
-}
 
-pub struct ConfigureResult {
-    pub success: bool,
-    pub artifacts: Vec<PathBuf>,
-    pub messages: Vec<String>,
-}
+    #[test]
+    fn test_capability_factory_get_metadata() {
+        let metadata = CAPABILITY_FACTORY.get("docling");
+        assert!(metadata.is_some());
 
-impl Default for ConfigureResult {
-    fn default() -> Self {
-        Self {
-            success: true,
-            artifacts: vec![],
-            messages: vec![],
-        }
+        let meta = metadata.unwrap();
+        assert_eq!(meta.name, "Document Conversion");
     }
-}
 
-pub struct LaunchContext {
-    pub tool_id: String,
-    pub tool_version: String,
-    pub working_dir: PathBuf,
-    pub env_vars: HashMap<String, String>,
-}
+    #[test]
+    fn test_capability_factory_list_all() {
+        let list = CAPABILITY_FACTORY.list();
 
-pub struct EnvBinding {
-    pub key: String,
-    pub value: String,
-}
+        assert!(list.contains_key("docling"));
+        assert!(list.contains_key("vision"));
+        assert!(list.contains_key("speech"));
+        assert!(list.contains_key("compiler"));
+    }
 
-#[async_trait]
-pub trait Factory: Send + Sync {
-    async fn resolve_model(&self, id: &str) -> Result<String>;
-    async fn resolve_provider(&self, id: &str) -> Result<String>;
-    async fn resolve_capability(&self, id: &str) -> Result<String>;
-}
+    #[test]
+    fn test_capability_factory_construct() {
+        let config = CAPABILITY_CONFIGS.get("docling").unwrap();
+        let capability = CAPABILITY_FACTORY.construct("docling", config).unwrap();
 
-pub struct ToolConfig {
-    pub tool_id: String,
-    pub provider_id: String,
-    pub model_id: String,
-    pub env_vars: HashMap<String, String>,
+        assert_eq!(capability.id(), "docling");
+        assert_eq!(capability.name(), "Document Conversion");
+    }
+
+    #[test]
+    fn test_resolve_capability_from_registry() {
+        let capability = resolve_capability_from_registry("vision").unwrap();
+        assert_eq!(capability.id(), "vision");
+    }
 }

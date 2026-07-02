@@ -56,7 +56,7 @@ impl ModelRecommender {
     }
 
     /// Rank a single variant by suitability for the given hardware.
-    fn rank_variant(&self, variant: &crate::registry::models::ModelVariant, hardware: &HardwareProfile) -> f64 {
+    fn rank_variant(&self, variant: &crate::models::ModelVariant, hardware: &HardwareProfile) -> f64 {
         let mut score = 100.0;
 
         // Penalize variants that exceed hardware capacity

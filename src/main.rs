@@ -1,5 +1,6 @@
 pub mod config;
 pub mod registry;
+pub mod models;
 pub mod capabilities;
 pub mod commands;
 pub mod utils;
@@ -206,6 +207,7 @@ async fn main() {
 
 async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
+        // TODO: Determine the valid types from the model registry
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
                 Some("text") => Some(registry::ModelType::Text),

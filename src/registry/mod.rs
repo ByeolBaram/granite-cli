@@ -1,6 +1,3 @@
-// Standard
-use std::collections::HashMap;
-
 /*-- Generic Factory Infrastructure ------------------------------------------*/
 
 /// Core trait that all factory-managed types must implement.
@@ -215,7 +212,7 @@ pub trait Registry<T> {
 
 // Backward compatibility wrapper for ModelRegistry
 pub struct ModelRegistry {
-    cache: HashMap<String, ModelDefinition>,
+    cache: std::collections::HashMap<String, ModelDefinition>,
 }
 
 impl ModelRegistry {
@@ -260,7 +257,7 @@ impl Registry<ModelDefinition> for ModelRegistry {
 
 // Backward compatibility wrapper for ProviderRegistry
 pub struct ProviderRegistry {
-    cache: HashMap<String, ProviderDefinition>,
+    cache: std::collections::HashMap<String, ProviderDefinition>,
 }
 
 impl ProviderRegistry {
@@ -300,7 +297,7 @@ impl Registry<ProviderDefinition> for ProviderRegistry {
 
 // Backward compatibility wrapper for CapabilityRegistry
 pub struct CapabilityRegistry {
-    cache: HashMap<String, CapabilityDefinition>,
+    cache: std::collections::HashMap<String, CapabilityDefinition>,
 }
 
 impl CapabilityRegistry {

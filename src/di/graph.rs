@@ -1,4 +1,4 @@
-use crate::registry::{self, Registry, capabilities::Dependency};
+use crate::registry::{self, Registry, CapabilityDependency as Dependency};
 
 /// Builds and validates dependency graphs for capabilities.
 pub struct DependencyGraph {

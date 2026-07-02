@@ -1,199 +1,277 @@
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use futures::Stream;
+pub mod base;
+mod anthropic;
+mod ollama;
+mod openai_compat;
 
-/// API surfaces that providers can support.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ApiSurface {
-    OpenAIChat,         // /v1/chat/completions
-    OllamaChat,         // /api/chat
-    AnthropicMessages,  // /v1/messages
-}
-
-impl std::fmt::Display for ApiSurface {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ApiSurface::OpenAIChat => write!(f, "OpenAI Chat (/v1/chat/completions)"),
-            ApiSurface::OllamaChat => write!(f, "Ollama Chat (/api/chat)"),
-            ApiSurface::AnthropicMessages => write!(f, "Anthropic Messages (/v1/messages)"),
-        }
-    }
-}
-
-/// Model formats that providers can serve.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub enum ModelFormat {
-    Safetensors,
-    GGUF,
-    ONNX,
-}
-
-impl std::fmt::Display for ModelFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ModelFormat::Safetensors => write!(f, "safetensors"),
-            ModelFormat::GGUF => write!(f, "GGUF"),
-            ModelFormat::ONNX => write!(f, "ONNX"),
-        }
-    }
-}
-
-/// Model precision/quantization levels.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(non_camel_case_types)]
-pub enum Precision {
-    BF16,
-    FP16,
-    FP8,
-    Q8_0,
-    Q4_K_M,
-    Q5_K_M,
-    Q3_K_M,
-}
-
-impl std::fmt::Display for Precision {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Precision::BF16 => write!(f, "BF16"),
-            Precision::FP16 => write!(f, "FP16"),
-            Precision::FP8 => write!(f, "FP8"),
-            Precision::Q8_0 => write!(f, "Q8_0"),
-            Precision::Q4_K_M => write!(f, "Q4_K_M"),
-            Precision::Q5_K_M => write!(f, "Q5_K_M"),
-            Precision::Q3_K_M => write!(f, "Q3_K_M"),
-        }
-    }
-}
-
-/// Health status from a provider health check.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthStatus {
-    pub healthy: bool,
-    pub latency: Duration,
-    pub error: Option<String>,
-}
-
-/// A chat message in a conversation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: MessageRole,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum MessageRole {
-    System,
-    User,
-    Assistant,
-}
-
-impl std::fmt::Display for MessageRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MessageRole::System => write!(f, "system"),
-            MessageRole::User => write!(f, "user"),
-            MessageRole::Assistant => write!(f, "assistant"),
-        }
-    }
-}
-
-/// Chat request sent to a provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatRequest {
-    pub model: String,
-    pub messages: Vec<ChatMessage>,
-    pub temperature: Option<f64>,
-    pub max_tokens: Option<u32>,
-    pub stop_sequences: Option<Vec<String>>,
-    pub stream: bool,
-}
-
-impl Default for ChatRequest {
-    fn default() -> Self {
-        Self {
-            model: String::new(),
-            messages: vec![],
-            temperature: Some(0.7),
-            max_tokens: None,
-            stop_sequences: None,
-            stream: false,
-        }
-    }
-}
-
-/// Chat response from a provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatResponse {
-    pub content: Option<String>,
-    pub finish_reason: Option<String>,
-    pub usage: Option<UsageInfo>,
-}
-
-/// Token usage information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageInfo {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
-
-/// A chunk from a streaming response.
-#[derive(Debug, Clone)]
-pub struct ChatChunk {
-    pub content: String,
-    pub finish_reason: Option<String>,
-}
-
-/// Provider trait — all provider implementations must implement this.
-#[async_trait]
-pub trait Provider: Send + Sync {
-    fn id(&self) -> &str;
-    fn name(&self) -> &str;
-    fn api_capabilities(&self) -> Vec<ApiSurface>;
-
-    // Model support
-    fn supported_formats(&self) -> Vec<ModelFormat>;
-    fn supported_precisions(&self) -> Vec<Precision>;
-    fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
-        true
-    }
-
-    // Inference
-    async fn chat_completion(&self, request: ChatRequest) -> Result<ChatResponse, ProviderError>;
-    async fn stream_chat(
-        &self,
-        request: ChatRequest,
-    ) -> Result<Box<dyn Stream<Item = Result<ChatChunk, ProviderError>> + Send + Unpin>, ProviderError>;
-
-    // Health
-    async fn health_check(&self) -> Result<HealthStatus, ProviderError>;
-}
-
-/// Errors specific to provider operations.
-#[derive(Debug, thiserror::Error)]
-pub enum ProviderError {
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("Authentication failed: {0}")]
-    Auth(String),
-
-    #[error("Rate limited: {0}")]
-    RateLimited(String),
-
-    #[error("Model not found: {0}")]
-    ModelNotFound(String),
-
-    #[error("Provider error: {0}")]
-    Other(String),
-}
-
-pub mod openai_compat;
-pub mod ollama;
-pub mod anthropic;
-
-pub use openai_compat::OpenAiCompatProvider;
-pub use ollama::OllamaProvider;
+// Re-export provider implementations
 pub use anthropic::AnthropicProvider;
+pub use ollama::OllamaProvider;
+pub use openai_compat::OpenAiCompatProvider;
+
+use base::ProviderConfig;
+use crate::registry::ConfigConstructable;
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
+/*-- Public API --------------------------------------------------------------*/
+
+// Re-export types from base
+pub use base::{
+    ApiSurface, AuthType, ChatChunk, ChatMessage, ChatRequest, ChatResponse, HealthStatus,
+    MessageRole, ModelFormat, Precision, Provider, ProviderError, ProviderType, UsageInfo,
+};
+pub use base::ProviderMetadata;
+pub use base::ProviderMetadata as ProviderDefinition; // Backward compatibility alias
+
+/*-- Provider Configuration Storage ------------------------------------------*/
+
+/// Global storage for provider configurations.
+static PROVIDER_CONFIGS: LazyLock<HashMap<String, ProviderConfig>> = LazyLock::new(|| {
+    load_bundled_providers()
+        .into_iter()
+        .map(|cfg| (cfg.id.clone(), cfg))
+        .collect()
+});
+
+/*-- Custom Metadata Provider for Providers ---------------------------------*/
+
+/// Custom metadata provider that looks up config by ID
+struct ProviderMetadataProvider {
+    id: String,
+}
+
+impl ProviderMetadataProvider {
+    fn new(id: String) -> Self {
+        Self { id }
+    }
+}
+
+// We need to manually implement the internal trait
+trait ProviderMetadataProviderTrait: Send + Sync {
+    fn describe(&self) -> ProviderMetadata;
+    fn construct(&self, cfg: &ProviderConfig) -> Box<dyn base::Provider<Config = ProviderConfig>>;
+}
+
+impl ProviderMetadataProviderTrait for ProviderMetadataProvider {
+    fn describe(&self) -> ProviderMetadata {
+        PROVIDER_CONFIGS
+            .get(&self.id)
+            .map(config_to_metadata)
+            .unwrap_or_else(|| ProviderMetadata {
+                id: self.id.clone(),
+                name: String::new(),
+                description: String::new(),
+                provider_type: ProviderType::Hosted,
+                default_endpoint: String::new(),
+                api_capabilities: vec![],
+                supported_formats: vec![],
+                supported_precisions: vec![],
+                authentication: vec![],
+                tags: vec![],
+            })
+    }
+
+    fn construct(&self, _cfg: &ProviderConfig) -> Box<dyn base::Provider<Config = ProviderConfig>> {
+        let config = PROVIDER_CONFIGS.get(&self.id).expect("Provider config not found");
+
+        // Route to the correct provider implementation based on ID
+        match self.id.as_str() {
+            "openai" | "watsonx" => Box::new(OpenAiCompatProvider::new(config)),
+            "ollama" => Box::new(OllamaProvider::new(config)),
+            "anthropic" => Box::new(AnthropicProvider::new(config)),
+            _ => panic!("Unknown provider: {}", self.id),
+        }
+    }
+}
+
+/// Convert a ProviderConfig to ProviderMetadata
+fn config_to_metadata(config: &ProviderConfig) -> ProviderMetadata {
+    ProviderMetadata {
+        id: config.id.clone(),
+        name: config.name.clone(),
+        description: config.description.clone(),
+        provider_type: config.provider_type.clone(),
+        default_endpoint: config.default_endpoint.clone(),
+        api_capabilities: config.api_capabilities.clone(),
+        supported_formats: config.supported_formats.clone(),
+        supported_precisions: config.supported_precisions.clone(),
+        authentication: config.authentication.clone(),
+        tags: config.tags.clone(),
+    }
+}
+
+/*-- Custom Provider Factory -------------------------------------------------*/
+
+/// Custom provider factory that uses our metadata provider
+pub struct CustomProviderFactory {
+    registry: HashMap<String, Box<dyn ProviderMetadataProviderTrait>>,
+}
+
+impl CustomProviderFactory {
+    fn new() -> Self {
+        Self {
+            registry: HashMap::new(),
+        }
+    }
+
+    fn register(&mut self, id: String) {
+        self.registry
+            .insert(id.clone(), Box::new(ProviderMetadataProvider::new(id)));
+    }
+
+    pub(crate) fn construct(
+        &self,
+        name: &str,
+        cfg: &ProviderConfig,
+    ) -> Result<Box<dyn base::Provider<Config = ProviderConfig>>, String> {
+        self.registry
+            .get(name)
+            .map(|x| x.construct(cfg))
+            .ok_or_else(|| format!("Unknown provider: {}", name))
+    }
+
+    pub(crate) fn get(&self, name: &str) -> Option<ProviderMetadata> {
+        self.registry.get(name).map(|x| x.describe())
+    }
+
+    pub(crate) fn list(&self) -> HashMap<&str, ProviderMetadata> {
+        self.registry
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.describe()))
+            .collect()
+    }
+}
+
+/*-- Factory Registration ----------------------------------------------------*/
+
+/// Global provider factory with all providers registered.
+pub static PROVIDER_FACTORY: LazyLock<CustomProviderFactory> = LazyLock::new(|| {
+    let mut factory = CustomProviderFactory::new();
+
+    // Register each provider by ID
+    for id in PROVIDER_CONFIGS.keys() {
+        factory.register(id.clone());
+    }
+
+    factory
+});
+
+/*-- Provider Loading --------------------------------------------------------*/
+
+fn load_bundled_providers() -> Vec<ProviderConfig> {
+    vec![
+        ProviderConfig {
+            id: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            description: "OpenAI API with GPT-4, GPT-3.5, and other models.".to_string(),
+            provider_type: ProviderType::Hosted,
+            default_endpoint: "https://api.openai.com".to_string(),
+            api_capabilities: vec![ApiSurface::OpenAIChat],
+            supported_formats: vec![ModelFormat::Safetensors],
+            supported_precisions: vec![Precision::BF16, Precision::FP16],
+            authentication: vec![AuthType::ApiKey],
+            tags: vec![
+                "openai".to_string(),
+                "gpt".to_string(),
+                "hosted".to_string(),
+            ],
+        },
+        ProviderConfig {
+            id: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            description: "Anthropic API with Claude models for safe and helpful AI.".to_string(),
+            provider_type: ProviderType::Hosted,
+            default_endpoint: "https://api.anthropic.com".to_string(),
+            api_capabilities: vec![ApiSurface::AnthropicMessages],
+            supported_formats: vec![ModelFormat::Safetensors],
+            supported_precisions: vec![Precision::BF16, Precision::FP16],
+            authentication: vec![AuthType::ApiKey],
+            tags: vec![
+                "anthropic".to_string(),
+                "claude".to_string(),
+                "hosted".to_string(),
+            ],
+        },
+        ProviderConfig {
+            id: "ollama".to_string(),
+            name: "Ollama".to_string(),
+            description: "Local model serving via Ollama. Supports many open-source models."
+                .to_string(),
+            provider_type: ProviderType::Local,
+            default_endpoint: "http://localhost:11434".to_string(),
+            api_capabilities: vec![ApiSurface::OllamaChat],
+            supported_formats: vec![ModelFormat::GGUF],
+            supported_precisions: vec![
+                Precision::Q8_0,
+                Precision::Q4_K_M,
+                Precision::Q5_K_M,
+                Precision::Q3_K_M,
+            ],
+            authentication: vec![AuthType::None],
+            tags: vec![
+                "ollama".to_string(),
+                "local".to_string(),
+                "gguf".to_string(),
+            ],
+        },
+        ProviderConfig {
+            id: "watsonx".to_string(),
+            name: "IBM watsonx.ai".to_string(),
+            description: "IBM's enterprise AI platform with Granite and other models.".to_string(),
+            provider_type: ProviderType::Hosted,
+            default_endpoint: "https://watsonx.ai".to_string(),
+            api_capabilities: vec![ApiSurface::OpenAIChat],
+            supported_formats: vec![ModelFormat::Safetensors],
+            supported_precisions: vec![Precision::BF16, Precision::FP16],
+            authentication: vec![AuthType::ApiKey],
+            tags: vec![
+                "ibm".to_string(),
+                "watsonx".to_string(),
+                "granite".to_string(),
+                "hosted".to_string(),
+            ],
+        },
+    ]
+}
+
+/*-- tests -------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_factory_loads_providers() {
+        let list = PROVIDER_FACTORY.list();
+        assert!(list.len() >= 4, "Should have at least 4 providers");
+    }
+
+    #[test]
+    fn test_provider_factory_get_metadata() {
+        let metadata = PROVIDER_FACTORY.get("openai");
+        assert!(metadata.is_some());
+
+        let meta = metadata.unwrap();
+        assert_eq!(meta.name, "OpenAI");
+        assert_eq!(meta.provider_type, ProviderType::Hosted);
+    }
+
+    #[test]
+    fn test_provider_factory_list_all() {
+        let list = PROVIDER_FACTORY.list();
+
+        assert!(list.contains_key("openai"));
+        assert!(list.contains_key("anthropic"));
+        assert!(list.contains_key("ollama"));
+        assert!(list.contains_key("watsonx"));
+    }
+
+    #[test]
+    fn test_provider_factory_construct() {
+        let config = PROVIDER_CONFIGS.get("ollama").unwrap();
+        let provider = PROVIDER_FACTORY.construct("ollama", config).unwrap();
+
+        assert_eq!(provider.id(), "ollama");
+        assert_eq!(provider.name(), "Ollama");
+    }
+}

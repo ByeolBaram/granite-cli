@@ -1,5 +1,5 @@
 use crate::registry::{self, Registry};
-use crate::registry::capabilities::Dependency;
+use crate::capabilities::base::Dependency;
 use crate::config::Config;
 use std::sync::Arc;
 use std::sync::RwLock;
