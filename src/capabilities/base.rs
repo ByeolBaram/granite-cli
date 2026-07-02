@@ -36,18 +36,6 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     }
 }
 
-/*-- Configuration Types -----------------------------------------------------*/
-
-/// Configuration for constructing a Capability instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityConfig {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub dependencies: Vec<Dependency>,
-    pub tags: Vec<String>,
-}
-
 /*-- Metadata Types ----------------------------------------------------------*/
 
 /// Metadata describing a capability implementation.
@@ -159,9 +147,4 @@ pub struct ToolConfig {
 
 use crate::define_factory;
 
-define_factory!(
-    Capability,
-    CapabilityConfig,
-    CapabilityMetadata,
-    CapabilityFactory
-);
+define_factory!( Capability, CapabilityMetadata, CapabilityFactory);

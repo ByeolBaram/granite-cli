@@ -3,17 +3,14 @@ use anyhow::Result;
 use dialoguer::{Confirm, Input};
 
 // Local
-use crate::registry::{self, AuthType, Registry as ProviderRegistryTrait};
-use crate::providers::{HealthStatus, ProviderMetadata};
+use crate::providers::{PROVIDER_REGISTRY, AuthType, HealthStatus};
 
 pub struct ProviderCommands;
 
 impl ProviderCommands {
     /// List all providers from the static registry, indicating which are configured.
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        // TODO: Use the real registry
-        let providers = Vec::<ProviderMetadata>::new();
-        // let providers = registry::PROVIDER_REGISTRY.list();
+        let providers = PROVIDER_REGISTRY.list();
 
         println!();
         println!("{:<20} {:<10} {:<35} {}", "ID", "TYPE", "ENDPOINT", "STATUS");
@@ -37,12 +34,11 @@ impl ProviderCommands {
 
         // Show configured providers not in the registry
         let mut extra_configured = Vec::<String>::new();
-        // TODO: Get configured providers from the registry
-        // for id in ctx.config.providers.keys() {
-        //     if ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, id).is_none() {
-        //         extra_configured.push(id.clone());
-        //     }
-        // }
+        for id in ctx.config.providers.keys() {
+            if PROVIDER_REGISTRY.get(id).is_none() {
+                extra_configured.push(id.clone());
+            }
+        }
         extra_configured.sort();
 
         if !extra_configured.is_empty() {
@@ -65,12 +61,12 @@ impl ProviderCommands {
 
      /// Interactive provider setup wizard.
     pub async fn setup(ctx: &mut crate::AppContext, provider_id: &str) -> Result<()> {
-        let provider_def = match ProviderRegistryTrait::get(&*registry::PROVIDER_REGISTRY, provider_id) {
+        let provider_def = match PROVIDER_REGISTRY.get(provider_id) {
             Some(def) => def,
             None => {
                 eprintln!("Error: Provider '{}' not found in registry.", provider_id);
                 println!("\nAvailable providers:");
-                for p in registry::PROVIDER_REGISTRY.list() {
+                for p in PROVIDER_REGISTRY.list() {
                     println!("  - {} ({})", p.id, p.name);
                 }
                 anyhow::bail!("Provider not found");
@@ -218,7 +214,7 @@ impl ProviderCommands {
         let api_key = provider_config.api_key.as_deref();
 
         // Create a temporary provider config for health check
-        let temp_config = crate::providers::base::ProviderConfig {
+        let temp_config = crate::providers::ProviderMetadata {
             id: provider_id.to_string(),
             name: "temp".to_string(),
             description: String::new(),
@@ -250,8 +246,9 @@ impl ProviderCommands {
             }
         };
 
-        let provider = crate::providers::PROVIDER_FACTORY
-            .construct(factory_id, &temp_config)
+        // TODO: This is probably wrong and at minimum inefficient!
+        let provider = crate::providers::PROVIDER_REGISTRY
+            .construct(factory_id, &serde_json::to_value(temp_config)?)
             .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
 
         let status = provider.health_check().await?;

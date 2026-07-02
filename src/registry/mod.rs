@@ -3,10 +3,9 @@
 /// Core trait that all factory-managed types must implement.
 /// Provides construction from a configuration object.
 pub trait ConfigConstructable {
-    type Config;
 
     /// Construct with a config instance
-    fn new(cfg: &Self::Config) -> Self
+    fn new(cfg: &serde_json::Value) -> Self
     where
         Self: Sized;
 }
@@ -32,12 +31,11 @@ pub trait ConfigConstructable {
 /// trait MyTrait: ConfigConstructable {
 ///     fn do_something(&self);
 /// }
-/// struct MyConfig { value: i32 }
+/// struct MyMetadata { value: i32 }
 ///
 /// define_factory!(
 ///     MyTrait,
-///     MyConfig,
-///     String,
+///     MyMetadata,
 ///     MyTraitFactory
 /// );
 ///
@@ -51,7 +49,7 @@ pub trait ConfigConstructable {
 /// ```
 #[macro_export]
 macro_rules! define_factory {
-    ($trait:ident, $config:ty, $metadata:ty, $factory:ident) => {
+    ($trait:ident, $metadata:ty, $factory:ident) => {
 
         /// Wrapper type that connects an implementation to its metadata.
         /// Uses PhantomData to maintain type information without storing instances.
@@ -68,7 +66,7 @@ macro_rules! define_factory {
                 fn describe(&self) -> $metadata;
 
                 /// Construct an instance with the given config
-                fn construct(&self, cfg: &$config) -> Box<dyn $trait<Config = $config>>;
+                fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait>;
             }
 
             /// Trait that implementations must provide to supply metadata.
@@ -82,13 +80,13 @@ macro_rules! define_factory {
             /// that implements the required traits.
             impl<T> [<$trait Metadata_>] for MetaOf<T>
             where
-                T: $trait<Config = $config> + [<Has $trait Metadata>] + Send + Sync + 'static,
+                T: $trait + [<Has $trait Metadata>] + Send + Sync + 'static,
             {
                 fn describe(&self) -> $metadata {
                     T::metadata()
                 }
 
-                fn construct(&self, cfg: &$config) -> Box<dyn $trait<Config = $config>> {
+                fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait> {
                     Box::new(T::new(cfg))
                 }
             }
@@ -124,7 +122,7 @@ macro_rules! define_factory {
                 /// * `name` - Static string identifier for this implementation
                 pub(crate) fn register<T>(&mut self, name: &'static str)
                 where
-                    T: $trait<Config = $config> + [<Has $trait Metadata>] + Send + Sync + 'static,
+                    T: $trait + [<Has $trait Metadata>] + Send + Sync + 'static,
                 {
                     self.registry.insert(name, Box::new(MetaOf::<T>::new()));
                 }
@@ -143,8 +141,8 @@ macro_rules! define_factory {
                 pub(crate) fn construct(
                     &self,
                     name: &str,
-                    cfg: &$config,
-                ) -> Result<Box<dyn $trait<Config = $config>>, String> {
+                    cfg: &serde_json::Value,
+                ) -> Result<Box<dyn $trait>, String> {
                     self.registry
                         .get(name)
                         .map(|x| x.construct(cfg))
@@ -170,10 +168,10 @@ macro_rules! define_factory {
                 /// # Returns
                 ///
                 /// HashMap mapping names to metadata for all registered implementations
-                pub(crate) fn list(&self) -> std::collections::HashMap<&str, $metadata> {
+                pub(crate) fn list(&self) -> Vec<$metadata> {
                     self.registry
-                        .iter()
-                        .map(|(k, v)| (*k, v.describe()))
+                        .values()
+                        .map(|v| v.describe())
                         .collect()
                 }
             }
@@ -186,161 +184,6 @@ macro_rules! define_factory {
         }
     };
 }
-
-/*-- Temporary re-exports for backward compatibility -------------------------*/
-// These will be removed as we migrate each module to the new factory pattern
-
-// Re-export types from the new factory-based modules
-pub use crate::models::{ModelDefinition, ModelType, ModelVariant};
-pub use crate::providers::{ProviderDefinition, ProviderType, AuthType};
-pub use crate::capabilities::base::Dependency as CapabilityDependency;
-
-// Re-export CapabilityMetadata as CapabilityDefinition for backward compatibility
-pub use crate::capabilities::base::CapabilityMetadata as CapabilityDefinition;
-
-use std::sync::LazyLock;
-
-/*-- Backward Compatibility Trait -------------------------------------------*/
-
-pub trait Registry<T> {
-    fn list(&self) -> Vec<&T>;
-    fn get(&self, id: &str) -> Option<&T>;
-    fn search(&self, query: &str) -> Vec<&T>;
-}
-
-/*-- Backward Compatibility Wrappers ----------------------------------------*/
-
-// Backward compatibility wrapper for ModelRegistry
-pub struct ModelRegistry {
-    cache: std::collections::HashMap<String, ModelDefinition>,
-}
-
-impl ModelRegistry {
-    pub fn new() -> Self {
-        let cache = crate::models::MODEL_FACTORY
-            .list()
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-
-        Self { cache }
-    }
-}
-
-impl Registry<ModelDefinition> for ModelRegistry {
-    fn list(&self) -> Vec<&ModelDefinition> {
-        self.cache.values().collect()
-    }
-
-    fn get(&self, id: &str) -> Option<&ModelDefinition> {
-        self.cache.get(id)
-    }
-
-    fn search(&self, query: &str) -> Vec<&ModelDefinition> {
-        let query_lower = query.to_lowercase();
-        self.cache
-            .values()
-            .filter(|m| {
-                m.id.to_lowercase().contains(&query_lower)
-                    || m.family.to_lowercase().contains(&query_lower)
-                    || m.description
-                        .as_ref()
-                        .map(|d| d.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
-                    || m.tags
-                        .iter()
-                        .any(|t| t.to_lowercase().contains(&query_lower))
-            })
-            .collect()
-    }
-}
-
-// Backward compatibility wrapper for ProviderRegistry
-pub struct ProviderRegistry {
-    cache: std::collections::HashMap<String, ProviderDefinition>,
-}
-
-impl ProviderRegistry {
-    pub fn new() -> Self {
-        let cache = crate::providers::PROVIDER_FACTORY
-            .list()
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-
-        Self { cache }
-    }
-}
-
-impl Registry<ProviderDefinition> for ProviderRegistry {
-    fn list(&self) -> Vec<&ProviderDefinition> {
-        self.cache.values().collect()
-    }
-
-    fn get(&self, id: &str) -> Option<&ProviderDefinition> {
-        self.cache.get(id)
-    }
-
-    fn search(&self, query: &str) -> Vec<&ProviderDefinition> {
-        let query_lower = query.to_lowercase();
-        self.cache
-            .values()
-            .filter(|p| {
-                p.id.to_lowercase().contains(&query_lower)
-                    || p.name.to_lowercase().contains(&query_lower)
-                    || p.description.to_lowercase().contains(&query_lower)
-                    || p.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
-            })
-            .collect()
-    }
-}
-
-// Backward compatibility wrapper for CapabilityRegistry
-pub struct CapabilityRegistry {
-    cache: std::collections::HashMap<String, CapabilityDefinition>,
-}
-
-impl CapabilityRegistry {
-    pub fn new() -> Self {
-        let cache = crate::capabilities::CAPABILITY_FACTORY
-            .list()
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-
-        Self { cache }
-    }
-}
-
-impl Registry<CapabilityDefinition> for CapabilityRegistry {
-    fn list(&self) -> Vec<&CapabilityDefinition> {
-        self.cache.values().collect()
-    }
-
-    fn get(&self, id: &str) -> Option<&CapabilityDefinition> {
-        self.cache.get(id)
-    }
-
-    fn search(&self, query: &str) -> Vec<&CapabilityDefinition> {
-        let query_lower = query.to_lowercase();
-        self.cache
-            .values()
-            .filter(|c| {
-                c.id.to_lowercase().contains(&query_lower)
-                    || c.name.to_lowercase().contains(&query_lower)
-                    || c.description.to_lowercase().contains(&query_lower)
-                    || c.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
-            })
-            .collect()
-    }
-}
-
-/*-- Global Registry Instances -----------------------------------------------*/
-
-pub static MODEL_REGISTRY: LazyLock<ModelRegistry> = LazyLock::new(ModelRegistry::new);
-pub static CAPABILITY_REGISTRY: LazyLock<CapabilityRegistry> =
-    LazyLock::new(CapabilityRegistry::new);
-pub static PROVIDER_REGISTRY: LazyLock<ProviderRegistry> = LazyLock::new(ProviderRegistry::new);
 
 /*-- tests -------------------------------------------------------------------*/
 

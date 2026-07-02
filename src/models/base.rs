@@ -42,25 +42,6 @@ pub trait Model: ConfigConstructable {
     fn tags(&self) -> &[String];
 }
 
-/*-- Configuration Types -----------------------------------------------------*/
-
-/// Configuration for constructing a Model instance.
-/// This is loaded from resources/models.yaml.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelConfig {
-    pub id: String,
-    pub family: String,
-    pub version: String,
-    pub size: u64,
-    pub context_length: u64,
-    pub model_type: ModelType,
-    pub huggingface_repo: String,
-    pub required_provider_capabilities: Vec<String>,
-    pub variants: Vec<ModelVariant>,
-    pub description: Option<String>,
-    pub tags: Vec<String>,
-}
-
 /*-- Metadata Types ----------------------------------------------------------*/
 
 /// Metadata describing a model implementation.
@@ -127,9 +108,4 @@ pub struct ModelVariant {
 
 use crate::define_factory;
 
-define_factory!(
-    Model,
-    ModelConfig,
-    ModelMetadata,
-    ModelFactory
-);
+define_factory!(Model, ModelMetadata, ModelFactory);

@@ -4,10 +4,13 @@ pub mod models;
 pub mod capabilities;
 pub mod commands;
 pub mod utils;
-pub mod di;
+// TODO: Re-enable once rewritten -- pub mod di;
 pub mod providers;
 
+// Third Party
 use clap::{Parser, Subcommand};
+
+// Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
 
 #[macro_use]
@@ -50,12 +53,6 @@ enum Commands {
         /// Additional arguments to pass to the tool
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
-    },
-
-    /// REPL chatbot for interacting with models
-    Run {
-        /// Optional model ID
-        model_id: Option<String>,
     },
 }
 
@@ -174,13 +171,6 @@ async fn main() {
             println!("Tool launching will be available in Phase 3.");
             Ok(())
         }
-        Some(Commands::Run { model_id }) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
-                eprintln!("Failed to load config: {}", e);
-                std::process::exit(1);
-            });
-            commands::run::RunChatbot::run(&mut ctx, model_id).await
-        }
         None => {
             println!("granite-cli - Universal Model Adapter with Capabilities");
             println!();
@@ -192,7 +182,6 @@ async fn main() {
             println!("  provider     Provider management (list, setup, health)");
             println!("  configure    Configure tools (Phase 3)");
             println!("  launch       Launch tool with overlay (Phase 3)");
-            println!("  run          REPL chatbot");
             println!();
             println!("Try 'granite-cli model list' to get started.");
             Ok(())
@@ -210,10 +199,10 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
         // TODO: Determine the valid types from the model registry
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
-                Some("text") => Some(registry::ModelType::Text),
-                Some("vision") => Some(registry::ModelType::Vision),
-                Some("speech") => Some(registry::ModelType::Speech),
-                Some("embedding") => Some(registry::ModelType::Embedding),
+                Some("text") => Some(models::ModelType::Text),
+                Some("vision") => Some(models::ModelType::Vision),
+                Some("speech") => Some(models::ModelType::Speech),
+                Some("embedding") => Some(models::ModelType::Embedding),
                 Some(t) => {
                     anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
                 }
