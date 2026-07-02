@@ -7,23 +7,19 @@ edition = "2024"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1"
 anyhow = "1"
+paste = "1.0.15"
 dialoguer = "0.11"
 dirs = "5"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
-chrono = { version = "0.4", features = ["serde"] }
-indexmap = "2"
 regex = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
-serde_json = "1"
 num_cpus = "1"
 sys-info = "0.9"
 html2md = "0.2"
-futures = "0.3"
 thiserror = "2"
-inventory = "0.3"
-paste = "1.0.15"
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
