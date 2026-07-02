@@ -94,6 +94,18 @@ impl std::fmt::Display for ModelType {
     }
 }
 
+impl From<&str> for ModelType {
+    fn from(s: &str) -> Self {
+        match s {
+            "Text" => ModelType::Text,
+            "Vision" => ModelType::Vision,
+            "Speech" => ModelType::Speech,
+            "Embedding" => ModelType::Embedding,
+            _ => panic!("Unknown model type: {}", s),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelVariant {
     pub format: String,

@@ -191,24 +191,16 @@ macro_rules! define_factory {
 mod tests {
     use super::*;
 
+    // Hoist paste macro for use in the macro-expanded traits
+    extern crate paste;
+
     // Test trait and types
     trait TestTrait: ConfigConstructable {
         fn get_value(&self) -> i32;
     }
 
-    struct TestConfig {
-        value: i32,
-    }
-
-    // Define factory for test trait
-    define_factory!(
-        TestTrait,
-        TestConfig,
-        TestTraitMetadata,
-        String,
-        HasTestTraitMetadata,
-        TestTraitFactory
-    );
+    // Define factory for test trait (3 params: trait, metadata type, factory name)
+    define_factory!(TestTrait, String, TestTraitFactory);
 
     // Test implementation 1
     struct TestImpl1 {
@@ -216,10 +208,9 @@ mod tests {
     }
 
     impl ConfigConstructable for TestImpl1 {
-        type Config = TestConfig;
-
-        fn new(cfg: &Self::Config) -> Self {
-            Self { value: cfg.value }
+        fn new(cfg: &serde_json::Value) -> Self {
+            let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            Self { value }
         }
     }
 
@@ -241,12 +232,9 @@ mod tests {
     }
 
     impl ConfigConstructable for TestImpl2 {
-        type Config = TestConfig;
-
-        fn new(cfg: &Self::Config) -> Self {
-            Self {
-                value: cfg.value * 2,
-            }
+        fn new(cfg: &serde_json::Value) -> Self {
+            let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            Self { value: value * 2 }
         }
     }
 
@@ -292,7 +280,7 @@ mod tests {
         factory.register::<TestImpl1>("impl1");
         factory.register::<TestImpl2>("impl2");
 
-        let cfg = TestConfig { value: 42 };
+        let cfg = serde_json::json!({ "value": 42 });
 
         let inst1 = factory.construct("impl1", &cfg).unwrap();
         assert_eq!(inst1.get_value(), 42);
@@ -304,7 +292,7 @@ mod tests {
     #[test]
     fn test_factory_construct_unknown() {
         let factory = TestTraitFactory::new();
-        let cfg = TestConfig { value: 42 };
+        let cfg = serde_json::json!({ "value": 42 });
 
         let result = factory.construct("unknown", &cfg);
         assert!(result.is_err());
@@ -319,8 +307,9 @@ mod tests {
 
         let list = factory.list();
         assert_eq!(list.len(), 2);
-        assert!(list.contains_key("impl1"));
-        assert!(list.contains_key("impl2"));
+        let metadata_strs: Vec<String> = list.into_iter().map(|m| m.clone()).collect();
+        assert!(metadata_strs.iter().any(|s| s.contains("TestImpl1")));
+        assert!(metadata_strs.iter().any(|s| s.contains("TestImpl2")));
     }
 
     #[test]
