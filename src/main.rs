@@ -9,6 +9,9 @@ pub mod providers;
 use clap::{Parser, Subcommand};
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
 
+#[macro_use]
+extern crate paste;
+
 #[derive(Parser, Debug)]
 #[command(name = "granite-cli")]
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
