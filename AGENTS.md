@@ -1,0 +1,9 @@
+## Project Practices
+
+- Avoid adding new dependencies if an existing dependency or standard library could serve the same function
+- Use the minimal visibility scoping for every function (only `pub` if necessary, crate-pub unless full pub necessary)
+- When laying out a source file, organize it as follows:
+    1. `use` directives
+    2. Public functions/structs/enums/etc (mark with `/*-- public --*/` to begin section)
+    3. Private functions/structs/enums/etc (mark with `/*-- private --*/` to begin seciton)
+    4. Tests (mark with `/*-- tests --*/` to begin seciton)

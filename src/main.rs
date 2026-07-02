@@ -1,15 +1,24 @@
 pub mod config;
 pub mod registry;
+pub mod models;
 pub mod capabilities;
 pub mod commands;
 pub mod utils;
+// TODO: Re-enable once rewritten -- pub mod di;
+pub mod providers;
 
+// Third Party
 use clap::{Parser, Subcommand};
-use commands::{ModelCommands, CapabilityCommands};
+
+// Local
+use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
+
+// Hoist paste macro for use in our own macros
+extern crate paste;
 
 #[derive(Parser, Debug)]
 #[command(name = "granite-cli")]
-#[command(about = "Offload work to Granite models, harden skills, launch agents", long_about = None)]
+#[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -25,7 +34,7 @@ enum Commands {
     #[command(subcommand)]
     Capability(CapabilitySubcommands),
 
-    /// Provider management (Phase 2)
+    /// Provider management commands
     #[command(subcommand)]
     Provider(ProviderSubcommands),
 
@@ -44,16 +53,6 @@ enum Commands {
         /// Additional arguments to pass to the tool
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
-    },
-
-    /// REPL chatbot (Phase 2)
-    Run {
-        /// Optional model ID
-        model_id: Option<String>,
-
-        /// Launch TUI mode
-        #[arg(short, long)]
-        tui: bool,
     },
 }
 
@@ -160,30 +159,31 @@ async fn main() {
             });
             run_capability_command(&mut ctx, subcmd).await
         }
-        Some(Commands::Provider(_)) => {
-            println!("Provider management will be available in Phase 2.");
-            Ok(())
+        Some(Commands::Provider(subcmd)) => {
+            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_provider_command(&mut ctx, subcmd).await
         }
         Some(Commands::Configure(args)) => run_configure(args).await,
         Some(Commands::Launch { .. }) => {
             println!("Tool launching will be available in Phase 3.");
             Ok(())
         }
-        Some(Commands::Run { .. }) => {
-            println!("Chatbot will be available in Phase 2.");
-            Ok(())
-        }
         None => {
             println!("granite-cli - Universal Model Adapter with Capabilities");
-            println!("\nUsage: granite-cli <command> [subcommand] [options]");
-            println!("\nAvailable commands:");
+            println!();
+            println!("Usage: granite-cli <command> [subcommand] [options]");
+            println!();
+            println!("Available commands:");
             println!("  model        Model management (list, info, setup)");
             println!("  capability   Capability management (list, info, setup)");
-            println!("  provider     Provider management (Phase 2)");
-            println!("  configure    Configure tools (Phase 2-3)");
+            println!("  provider     Provider management (list, setup, health)");
+            println!("  configure    Configure tools (Phase 3)");
             println!("  launch       Launch tool with overlay (Phase 3)");
-            println!("  run          REPL chatbot (Phase 2)");
-            println!("\nTry 'granite-cli model list' to get started.");
+            println!();
+            println!("Try 'granite-cli model list' to get started.");
             Ok(())
         }
     };
@@ -196,12 +196,13 @@ async fn main() {
 
 async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
+        // TODO: Determine the valid types from the model registry
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
-                Some("text") => Some(registry::ModelType::Text),
-                Some("vision") => Some(registry::ModelType::Vision),
-                Some("speech") => Some(registry::ModelType::Speech),
-                Some("embedding") => Some(registry::ModelType::Embedding),
+                Some("text") => Some(models::ModelType::Text),
+                Some("vision") => Some(models::ModelType::Vision),
+                Some("speech") => Some(models::ModelType::Speech),
+                Some("embedding") => Some(models::ModelType::Embedding),
                 Some(t) => {
                     anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
                 }
@@ -218,7 +219,15 @@ async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcomma
     match subcmd {
         CapabilitySubcommands::List => CapabilityCommands::list(ctx),
         CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
-        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id),
+        CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
+    }
+}
+
+async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
+    match subcmd {
+        ProviderSubcommands::List => ProviderCommands::list(ctx),
+        ProviderSubcommands::Setup { provider_id } => ProviderCommands::setup(ctx, &provider_id).await,
+        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
     }
 }
 

@@ -1,13 +1,15 @@
-use crate::registry::{self, Registry, ModelType};
+// Third Party
 use anyhow::Result;
 use dialoguer::{Confirm, Input};
+
+// Local
+use crate::models::{MODEL_REGISTRY, ModelType};
 
 pub struct ModelCommands;
 
 impl ModelCommands {
     pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
-        let registry = &*registry::MODEL_REGISTRY;
-        let models = registry.list();
+        let models = MODEL_REGISTRY.list();
 
         let filtered: Vec<_> = match filter_type {
             Some(ref t) => models.into_iter().filter(|m| m.model_type == *t).collect(),
@@ -43,7 +45,7 @@ impl ModelCommands {
         // Show configured models not in the registry
         let mut extra_configured = Vec::new();
         for id in ctx.config.models.keys() {
-            if registry.get(id).is_none() {
+            if MODEL_REGISTRY.get(id).is_none() {
                 extra_configured.push(id.clone());
             }
         }
@@ -68,9 +70,7 @@ impl ModelCommands {
     }
 
     pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
-        let registry = &*registry::MODEL_REGISTRY;
-
-        match registry.get(model_id) {
+        match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 println!();
                 println!("Model: {}", model.id);
@@ -120,7 +120,7 @@ impl ModelCommands {
             None => {
                 eprintln!("Error: Model '{}' not found in registry.", model_id);
                 println!("\nAvailable models:");
-                for model in registry.list() {
+                for model in MODEL_REGISTRY.list() {
                     println!("  - {}", model.id);
                 }
                 anyhow::bail!("Model not found");
@@ -129,9 +129,7 @@ impl ModelCommands {
     }
 
     pub fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
-        let registry = &*registry::MODEL_REGISTRY;
-
-        match registry.get(model_id) {
+        match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 println!("\nSetting up model: {}", model.id);
                 println!("{}", model.description.as_deref().unwrap_or("No description available."));
@@ -183,14 +181,17 @@ impl ModelCommands {
                 ctx.config.insert_model(model_id, model_config);
 
                 println!("\nModel '{}' configured successfully!", model.id);
-                println!("Note: Provider selection will be completed in the next phase.");
+                println!("Configure a provider to complete setup:");
+                println!("  granite-cli provider setup <provider-id>");
+                println!("Then set the provider_id in models.yaml, or run:");
+                println!("  granite-cli configure <tool-id>");
 
                 Ok(())
             }
             None => {
                 eprintln!("Error: Model '{}' not found in registry.", model_id);
                 println!("\nAvailable models:");
-                for model in registry.list() {
+                for model in MODEL_REGISTRY.list() {
                     println!("  - {}", model.id);
                 }
                 anyhow::bail!("Model not found");

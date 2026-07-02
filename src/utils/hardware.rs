@@ -44,6 +44,10 @@ impl HardwareProfile {
     }
 }
 
+pub fn detect_hardware() -> HardwareProfile {
+    HardwareProfile::detect()
+}
+
 fn total_memory_bytes() -> u64 {
     sys_info::mem_info()
         .map(|info| info.total * 1024)
