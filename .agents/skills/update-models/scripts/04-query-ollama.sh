@@ -48,12 +48,24 @@ map_to_ollama() {
         )
     fi
 
+    # Map to tag conventions
+    local ollama_tag="latest"
+    if [[ "$name" =~ .*-h-([0-9]+[bm]).* ]]; then
+        ollama_tag="${BASH_REMATCH[1]}-h"
+    elif [[ "$name" =~ .*-([0-9]+[bm]).* ]]; then
+        ollama_tag="${BASH_REMATCH[1]}"
+    elif [[ "$name" =~ .*-h-([a-z]+) ]]; then
+        ollama_tag="${BASH_REMATCH[1]}-h"
+    elif [[ "$name" =~ .*[0-9]-([a-z]+) ]]; then
+        ollama_tag="${BASH_REMATCH[1]}"
+    fi
+
     # First look in un-scoped (library)
     echo "["
     first=true
     for ollama_name in ${ollama_names[@]}; do
         # Check if model exists on Ollama
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/library/${ollama_name}")
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/library/${ollama_name}:$ollama_tag")
 
         if [ "$http_code" = "404" ]; then
             continue
@@ -67,7 +79,7 @@ map_to_ollama() {
 
             jq -n \
                 --arg name "$ollama_name" \
-                --arg url "https://ollama.com/library/${ollama_name}" \
+                --arg url "https://ollama.com/library/${ollama_name}:$ollama_tag" \
                 '{name: $name, url: $url, available: true}'
         fi
     done
@@ -76,7 +88,7 @@ map_to_ollama() {
     if [ "$first" = true ]; then
         for ollama_name in ${ollama_names[@]}; do
             # Check if model exists on Ollama
-            http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/ibm/${ollama_name}")
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
 
             if [ "$http_code" = "404" ]; then
                 continue
@@ -90,7 +102,7 @@ map_to_ollama() {
 
                 jq -n \
                     --arg name "$ollama_name" \
-                    --arg url "https://ollama.com/ibm/${ollama_name}" \
+                    --arg url "https://ollama.com/ibm/${ollama_name}:$ollama_tag" \
                     '{name: $name, url: $url, available: true}'
             fi
         done
