@@ -43,6 +43,7 @@ generate_model_entry() {
     if [ "$description" == "" ]; then
         description=$("${UTILS_DIR}/format-description.sh" "$id" "$family" "$version" "$model_type")
     fi
+    description="$(echo "$description" | sed 's,^,    ,g')" # Indent 4 spaces for multiline yaml
 
     # Suggest tags
     local tags=$(echo "$model" | "${UTILS_DIR}/suggest-tags.sh")
@@ -64,7 +65,8 @@ EOF
 EOF
     echo "$variants" | jq -r '.[] | "    - format: \(.format)\n      precision: \(.precision)\n      size_gb: \(.size_gb)\n      huggingface_path: \"\(.huggingface_path)\""'
     cat <<EOF
-  description: "${description}"
+  description: |
+${description}
   tags:
 EOF
     echo "$tags" | jq -r '.[] | "    - \(.)"'
