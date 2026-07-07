@@ -45,20 +45,15 @@ fetch_model_metadata() {
     local context_length=8192
     local model_type="Text"
 
-    # Try to get size from config
     if [ "$config" != "{}" ]; then
-        # Calculate approximate parameter count from architecture
-        hidden_size=$(echo "$config" | jq -r '.hidden_size // 0')
-        num_layers=$(echo "$config" | jq -r '.num_hidden_layers // 0')
-        vocab_size=$(echo "$config" | jq -r '.vocab_size // 0')
-
-        if [ "$hidden_size" -gt 0 ] && [ "$num_layers" -gt 0 ]; then
-            # Rough estimate: embedding + attention + FFN parameters
-            size=$(echo "$vocab_size * $hidden_size + $num_layers * 12 * $hidden_size * $hidden_size" | bc)
-        fi
-
-        # Get context length
         context_length=$(echo "$config" | jq -r '.max_position_embeddings // .n_positions // 8192')
+    fi
+
+    # Get the model metadata to fetch the size
+    md_url="https://huggingface.co/api/models/${repo}"
+    md_size=$($SCRIPT_DIR/utils/hf-curl.sh "$md_url" | jq .safetensors.total)
+    if [ "$md_size" != "null" ]; then
+        size=$md_size
     fi
 
     # Infer model type from family
