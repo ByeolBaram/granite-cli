@@ -24,7 +24,7 @@ fi
 
 generate_model_entry() {
     local model="$1"
-    
+
     # Extract fields
     local repo=$(echo "$model" | jq -r '.repo')
     local id=$(basename "$repo")
@@ -34,16 +34,19 @@ generate_model_entry() {
     local context_length=$(echo "$model" | jq -r '.context_length')
     local model_type=$(echo "$model" | jq -r '.model_type')
     local variants=$(echo "$model" | jq -c '.variants')
-    
+
     # Infer capabilities
     local capabilities=$(echo "$model" | "${UTILS_DIR}/infer-capabilities.sh")
-    
+
     # Generate description
-    local description=$("${UTILS_DIR}/format-description.sh" "$id" "$family" "$version" "$model_type")
-    
+    local description=$(echo "$model" | jq -r .description || echo "")
+    if [ "$description" == "" ]; then
+        description=$("${UTILS_DIR}/format-description.sh" "$id" "$family" "$version" "$model_type")
+    fi
+
     # Suggest tags
     local tags=$(echo "$model" | "${UTILS_DIR}/suggest-tags.sh")
-    
+
     # Generate YAML entry
     cat <<EOF
 - id: ${id}
