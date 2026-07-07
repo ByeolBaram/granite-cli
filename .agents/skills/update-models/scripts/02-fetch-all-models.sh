@@ -36,6 +36,9 @@ fetch_model_metadata() {
     if [ "$version" == "" ]; then
         if [[ "$repo" =~ [a-z\-]+-([0-9\.]+)-.* ]]; then
             version="${BASH_REMATCH[1]}"
+        # Handle embedding model versioning
+        elif [[ "$repo" =~ .*-(r[0-9\.]+).* ]]; then
+            version="${BASH_REMATCH[1]}"
         fi
     fi
 
