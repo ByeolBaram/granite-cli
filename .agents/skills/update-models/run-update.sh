@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="${SCRIPT_DIR}/data"
 SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
+ROOT_DIR=$(cd $SCRIPT_DIR/../../.. && pwd)
 
 # Configuration
 DRY_RUN=false
@@ -71,12 +72,9 @@ log "Validating generated YAML..."
 "${SCRIPTS_DIR}/06-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
 
 if [ "$DRY_RUN" = true ]; then
-    log "Dry run complete. Generated file: ${DATA_DIR}/models-new.yaml"
+    log "Dry run complete. Generated file: ${ROOT_DIR}/${DATA_DIR}/models-new.yaml"
     log "Review the file and run without --dry-run to apply changes"
 else
     log "Update complete!"
-    log "Next steps:"
-    log "  1. Review: diff resources/models.yaml ${DATA_DIR}/models-new.yaml"
-    log "  2. Check flagged entries: grep 'NEEDS REVIEW' ${DATA_DIR}/models-new.yaml"
-    log "  3. Apply: cp ${DATA_DIR}/models-new.yaml resources/models.yaml"
+    cp ${DATA_DIR}/models-new.yaml ${ROOT_DIR}/resources/models.yaml
 fi
