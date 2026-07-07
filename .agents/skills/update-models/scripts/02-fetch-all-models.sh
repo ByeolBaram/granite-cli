@@ -44,6 +44,7 @@ fetch_model_metadata() {
     local size=0
     local context_length=8192
     local model_type="Text"
+    local description=""
 
     if [ "$config" != "{}" ]; then
         context_length=$(echo "$config" | jq -r '.max_position_embeddings // .n_positions // 8192')
@@ -55,6 +56,11 @@ fetch_model_metadata() {
     if [ "$md_size" != "null" ]; then
         size=$md_size
     fi
+
+    # Get the model description from the README if available
+    readme_url="https://huggingface.co/$repo/raw/main/README.md"
+    readme=$($SCRIPT_DIR/utils/hf-curl.sh $readme_url)
+    description=$(echo -e "$readme" | awk '/\*\*Model Summary:\*\*/ {found=1; next} found && /^$/ {exit} found {print}')
 
     # Infer model type from family
     if [[ "$family" == *"Vision"* ]] || [[ "$family" == *"Docling"* ]]; then
@@ -73,6 +79,7 @@ fetch_model_metadata() {
         --argjson size "$size" \
         --argjson context_length "$context_length" \
         --arg model_type "$model_type" \
+        --arg description "$description" \
         --argjson config "$config" \
         '{
             repo: $repo,
@@ -81,6 +88,7 @@ fetch_model_metadata() {
             size: $size,
             context_length: $context_length,
             model_type: $model_type,
+            description: $description,
             config: $config
         }'
 
