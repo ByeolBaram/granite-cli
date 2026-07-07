@@ -24,8 +24,22 @@ if ! command -v jq &> /dev/null; then
 fi
 
 find_variants() {
-    local base_repo="$1"
+    local model_info="$1"
+    local base_repo=$(echo "$model_info" | jq -r .repo)
     local base_name=$(basename "$base_repo")
+    local bytes_to_gb="$((1000**3))" # HF uses GB, not GiB
+    local safetensors_dtype=$(echo "$model_info" | jq -r .config.torch_dtype || echo "bfloat16") # Assume BF16 by default
+    multiplier=1
+    if [[ "$safetensors_dtype" == *"16"* ]]; then
+        multiplier="2"
+    elif [[ "$safetensors_dtype" == *"32"* ]]; then
+        multiplier="4"
+    elif [[ "$safetensors_dtype" == *"64"* ]]; then
+        multiplier="8"
+    elif [[ "$safetensors_dtype" == *"4"* ]]; then
+        multiplier="0.5"
+    fi
+    local safetensors_size_gb=$(echo "$model_info" | jq -r "((.size // 0) / $bytes_to_gb * $multiplier * 1000 | round/1000)")
 
     # Look for GGUF repo
     local gguf_repo="${base_repo}-GGUF"
@@ -42,10 +56,10 @@ find_variants() {
 
         # Process each GGUF file
         if [ "$gguf_files" != "[]" ]; then
-            variants=$(echo "$gguf_files" | jq -c '[.[] | {
+            variants=$(echo "$gguf_files" | jq -c --argjson bytes_to_gb "$bytes_to_gb" '[.[] | {
                 format: "GGUF",
                 precision: (.path | split("-") | last | split(".") | first | ascii_upcase),
-                size_gb: ((.size // 0) / 1073741824 | floor * 10 / 10),
+                size_gb: ((.size // 0) / $bytes_to_gb *1000 | round/1000),
                 huggingface_path: "'"${gguf_repo}"'/blob/main/\(.path)"
             }]')
         fi
@@ -54,10 +68,12 @@ find_variants() {
     # Add base model as safetensors variant
     base_variant=$(jq -n \
         --arg repo "$base_repo" \
+        --arg safetensors_dtype "$safetensors_dtype" \
+        --argjson safetensors_size_gb "$safetensors_size_gb" \
         '[{
             format: "safetensors",
-            precision: "BF16",
-            size_gb: 0,
+            precision: $safetensors_dtype,
+            size_gb: $safetensors_size_gb,
             huggingface_path: $repo
         }]')
 
@@ -71,7 +87,7 @@ jq -c '.[]' "$MODELS_FILE" | while read -r model; do
 
     echo "Finding variants for: $repo" >&2
 
-    variants=$(find_variants "$repo")
+    variants=$(find_variants "$model")
 
     # Add variants to model
     echo "$model" | jq --argjson variants "$variants" '. + {variants: $variants}'
