@@ -6,13 +6,7 @@ set -euo pipefail
 # Output: JSON array of collection objects
 
 HF_API="https://huggingface.co/api/collections?owner=ibm-granite&limit=100"
-
-# Check for JSON tool
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if ! source "${SCRIPT_DIR}/utils/json-tool.sh" 2>/dev/null; then
-    echo "Error: json-tool.sh not found" >&2
-    exit 1
-fi
 
 # Excluded collection patterns
 EXCLUDED_PATTERNS=(
