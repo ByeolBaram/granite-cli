@@ -32,6 +32,13 @@ fetch_model_metadata() {
     local family="$2"
     local version="$3"
 
+    # If version is not set from the collection, parse from the model name
+    if [ "$version" == "" ]; then
+        if [[ "$repo" =~ [a-z\-]+-([0-9\.]+)-.* ]]; then
+            version="${BASH_REMATCH[1]}"
+        fi
+    fi
+
     # Fetch config.json if available
     config_url="https://huggingface.co/${repo}/raw/main/config.json"
     config=$($SCRIPT_DIR/utils/hf-curl.sh "$config_url")
