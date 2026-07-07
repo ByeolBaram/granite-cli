@@ -151,11 +151,10 @@ If you encounter rate limits there are two things to try:
 
 | Script | Purpose |
 |--------|---------|
-| `parse-model-name.sh` | Extract family/version/size from name |
 | `infer-capabilities.sh` | Determine provider capabilities |
-| `calculate-size.sh` | Estimate model size from config |
 | `format-description.sh` | Generate description template |
 | `suggest-tags.sh` | Suggest tags based on model type |
+| `hf-curl.sh` | Run a curl call against huggingface with HF_TOKEN if available |
 
 ## Best Practices
 
