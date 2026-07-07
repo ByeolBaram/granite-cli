@@ -57,7 +57,7 @@ fetch_model_metadata() {
     fi
 
     # Infer model type from family
-    if [[ "$family" == *"Vision"* ]]; then
+    if [[ "$family" == *"Vision"* ]] || [[ "$family" == *"Docling"* ]]; then
         model_type="Vision"
     elif [[ "$family" == *"Speech"* ]]; then
         model_type="Speech"
