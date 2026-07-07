@@ -70,7 +70,7 @@ fetch_model_metadata() {
     # Get the model description from the README if available
     readme_url="https://huggingface.co/$repo/raw/main/README.md"
     readme=$($SCRIPT_DIR/utils/hf-curl.sh $readme_url)
-    description=$(echo -e "$readme" | awk '/\*\*Model Summary:\*\*/ {found=1; next} found && /^$/ {exit} found {print}')
+    description=$(echo -e "$readme" | awk '/\*\*Model Summary:\*\*/ {found=1; sub(/.*\*\*Model Summary:\*\*[[:space:]]*/, ""); if ($0 != "") {seen=1; print}; next} /## Model Summary/ {found=1; next} found && seen && /^$/ {exit} found && /^$/ {next} found && NF > 0 {seen=1; print}')
 
     # Infer model type from family
     if [[ "$family" == *"Vision"* ]] || [[ "$family" == *"Docling"* ]]; then
