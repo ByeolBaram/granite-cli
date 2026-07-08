@@ -26,15 +26,15 @@ get_ollama_info() {
 
     # Fetch the html for this listing and parse out size and precision
     model_page=$(curl -s "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
-    size_gb=$(echo "$model_page" | grep "Updated.*ago" -A 15 | grep --color=never -o "[0-9\.]*GB" | cut -d'G' -f1)
-    precision=$(echo "$model_page" | grep "quantization" | sed 's/<[^>]*>//g' | sed 's/ *quantization//')
+    size_gb=$(echo "$model_page" | grep -oE "[0-9]+\.?[0-9]*GB" | head -1 | sed 's/GB//i' || echo "")
+    precision=$(echo "$model_page" | grep "quantization" | head -1 | sed 's/<[^>]*>//g' | sed 's/.*quantization//i' | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
     jq -n \
         --arg name "$ollama_name" \
         --arg url "https://ollama.com/ibm/${ollama_name}:$ollama_tag" \
-        --argjson size_gb "$size_gb" \
-        --arg precision "$precision" \
-        '{name: $name, url: $url, size_gb: $size_gb, precision: $precision}'
+        --arg size_gb "${size_gb:-null}" \
+        --arg precision "${precision:-null}" \
+        '{name: $name, url: $url, size_gb: (if $size_gb == "null" then null else ($size_gb | tonumber) end), precision: (if $precision == "null" then null else $precision end)}'
 }
 
 map_to_ollama() {
