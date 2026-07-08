@@ -27,6 +27,13 @@ get_ollama_info() {
     # Fetch the html for this listing and parse out size and precision
     model_page=$(curl -s "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
     size_gb=$(echo "$model_page" | grep -oE "[0-9]+\.?[0-9]*GB" | head -1 | sed 's/GB//i' || echo "")
+    size_mb=$(echo "$model_page" | grep -oE "[0-9]+\.?[0-9]*MB" | head -1 | sed 's/MB//i' || echo "")
+
+    # Convert MB to GB if no GB size found
+    if [ -z "$size_gb" ] && [ -n "$size_mb" ]; then
+        size_gb=$(awk "BEGIN {printf \"%.3f\", $size_mb / 1024}")
+    fi
+
     precision=$(echo "$model_page" | grep "quantization" | head -1 | sed 's/<[^>]*>//g' | sed 's/.*quantization//i' | tr -d '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
     jq -n \
