@@ -21,11 +21,12 @@ if ! command -v jq &> /dev/null; then
 fi
 
 get_ollama_info() {
-    ollama_name=$1
-    ollama_tag=$2
+    org=$1
+    ollama_name=$2
+    ollama_tag=$3
 
     # Fetch the html for this listing and parse out size and precision
-    model_page=$(curl -s "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
+    model_page=$(curl -s "https://ollama.com/${org}/${ollama_name}:$ollama_tag")
     size_gb=$(echo "$model_page" | grep -oE "[0-9]+\.?[0-9]*GB" | head -1 | sed 's/GB//i' || echo "")
     size_mb=$(echo "$model_page" | grep -oE "[0-9]+\.?[0-9]*MB" | head -1 | sed 's/MB//i' || echo "")
 
@@ -38,7 +39,7 @@ get_ollama_info() {
 
     jq -n \
         --arg name "$ollama_name" \
-        --arg url "https://ollama.com/ibm/${ollama_name}:$ollama_tag" \
+        --arg url "https://ollama.com/${org}/${ollama_name}:$ollama_tag" \
         --arg size_gb "${size_gb:-null}" \
         --arg precision "${precision:-null}" \
         '{name: $name, url: $url, size_gb: (if $size_gb == "null" then null else ($size_gb | tonumber) end), precision: (if $precision == "null" then null else $precision end)}'
@@ -88,40 +89,32 @@ map_to_ollama() {
     echo "["
     first=true
     for ollama_name in ${ollama_names[@]}; do
-        # Check if model exists on Ollama
         http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/library/${ollama_name}:$ollama_tag")
-
         if [ "$http_code" = "404" ]; then
             continue
         else
-
             if [ "$first" = true ]; then
                 first=false
             else
                 echo ","
             fi
-
-            get_ollama_info $ollama_name $ollama_tag
+            get_ollama_info library $ollama_name $ollama_tag
         fi
     done
 
     # If not found in library, look in ibm/
     if [ "$first" = true ]; then
         for ollama_name in ${ollama_names[@]}; do
-            # Check if model exists on Ollama
             http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
-
             if [ "$http_code" = "404" ]; then
                 continue
             else
-
                 if [ "$first" = true ]; then
                     first=false
                 else
                     echo ","
                 fi
-
-                get_ollama_info $ollama_name $ollama_tag
+                get_ollama_info ibm $ollama_name $ollama_tag
             fi
         done
     fi
