@@ -57,6 +57,12 @@ git diff -- resources/models.yaml
 - [ ] New models are properly categorized
 - [ ] Existing models are not modified
 
+After your review, direct the user to use ./agent/skills/update-models/review-models.py to walk through the new models registry.
+
+### Phase 3: Build
+
+Before completing, make sure `cargo build` runs cleanly. The `models.yaml` file is consumed at build time to create the static model catalog, and if any of the entries are incorrectly formatted, the build will fail.
+
 ## Field Mapping Reference
 
 ### ModelMetadata Structure
