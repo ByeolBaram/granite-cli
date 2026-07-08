@@ -56,12 +56,16 @@ find_variants() {
 
         # Process each GGUF file
         if [ "$gguf_files" != "[]" ]; then
-            variants=$(echo "$gguf_files" | jq -c --argjson bytes_to_gb "$bytes_to_gb" '[.[] | {
-                format: "GGUF",
-                precision: (.path | split("-") | last | split(".") | first | ascii_upcase),
-                size_gb: ((.size // 0) / $bytes_to_gb *1000 | round/1000),
-                url: "https://huggingface.co/'"${gguf_repo}"'/blob/main/\(.path)"
-            }]')
+            variants=$(echo "$gguf_files" | jq -c --argjson bytes_to_gb "$bytes_to_gb" --arg gguf_repo "$gguf_repo" '
+                # Group by base filename to handle multi-file splits (e.g. bf16-00001-of-00005.gguf)
+                group_by([.path | rtrimstr(".gguf") | sub("-[0-9]{5}-of-[0-9]{5}$"; "")]) |
+                [.[] | {
+                    format: "GGUF",
+                    precision: (.[0].path | rtrimstr(".gguf") | sub("-[0-9]{5}-of-[0-9]{5}$"; "") | split("-") | last | ascii_upcase),
+                    size_gb: ((([.[] | .size // 0] | add) / $bytes_to_gb) * 1000 | round / 1000),
+                    url: ("https://huggingface.co/" + $gguf_repo + "/blob/main/" + .[0].path)
+                }]
+            ')
         fi
     fi
 
