@@ -60,7 +60,7 @@ find_variants() {
                 format: "GGUF",
                 precision: (.path | split("-") | last | split(".") | first | ascii_upcase),
                 size_gb: ((.size // 0) / $bytes_to_gb *1000 | round/1000),
-                huggingface_path: "'"${gguf_repo}"'/blob/main/\(.path)"
+                url: "https://huggingface.co/'"${gguf_repo}"'/blob/main/\(.path)"
             }]')
         fi
     fi
@@ -74,7 +74,7 @@ find_variants() {
             format: "safetensors",
             precision: $safetensors_dtype,
             size_gb: $safetensors_size_gb,
-            huggingface_path: $repo
+            url: $repo
         }]')
 
     # Merge variants

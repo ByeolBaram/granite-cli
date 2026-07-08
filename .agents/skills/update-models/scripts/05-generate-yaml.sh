@@ -33,7 +33,15 @@ generate_model_entry() {
     local size=$(echo "$model" | jq -r '.size')
     local context_length=$(echo "$model" | jq -r '.context_length')
     local model_type=$(echo "$model" | jq -r '.model_type')
-    local variants=$(echo "$model" | jq -c '.variants')
+    local variants=$(echo "$model" | jq -c '
+        .variants + (
+            if .ollama_info and (.ollama_info | length > 0) then
+                [.ollama_info[] | {format: "Ollama", url: .url, precision: .precision, size_gb: .size_gb}]
+            else
+                []
+            end
+        )
+    ')
 
     # Infer capabilities
     local capabilities=$(echo "$model" | "${UTILS_DIR}/infer-capabilities.sh")
@@ -63,7 +71,7 @@ EOF
     cat <<EOF
   variants:
 EOF
-    echo "$variants" | jq -r '.[] | "    - format: \(.format)\n      precision: \(.precision)\n      size_gb: \(.size_gb)\n      huggingface_path: \"\(.huggingface_path)\""'
+    echo "$variants" | jq -r '.[] | "    - format: \(.format)" + (if .precision then "\n      precision: \(.precision)" else "" end) + (if .size_gb then "\n      size_gb: \(.size_gb)" else "" end) + "\n      url: \"\(.url)\""'
     cat <<EOF
   description: |
 ${description}

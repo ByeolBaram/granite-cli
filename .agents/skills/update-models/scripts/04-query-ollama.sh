@@ -20,6 +20,23 @@ if ! command -v jq &> /dev/null; then
     fi
 fi
 
+get_ollama_info() {
+    ollama_name=$1
+    ollama_tag=$2
+
+    # Fetch the html for this listing and parse out size and precision
+    model_page=$(curl -s "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
+    size_gb=$(echo "$model_page" | grep "Updated.*ago" -A 15 | grep --color=never -o "[0-9\.]*GB" | cut -d'G' -f1)
+    precision=$(echo "$model_page" | grep "quantization" | sed 's/<[^>]*>//g' | sed 's/ *quantization//')
+
+    jq -n \
+        --arg name "$ollama_name" \
+        --arg url "https://ollama.com/ibm/${ollama_name}:$ollama_tag" \
+        --argjson size_gb "$size_gb" \
+        --arg precision "$precision" \
+        '{name: $name, url: $url, size_gb: $size_gb, precision: $precision}'
+}
+
 map_to_ollama() {
     local repo="$1"
     local version="$2"
@@ -77,10 +94,7 @@ map_to_ollama() {
                 echo ","
             fi
 
-            jq -n \
-                --arg name "$ollama_name" \
-                --arg url "https://ollama.com/library/${ollama_name}:$ollama_tag" \
-                '{name: $name, url: $url, available: true}'
+            get_ollama_info $ollama_name $ollama_tag
         fi
     done
 
@@ -100,10 +114,7 @@ map_to_ollama() {
                     echo ","
                 fi
 
-                jq -n \
-                    --arg name "$ollama_name" \
-                    --arg url "https://ollama.com/ibm/${ollama_name}:$ollama_tag" \
-                    '{name: $name, url: $url, available: true}'
+                get_ollama_info $ollama_name $ollama_tag
             fi
         done
     fi

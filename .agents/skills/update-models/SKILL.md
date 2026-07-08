@@ -76,10 +76,10 @@ pub struct ModelMetadata {
 }
 
 pub struct ModelVariant {
-    pub format: String,             // File format (eg GGUF, safetensors)
-    pub precision: String,          // Precision label (eg Q4_K_M, bfloat16)
-    pub size_gb: f64,               // Size in GB to 3 decimal places
-    pub huggingface_path: String,   // Path within hf.co to the individual model or file
+    pub format: String,    // File format (eg GGUF, safetensors)
+    pub precision: String, // Precision label (eg Q4_K_M, bfloat16)
+    pub size_gb: f64,      // Size in GB to 3 decimal places
+    pub url: String,       // URL to the model
 }
 ```
 
