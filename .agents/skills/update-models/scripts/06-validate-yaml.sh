@@ -38,8 +38,8 @@ model_count=$(grep -c "^- id:" "$YAML_FILE" || echo "0")
 field_errors=0
 for field in "${required_fields[@]}"; do
     # Count occurrences of each field (with proper indentation)
-    field_count=$(grep -c "^  ${field}:" "$YAML_FILE" || echo "0")
-    
+    field_count=$(grep -c "^[- ] ${field}:" "$YAML_FILE" || echo "0")
+
     if [ "$model_count" -ne "$field_count" ]; then
         echo "ERROR: Field '${field}' count mismatch (expected: ${model_count}, found: ${field_count})"
         ((field_errors++))
