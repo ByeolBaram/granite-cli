@@ -25,18 +25,23 @@ model_type=$(echo "$model" | jq -r '.model_type')
 # Build capabilities array
 capabilities=()
 
-if [ "$has_gguf" = true ]; then
-    capabilities+=("OllamaChat")
-fi
+# Embedding models use OpenAIEmbeddings, not OpenAIChat
+if [ "$model_type" = "Embedding" ]; then
+    capabilities+=("OpenAIEmbeddings")
+else
+    if [ "$has_gguf" = true ]; then
+        capabilities+=("OllamaChat")
+    fi
 
-if [ "$has_safetensors" = true ]; then
-    capabilities+=("OpenAIChat")
-fi
-
-# Vision models require OpenAI-compatible API
-if [ "$model_type" = "Vision" ]; then
-    if [[ ! " ${capabilities[@]} " =~ " OpenAIChat " ]]; then
+    if [ "$has_safetensors" = true ]; then
         capabilities+=("OpenAIChat")
+    fi
+
+    # Vision models require OpenAI-compatible API
+    if [ "$model_type" = "Vision" ]; then
+        if [[ ! " ${capabilities[@]} " =~ " OpenAIChat " ]]; then
+            capabilities+=("OpenAIChat")
+        fi
     fi
 fi
 

@@ -61,7 +61,10 @@ map_to_ollama() {
     elif [[ "$name" == *"guardian"* ]]; then
         ollama_names=("granite${version}-guardian")
     elif [[ "$name" == *"embedding"* ]]; then
-        ollama_names=("granite-embedding")
+        # Only pre-r2 embeddings are on Ollama; r2 models have no Ollama support yet
+        if [[ "$name" != *"r2"* ]]; then
+            ollama_names=("granite-embedding")
+        fi
     else
         # Standard language model
         # Drop .0 from version if present
@@ -88,24 +91,9 @@ map_to_ollama() {
     # First look in un-scoped (library)
     echo "["
     first=true
-    for ollama_name in ${ollama_names[@]}; do
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/library/${ollama_name}:$ollama_tag")
-        if [ "$http_code" = "404" ]; then
-            continue
-        else
-            if [ "$first" = true ]; then
-                first=false
-            else
-                echo ","
-            fi
-            get_ollama_info library $ollama_name $ollama_tag
-        fi
-    done
-
-    # If not found in library, look in ibm/
-    if [ "$first" = true ]; then
+    if [ ${#ollama_names[@]} -gt 0 ]; then
         for ollama_name in ${ollama_names[@]}; do
-            http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/library/${ollama_name}:$ollama_tag")
             if [ "$http_code" = "404" ]; then
                 continue
             else
@@ -114,9 +102,26 @@ map_to_ollama() {
                 else
                     echo ","
                 fi
-                get_ollama_info ibm $ollama_name $ollama_tag
+                get_ollama_info library $ollama_name $ollama_tag
             fi
         done
+
+        # If not found in library, look in ibm/
+        if [ "$first" = true ]; then
+            for ollama_name in ${ollama_names[@]}; do
+                http_code=$(curl -s -o /dev/null -w "%{http_code}" "https://ollama.com/ibm/${ollama_name}:$ollama_tag")
+                if [ "$http_code" = "404" ]; then
+                    continue
+                else
+                    if [ "$first" = true ]; then
+                        first=false
+                    else
+                        echo ","
+                    fi
+                    get_ollama_info ibm $ollama_name $ollama_tag
+                fi
+            done
+        fi
     fi
     echo "]"
 }
