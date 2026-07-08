@@ -80,7 +80,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
         s.push_str(&format!("                format: {:?}.to_string(),\n", variant.format));
         s.push_str(&format!("                precision: {:?}.to_string(),\n", variant.precision));
         s.push_str(&format!("                size_gb: {},\n", format_float(variant.size_gb)));
-        s.push_str(&format!("                huggingface_path: {:?}.to_string(),\n", variant.huggingface_path));
+        s.push_str(&format!("                url: {:?}.to_string(),\n", variant.url));
         s.push_str("            },\n");
     }
     s.push_str("        ]);\n");
@@ -142,7 +142,7 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
         s.push_str(&format!("                    format: {:?}.to_string(),\n", variant.format));
         s.push_str(&format!("                    precision: {:?}.to_string(),\n", variant.precision));
         s.push_str(&format!("                    size_gb: {},\n", format_float(variant.size_gb)));
-        s.push_str(&format!("                    huggingface_path: {:?}.to_string(),\n", variant.huggingface_path));
+        s.push_str(&format!("                    url: {:?}.to_string(),\n", variant.url));
         s.push_str("                },\n");
     }
     s.push_str("            ],\n");
@@ -214,5 +214,5 @@ struct YamlModelVariant {
     format: String,
     precision: String,
     size_gb: f64,
-    huggingface_path: String,
+    url: String,
 }

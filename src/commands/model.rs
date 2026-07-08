@@ -97,7 +97,7 @@ impl ModelCommands {
                         variant.format,
                         variant.precision,
                         variant.size_gb,
-                        variant.huggingface_path
+                        variant.url
                     );
                 }
 

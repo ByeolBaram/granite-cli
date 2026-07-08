@@ -111,7 +111,7 @@ pub struct ModelVariant {
     pub format: String,
     pub precision: String,
     pub size_gb: f64,
-    pub huggingface_path: String,
+    pub url: String,
 }
 
 /*-- Factory Definition ------------------------------------------------------*/
