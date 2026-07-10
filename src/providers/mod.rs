@@ -1,17 +1,21 @@
 // Standard
 use std::sync::LazyLock;
 
-/*-- Public API --------------------------------------------------------------*/
+/*-- Provider Registry -------------------------------------------------------*/
 
 pub static PROVIDER_REGISTRY: LazyLock<base::ProviderFactory> = LazyLock::new(|| {
     let mut factory = base::ProviderFactory::new();
-    // Register instances here
+    factory.register::<openai::OpenAIProvider>("openai-compatible");
     factory
 });
 
-// Re-export types from base
+/*-- Module Declarations -----------------------------------------------------*/
+
 mod base;
 pub use base::{
-    ApiSurface, AuthType, HealthStatus, ModelFormat,
+    ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat,
     Provider, ProviderError, ProviderMetadata, ProviderType,
 };
+
+mod openai;
+pub use openai::{OpenAIProvider, OpenAIProviderConfig};
