@@ -1,6 +1,59 @@
 use crate::registry::ConfigConstructable;
 use serde::{Deserialize, Serialize};
 
+/*-- ModelFunction Enum ------------------------------------------------------*/
+
+/// Functional capabilities that models can provide
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ModelFunction {
+
+    /*-- Chat Functions --*/
+
+    /// Text-based conversational interaction
+    Chat,
+    /// Tool inputs and invocations
+    ToolCalling,
+    /// Chain-of-thought reasoning
+    Thinking,
+    /// Visual content analysis and understanding
+    ImageUnderstanding,
+    /// Detect harms
+    Guardian,
+
+    /*-- Embedding Functions --*/
+
+    /// Vector representation generation for text
+    Embeddings,
+
+    /*-- Audio Functions --*/
+
+    /// Audio-to-text transcription
+    Transcription,
+    /// Audio translation
+    Translation,
+    /// Speaker attribution in audio
+    SpeakerAttribution,
+    /// Keyword biasing in audio
+    KeywordBiasing,
+}
+
+impl std::fmt::Display for ModelFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ModelFunction::Chat => write!(f, "Chat"),
+            ModelFunction::ToolCalling => write!(f, "ToolCalling"),
+            ModelFunction::Thinking => write!(f, "Thinking"),
+            ModelFunction::ImageUnderstanding => write!(f, "Image Understanding"),
+            ModelFunction::Guardian => write!(f, "Guardian"),
+            ModelFunction::Embeddings => write!(f, "Embeddings"),
+            ModelFunction::Transcription => write!(f, "Transcription"),
+            ModelFunction::Translation => write!(f, "Translation"),
+            ModelFunction::SpeakerAttribution => write!(f, "Speaker Attribution"),
+            ModelFunction::KeywordBiasing => write!(f, "Keyword Biasing"),
+        }
+    }
+}
+
 /*-- Model Trait -------------------------------------------------------------*/
 
 /// Core trait for model implementations.
@@ -27,9 +80,6 @@ pub trait Model: ConfigConstructable {
     /// Get the HuggingFace repository
     fn huggingface_repo(&self) -> &str;
 
-    /// Get required provider capabilities
-    fn required_provider_capabilities(&self) -> &[String];
-
     /// Get available variants
     fn variants(&self) -> &[ModelVariant];
 
@@ -38,6 +88,9 @@ pub trait Model: ConfigConstructable {
 
     /// Get tags
     fn tags(&self) -> &[String];
+
+    /// Model functions this model supports (OR logic - any of these)
+    fn supported_functions(&self) -> &[ModelFunction];
 }
 
 /*-- Metadata Types ----------------------------------------------------------*/
@@ -53,10 +106,10 @@ pub struct ModelMetadata {
     pub context_length: u64,
     pub model_type: ModelType,
     pub huggingface_repo: String,
-    pub required_provider_capabilities: Vec<String>,
     pub variants: Vec<ModelVariant>,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub supported_functions: Vec<ModelFunction>,
 }
 
 impl std::fmt::Display for ModelMetadata {
