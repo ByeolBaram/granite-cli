@@ -62,16 +62,6 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str(&format!("    fn model_type(&self) -> &crate::models::base::ModelType {{ &crate::models::base::ModelType::{} }}\n", model.model_type));
     s.push_str(&format!("    fn huggingface_repo(&self) -> &str {{ {:?} }}\n", model.huggingface_repo));
 
-    // Required provider capabilities - use static slice
-    s.push_str("    fn required_provider_capabilities(&self) -> &[String] {\n");
-    s.push_str("        static CAPS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| vec![\n");
-    for cap in &model.required_provider_capabilities {
-        s.push_str(&format!("            {:?}.to_string(),\n", cap));
-    }
-    s.push_str("        ]);\n");
-    s.push_str("        &CAPS\n");
-    s.push_str("    }\n");
-
     // Variants - use static slice
     s.push_str("    fn variants(&self) -> &[crate::models::base::ModelVariant] {\n");
     s.push_str("        static VARIANTS: std::sync::LazyLock<Vec<crate::models::base::ModelVariant>> = std::sync::LazyLock::new(|| vec![\n");
@@ -105,6 +95,16 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("        ]);\n");
     s.push_str("        &TAGS\n");
     s.push_str("    }\n");
+
+    // Supported functions
+    s.push_str("    fn supported_functions(&self) -> &[crate::models::base::ModelFunction] {\n");
+    s.push_str("        static FUNCS: std::sync::LazyLock<Vec<crate::models::base::ModelFunction>> = std::sync::LazyLock::new(|| vec![\n");
+    for func in &model.supported_functions {
+        s.push_str(&format!("            crate::models::base::ModelFunction::{},\n", func));
+    }
+    s.push_str("        ]);\n");
+    s.push_str("        &FUNCS\n");
+    s.push_str("    }\n");
     s.push_str("}\n\n");
 
     // HasModelMetadata implementation
@@ -127,13 +127,6 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     s.push_str(&format!("            context_length: {},\n", model.context_length));
     s.push_str(&format!("            model_type: crate::models::base::ModelType::{},\n", model.model_type));
     s.push_str(&format!("            huggingface_repo: {:?}.to_string(),\n", model.huggingface_repo));
-
-    // Required provider capabilities
-    s.push_str("            required_provider_capabilities: vec![\n");
-    for cap in &model.required_provider_capabilities {
-        s.push_str(&format!("                {:?}.to_string(),\n", cap));
-    }
-    s.push_str("            ],\n");
 
     // Variants
     s.push_str("            variants: vec![\n");
@@ -158,6 +151,13 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     s.push_str("            tags: vec![\n");
     for tag in &model.tags {
         s.push_str(&format!("                {:?}.to_string(),\n", tag));
+    }
+    s.push_str("            ],\n");
+
+    // Supported functions
+    s.push_str("            supported_functions: vec![\n");
+    for func in &model.supported_functions {
+        s.push_str(&format!("                crate::models::base::ModelFunction::{},\n", func));
     }
     s.push_str("            ],\n");
 
@@ -194,7 +194,7 @@ fn model_id_to_struct_name(id: &str) -> String {
         .collect::<String>() // Join without separator for proper CamelCase
 }
 
-#[derive(serde::Deserialize)]
+ #[derive(serde::Deserialize)]
 struct YamlModel {
     id: String,
     family: String,
@@ -203,10 +203,10 @@ struct YamlModel {
     context_length: u64,
     model_type: String,
     huggingface_repo: String,
-    required_provider_capabilities: Vec<String>,
     variants: Vec<YamlModelVariant>,
     description: Option<String>,
     tags: Vec<String>,
+    supported_functions: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
