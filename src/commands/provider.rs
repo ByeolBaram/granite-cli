@@ -150,8 +150,11 @@ impl ProviderCommands {
 
         println!("\nProvider '{}' configured successfully!", provider_id);
         println!("Supported APIs:");
-        for api in &provider_def.api_capabilities {
-            println!("  - {}", api);
+        for (func, endpoints) in &provider_def.default_function_endpoints {
+            let endpoint_strs: Vec<String> = endpoints.iter()
+                .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
+                .collect();
+            println!("  - {} -> {}", func, endpoint_strs.join(", "));
         }
 
         Ok(())
@@ -212,24 +215,6 @@ impl ProviderCommands {
 
         let endpoint = &provider_config.endpoint;
 
-        // Create a temporary provider config for health check
-        let temp_config = crate::providers::ProviderMetadata {
-            id: provider_id.to_string(),
-            name: "temp".to_string(),
-            description: String::new(),
-            provider_type: if provider_config.provider_type.to_lowercase() == "local" {
-                crate::providers::ProviderType::Local
-            } else {
-                crate::providers::ProviderType::Hosted
-            },
-            default_endpoint: endpoint.clone(),
-            api_capabilities: vec![],
-            supported_formats: vec![],
-            supported_precisions: vec![],
-            authentication: vec![],
-            tags: vec![],
-        };
-
         // Determine which provider implementation to use
         let factory_id = match provider_config.name.to_lowercase().as_str() {
             "ollama" => "ollama",
@@ -243,6 +228,25 @@ impl ProviderCommands {
                     "openai"
                 }
             }
+        };
+
+        // Create a temporary provider config for health check
+        let temp_config = crate::providers::ProviderMetadata {
+            id: provider_id.to_string(),
+            name: provider_config.name.clone(),
+            description: String::new(),
+            provider_type: if provider_config.provider_type.to_lowercase() == "local" {
+                crate::providers::ProviderType::Local
+            } else {
+                crate::providers::ProviderType::Hosted
+            },
+            default_endpoint: endpoint.clone(),
+            supported_api_types: vec![],
+            default_function_endpoints: std::collections::HashMap::new(),
+            supported_formats: vec![],
+            supported_precisions: vec![],
+            authentication: vec![],
+            tags: vec![],
         };
 
         // TODO: This is probably wrong and at minimum inefficient!
