@@ -101,9 +101,9 @@ impl ModelCommands {
                     );
                 }
 
-                println!("\nRequired Provider Capabilities:");
-                for cap in &model.required_provider_capabilities {
-                    println!("  - {}", cap);
+                println!("\nSupported Functions:");
+                for func in &model.supported_functions {
+                    println!("  - {}", func);
                 }
 
                 // Show configuration state
