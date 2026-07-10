@@ -215,17 +215,21 @@ impl ProviderCommands {
 
         let endpoint = &provider_config.endpoint;
 
-        // Determine which provider implementation to use
-        let factory_id = match provider_config.name.to_lowercase().as_str() {
-            "ollama" => "ollama",
-            "anthropic" => "anthropic",
-            "openai" => "openai",
-            "ibm watsonx.ai" => "watsonx",
-            _ => {
-                if provider_config.provider_type.to_lowercase() == "local" {
-                    "ollama"
-                } else {
-                    "openai"
+        // Try to construct using the provider_id first, then fall back to name-based lookup
+        let factory_id = if PROVIDER_REGISTRY.get(&provider_config.provider_id).is_some() {
+            provider_id.to_string()
+        } else {
+            match provider_config.name.to_lowercase().as_str() {
+                "ollama" => "ollama".to_string(),
+                "anthropic" => "anthropic".to_string(),
+                "openai" => "openai".to_string(),
+                "ibm watsonx.ai" => "watsonx".to_string(),
+                _ => {
+                    if provider_config.provider_type.to_lowercase() == "local" {
+                        "ollama".to_string()
+                    } else {
+                        "openai".to_string()
+                    }
                 }
             }
         };
@@ -251,7 +255,7 @@ impl ProviderCommands {
 
         // TODO: This is probably wrong and at minimum inefficient!
         let provider = crate::providers::PROVIDER_REGISTRY
-            .construct(factory_id, &serde_json::to_value(temp_config)?)
+            .construct(factory_id.as_str(), &serde_json::to_value(temp_config)?)
             .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
 
         let status = provider.health_check().await?;
