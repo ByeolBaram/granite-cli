@@ -43,8 +43,8 @@ generate_model_entry() {
         )
     ')
 
-    # Infer capabilities
-    local capabilities=$(echo "$model" | "${UTILS_DIR}/infer-capabilities.sh")
+    # Infer supported functions
+    local functions=$(echo "$model" | "${UTILS_DIR}/infer-functions.sh")
 
     # Generate description
     local description=$(echo "$model" | jq -r .description || echo "")
@@ -65,9 +65,9 @@ generate_model_entry() {
   context_length: ${context_length}
   model_type: "${model_type}"
   huggingface_repo: "${repo}"
-  required_provider_capabilities:
+  supported_functions:
 EOF
-    echo "$capabilities" | jq -r '.[] | "    - \(.)"'
+    echo "$functions" | jq -r '.[] | "    - \(.)"'
     cat <<EOF
   variants:
 EOF
