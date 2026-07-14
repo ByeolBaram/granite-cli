@@ -58,7 +58,14 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum ModelSubcommands {
-    /// List all available models
+    // /// Show the catalog of all available models
+    // Catalog {
+    //     /// Filter by model type
+    //     #[arg(short, long)]
+    //     r#type: Option<String>,
+    // },
+
+    /// List all configured models
     List {
         /// Filter by model type
         #[arg(short, long)]
@@ -177,7 +184,7 @@ async fn main() {
             println!("Usage: granite-cli <command> [subcommand] [options]");
             println!();
             println!("Available commands:");
-            println!("  model        Model management (list, info, setup)");
+            println!("  model        Model management (catalog, list, info, setup)");
             println!("  capability   Capability management (list, info, setup)");
             println!("  provider     Provider management (list, setup, health)");
             println!("  configure    Configure tools (Phase 3)");
@@ -196,6 +203,20 @@ async fn main() {
 
 async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
+        // // TODO: Determine the valid types from the model registry
+        // ModelSubcommands::Catalog { r#type } => {
+        //     let filter = match r#type.as_deref() {
+        //         Some("text") => Some(models::ModelType::Text),
+        //         Some("vision") => Some(models::ModelType::Vision),
+        //         Some("speech") => Some(models::ModelType::Speech),
+        //         Some("embedding") => Some(models::ModelType::Embedding),
+        //         Some(t) => {
+        //             anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
+        //         }
+        //         None => None,
+        //     };
+        //     ModelCommands::catalog(ctx, filter)
+        // }
         // TODO: Determine the valid types from the model registry
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {

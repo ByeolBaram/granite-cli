@@ -99,9 +99,6 @@ impl ConfigConstructable for OpenAIProvider {
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-    fn id(&self) -> &str {
-        "openai-compatible"
-    }
 
     fn name(&self) -> &str {
         "OpenAI Compatible Provider"
@@ -187,7 +184,6 @@ impl HasProviderMetadata for OpenAIProvider {
         default_mappings.insert(ModelFunction::Transcription, vec![ApiEndpoint::OpenAIAudioTranscription]);
 
         ProviderMetadata {
-            id: "openai-compatible".to_string(),
             name: "OpenAI Compatible Provider".to_string(),
             description: "Provider for OpenAI-compatible API endpoints supporting chat, embeddings, and audio transcription".to_string(),
             provider_type: ProviderType::Local,

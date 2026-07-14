@@ -122,7 +122,6 @@ impl std::fmt::Display for ApiEndpoint {
 /// All providers must implement this trait along with ConfigConstructable.
 #[async_trait]
 pub trait Provider: ConfigConstructable + Send + Sync {
-    fn id(&self) -> &str;
     fn name(&self) -> &str;
 
     /// Returns the mapping of model functions to API endpoints this provider instance supports.
@@ -161,7 +160,6 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 /// Metadata describing a provider implementation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderMetadata {
-    pub id: String,
     pub name: String,
     pub description: String,
     pub provider_type: ProviderType,
@@ -183,8 +181,8 @@ impl std::fmt::Display for ProviderMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} ({}): {} - {}",
-            self.id, self.provider_type, self.name, self.description
+            "{}: {} - {}",
+            self.provider_type, self.name, self.description
         )
     }
 }

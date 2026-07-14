@@ -12,25 +12,25 @@ pub struct CapabilityCommands;
 
 impl CapabilityCommands {
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        let capabilities = CAPABILITY_REGISTRY.list();
+        let capabilities = CAPABILITY_REGISTRY.entries();
 
         println!();
         println!("{:<20} {:<30} {} {}", "ID", "NAME", "DEPENDENCIES", "STATUS");
         println!("{:<20} {:<30} {} {}", "----", "----", "------------", "------");
 
-        for cap in &capabilities {
+        for (cap_id, cap) in &capabilities {
             let deps: Vec<_> = cap.dependencies.iter().map(|d| format!("{}", d)).collect();
             let deps_str = if deps.is_empty() {
                 "None".to_string()
             } else {
                 deps.join(", ")
             };
-            let status = if ctx.config.capabilities.contains_key(&cap.id) {
+            let status = if ctx.config.capabilities.contains_key(*cap_id) {
                 "CONFIGURED"
             } else {
                 "BUNDLED"
             };
-            println!("{:<20} {:<30} {} {}", cap.id, cap.name, deps_str, status);
+            println!("{:<20} {:<30} {} {}", cap_id, cap.name, deps_str, status);
         }
 
         // Show configured capabilities not in the registry
@@ -64,7 +64,7 @@ impl CapabilityCommands {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
                 println!();
-                println!("Capability: {}", cap.id);
+                println!("Capability: {}", capability_id);
                 println!("Name: {}", cap.name);
                 println!("Description: {}", cap.description);
 
@@ -121,8 +121,8 @@ impl CapabilityCommands {
                 } else {
                     eprintln!("Error: Capability '{}' not found in registry.", capability_id);
                     println!("\nAvailable capabilities:");
-                    for cap in CAPABILITY_REGISTRY.list() {
-                        println!("  - {}", cap.id);
+                    for (reg_cap_id, _) in CAPABILITY_REGISTRY.entries() {
+                        println!("  - {}", reg_cap_id);
                     }
                     anyhow::bail!("Capability not found");
                 }
@@ -133,7 +133,7 @@ impl CapabilityCommands {
     pub async fn setup(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
-                println!("\nSetting up capability: {}", cap.id);
+                println!("\nSetting up capability: {}", capability_id);
                 println!("Name: {}", cap.name);
                 println!("Description: {}", cap.description);
                 println!();
@@ -210,14 +210,14 @@ impl CapabilityCommands {
                 }
 
                 let capability_config = crate::config::CapabilityConfig {
-                    capability_id: cap.id.clone(),
+                    capability_id: capability_id.to_string(),
                     enabled: config_map.get("enabled").map(|v| v == "true").unwrap_or(true),
                     config: config_map,
                 };
 
                 ctx.config.insert_capability(capability_id, capability_config);
 
-                println!("\nCapability '{}' configured successfully!", cap.id);
+                println!("\nCapability '{}' configured successfully!", capability_id);
 
                 Ok(())
             }
@@ -249,8 +249,8 @@ impl CapabilityCommands {
                 } else {
                     eprintln!("Error: Capability '{}' not found in registry.", capability_id);
                     println!("\nAvailable capabilities:");
-                    for cap in CAPABILITY_REGISTRY.list() {
-                        println!("  - {}", cap.id);
+                    for (reg_cap_id, _) in CAPABILITY_REGISTRY.entries() {
+                        println!("  - {}", reg_cap_id);
                     }
                     anyhow::bail!("Capability not found");
                 }

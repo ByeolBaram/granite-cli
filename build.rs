@@ -54,7 +54,6 @@ fn generate_model_struct(model: &YamlModel) -> String {
 
     // Model trait implementation
     s.push_str(&format!("impl crate::models::base::Model for {} {{\n", struct_name));
-    s.push_str(&format!("    fn id(&self) -> &str {{ {:?} }}\n", model.id));
     s.push_str(&format!("    fn family(&self) -> &str {{ {:?} }}\n", model.family));
     s.push_str(&format!("    fn version(&self) -> &str {{ {:?} }}\n", model.version));
     s.push_str(&format!("    fn size(&self) -> u64 {{ {} }}\n", model.size));
@@ -120,7 +119,6 @@ fn generate_model_struct(model: &YamlModel) -> String {
 fn generate_metadata_literal(model: &YamlModel) -> String {
     let mut s = String::new();
     s.push_str("        crate::models::base::ModelMetadata {\n");
-    s.push_str(&format!("            id: {:?}.to_string(),\n", model.id));
     s.push_str(&format!("            family: {:?}.to_string(),\n", model.family));
     s.push_str(&format!("            version: {:?}.to_string(),\n", model.version));
     s.push_str(&format!("            size: {},\n", model.size));

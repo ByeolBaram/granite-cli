@@ -10,14 +10,14 @@ pub struct ProviderCommands;
 impl ProviderCommands {
     /// List all providers from the static registry, indicating which are configured.
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        let providers = PROVIDER_REGISTRY.list();
+        let providers = PROVIDER_REGISTRY.entries();
 
         println!();
         println!("{:<20} {:<10} {:<35} {}", "ID", "TYPE", "ENDPOINT", "STATUS");
         println!("{:<20} {:<10} {:<35} {}", "----", "----", "--------", "------");
 
-        for provider in &providers {
-            let status = if ctx.config.providers.contains_key(&provider.id) {
+        for (provider_id, provider) in &providers {
+            let status = if ctx.config.providers.contains_key(*provider_id) {
                 "CONFIGURED"
             } else {
                 "BUNDLED"
@@ -25,7 +25,7 @@ impl ProviderCommands {
 
             println!(
                 "{:<20} {:<10} {:<35} {}",
-                provider.id,
+                provider_id,
                 provider.provider_type,
                 provider.default_endpoint,
                 status,
@@ -66,8 +66,8 @@ impl ProviderCommands {
             None => {
                 eprintln!("Error: Provider '{}' not found in registry.", provider_id);
                 println!("\nAvailable providers:");
-                for p in PROVIDER_REGISTRY.list() {
-                    println!("  - {} ({})", p.id, p.name);
+                for (p_id, p) in PROVIDER_REGISTRY.entries() {
+                    println!("  - {} ({})", p_id, p.name);
                 }
                 anyhow::bail!("Provider not found");
             }
@@ -236,7 +236,6 @@ impl ProviderCommands {
 
         // Create a temporary provider config for health check
         let temp_config = crate::providers::ProviderMetadata {
-            id: provider_id.to_string(),
             name: provider_config.name.clone(),
             description: String::new(),
             provider_type: if provider_config.provider_type.to_lowercase() == "local" {

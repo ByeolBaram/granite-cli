@@ -59,8 +59,6 @@ impl std::fmt::Display for ModelFunction {
 /// Core trait for model implementations.
 /// All models must implement this trait along with ConfigConstructable.
 pub trait Model: ConfigConstructable {
-    /// Get the unique identifier for this model
-    fn id(&self) -> &str;
 
     /// Get the model family name
     fn family(&self) -> &str;
@@ -99,7 +97,6 @@ pub trait Model: ConfigConstructable {
 /// This is what the factory returns when querying model information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMetadata {
-    pub id: String,
     pub family: String,
     pub version: String,
     pub size: u64,
@@ -116,8 +113,7 @@ impl std::fmt::Display for ModelMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} ({}) - {}B params, {} context, Type: {}",
-            self.id,
+            "{}) - {}B params, {} context, Type: {}",
             self.family,
             self.size / 1_000_000_000,
             self.context_length,

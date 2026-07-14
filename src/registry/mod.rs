@@ -163,15 +163,15 @@ macro_rules! define_factory {
                     self.registry.get(name).map(|x| x.describe())
                 }
 
-                /// List all registered implementations with their metadata.
+                /// Get all registered implementations with their metadata.
                 ///
                 /// # Returns
                 ///
                 /// HashMap mapping names to metadata for all registered implementations
-                pub(crate) fn list(&self) -> Vec<$metadata> {
+                pub(crate) fn entries(&self) -> std::collections::HashMap<&str, $metadata> {
                     self.registry
-                        .values()
-                        .map(|v| v.describe())
+                        .iter()
+                        .map(|(k, v)| (*k, v.describe()))
                         .collect()
                 }
             }

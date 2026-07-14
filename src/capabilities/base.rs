@@ -12,7 +12,6 @@ use std::path::PathBuf;
 /// All capabilities must implement this trait along with ConfigConstructable.
 #[async_trait]
 pub trait Capability: ConfigConstructable + Send + Sync {
-    fn id(&self) -> &str;
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn dependencies(&self) -> Vec<Dependency>;
@@ -43,7 +42,6 @@ pub trait Capability: ConfigConstructable + Send + Sync {
 /// Metadata describing a capability implementation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityMetadata {
-    pub id: String,
     pub name: String,
     pub description: String,
     pub dependencies: Vec<Dependency>,
@@ -52,7 +50,7 @@ pub struct CapabilityMetadata {
 
 impl std::fmt::Display for CapabilityMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.id, self.description)
+        write!(f, "{}", self.description)
     }
 }
 

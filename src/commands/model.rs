@@ -9,10 +9,10 @@ pub struct ModelCommands;
 
 impl ModelCommands {
     pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
-        let models = MODEL_REGISTRY.list();
+        let models = MODEL_REGISTRY.entries();
 
-        let filtered: Vec<_> = match filter_type {
-            Some(ref t) => models.into_iter().filter(|m| m.model_type == *t).collect(),
+        let filtered: std::collections::HashMap<_, _> = match filter_type {
+            Some(ref t) => models.into_iter().filter(|(_, m)| m.model_type == *t).collect(),
             None => models.into_iter().collect(),
         };
 
@@ -25,15 +25,15 @@ impl ModelCommands {
         println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "STATUS");
         println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "----", "------", "----", "-------", "----", "------");
 
-        for model in &filtered {
-            let status = if ctx.config.models.contains_key(&model.id) {
+        for (model_id, model) in &filtered {
+            let status = if ctx.config.models.contains_key(*model_id) {
                 "CONFIGURED"
             } else {
                 "BUNDLED"
             };
             println!(
                 "{:<35} {:<18} {:<8} {:<12} {:<12} {}",
-                model.id,
+                model_id,
                 model.family,
                 format!("{}B", model.size / 1_000_000_000),
                 format!("{}", model.context_length),
@@ -73,7 +73,7 @@ impl ModelCommands {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 println!();
-                println!("Model: {}", model.id);
+                println!("Model: {}", model_id);
                 println!("Family: {}", model.family);
                 println!("Version: {}", model.version);
                 println!("Size: {}B parameters ({:.2}B)", model.size, model.size as f64 / 1_000_000_000.0);
@@ -120,8 +120,8 @@ impl ModelCommands {
             None => {
                 eprintln!("Error: Model '{}' not found in registry.", model_id);
                 println!("\nAvailable models:");
-                for model in MODEL_REGISTRY.list() {
-                    println!("  - {}", model.id);
+                for (model_reg_id, _) in MODEL_REGISTRY.entries() {
+                    println!("  - {}", model_reg_id);
                 }
                 anyhow::bail!("Model not found");
             }
@@ -131,7 +131,7 @@ impl ModelCommands {
     pub fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
-                println!("\nSetting up model: {}", model.id);
+                println!("\nSetting up model: {}", model_id);
                 println!("{}", model.description.as_deref().unwrap_or("No description available."));
                 println!();
                 println!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length);
@@ -170,7 +170,7 @@ impl ModelCommands {
                 }
 
                 let model_config = crate::config::ModelConfig {
-                    model_id: model.id.clone(),
+                    model_id: model_id.to_string(),
                     provider_id: if provider_id.is_empty() { None } else { Some(provider_id) },
                     variant: Some(format!("{}/{}", selected_variant.format, selected_variant.precision)),
                     endpoint: None,
@@ -180,7 +180,7 @@ impl ModelCommands {
 
                 ctx.config.insert_model(model_id, model_config);
 
-                println!("\nModel '{}' configured successfully!", model.id);
+                println!("\nModel '{}' configured successfully!", model_id);
                 println!("Configure a provider to complete setup:");
                 println!("  granite-cli provider setup <provider-id>");
                 println!("Then set the provider_id in models.yaml, or run:");
@@ -191,8 +191,8 @@ impl ModelCommands {
             None => {
                 eprintln!("Error: Model '{}' not found in registry.", model_id);
                 println!("\nAvailable models:");
-                for model in MODEL_REGISTRY.list() {
-                    println!("  - {}", model.id);
+                for (model_reg_id, _) in MODEL_REGISTRY.entries() {
+                    println!("  - {}", model_reg_id);
                 }
                 anyhow::bail!("Model not found");
             }
