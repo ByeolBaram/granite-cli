@@ -58,12 +58,12 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum ModelSubcommands {
-    // /// Show the catalog of all available models
-    // Catalog {
-    //     /// Filter by model type
-    //     #[arg(short, long)]
-    //     r#type: Option<String>,
-    // },
+    /// Show the catalog of all available models
+    Catalog {
+        /// Filter by model type
+        #[arg(short, long)]
+        r#type: Option<String>,
+    },
 
     /// List all configured models
     List {
@@ -203,21 +203,19 @@ async fn main() {
 
 async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
-        // // TODO: Determine the valid types from the model registry
-        // ModelSubcommands::Catalog { r#type } => {
-        //     let filter = match r#type.as_deref() {
-        //         Some("text") => Some(models::ModelType::Text),
-        //         Some("vision") => Some(models::ModelType::Vision),
-        //         Some("speech") => Some(models::ModelType::Speech),
-        //         Some("embedding") => Some(models::ModelType::Embedding),
-        //         Some(t) => {
-        //             anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
-        //         }
-        //         None => None,
-        //     };
-        //     ModelCommands::catalog(ctx, filter)
-        // }
-        // TODO: Determine the valid types from the model registry
+        ModelSubcommands::Catalog { r#type } => {
+            let filter = match r#type.as_deref() {
+                Some("text") => Some(models::ModelType::Text),
+                Some("vision") => Some(models::ModelType::Vision),
+                Some("speech") => Some(models::ModelType::Speech),
+                Some("embedding") => Some(models::ModelType::Embedding),
+                Some(t) => {
+                    anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
+                }
+                None => None,
+            };
+            ModelCommands::catalog(ctx, filter)
+        }
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
                 Some("text") => Some(models::ModelType::Text),

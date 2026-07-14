@@ -8,7 +8,7 @@ use crate::models::{MODEL_REGISTRY, ModelType};
 pub struct ModelCommands;
 
 impl ModelCommands {
-    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
         let models = MODEL_REGISTRY.entries();
 
         let filtered: std::collections::HashMap<_, _> = match filter_type {
@@ -22,50 +22,57 @@ impl ModelCommands {
         }
 
         println!();
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "STATUS");
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "----", "------", "----", "-------", "----", "------");
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE");
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "----", "------", "----", "-------", "----");
 
         for (model_id, model) in &filtered {
-            let status = if ctx.config.models.contains_key(*model_id) {
-                "CONFIGURED"
-            } else {
-                "BUNDLED"
-            };
             println!(
-                "{:<35} {:<18} {:<8} {:<12} {:<12} {}",
+                "{:<35} {:<18} {:<8} {:<12} {:<12}",
                 model_id,
                 model.family,
                 format!("{}B", model.size / 1_000_000_000),
                 format!("{}", model.context_length),
                 model.model_type.to_string(),
-                status,
             );
         }
 
-        // Show configured models not in the registry
-        let mut extra_configured = Vec::new();
-        for id in ctx.config.models.keys() {
-            if MODEL_REGISTRY.get(id).is_none() {
-                extra_configured.push(id.clone());
-            }
-        }
-        extra_configured.sort();
+        println!();
+        println!("Total: {} models", filtered.len());
+        Ok(())
+    }
 
-        if !extra_configured.is_empty() {
-            println!();
-            println!("Additional configured models:");
-            for id in &extra_configured {
-                println!("  - {} (CONFIGURED)", id);
+    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+
+        println!();
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "PROVIDER");
+        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "----", "------", "----", "-------", "----", "--------");
+
+        let mut valid = 0;
+        for (model_id, model_config) in ctx.config.models.clone() {
+            if let Some(model_md) = MODEL_REGISTRY.get(&model_id) {
+                if let Some(ref t) = filter_type {
+                    if model_md.model_type != *t {
+                        continue;
+                    }
+                }
+                valid += 1;
+                println!(
+                    "{:<35} {:<18} {:<8} {:<12} {:<12} {}",
+                    model_id,
+                    model_md.family,
+                    format!("{}B", model_md.size / 1_000_000_000),
+                    format!("{}", model_md.context_length),
+                    model_md.model_type.to_string(),
+                    match model_config.provider_id {
+                        Some(p_id) => p_id,
+                        None => "None".to_string(),
+                    },
+                );
             }
         }
 
         println!();
-        let extra_suffix = if extra_configured.is_empty() {
-            String::new()
-        } else {
-            format!(", {} additional configured", extra_configured.len())
-        };
-        println!("Total: {} models{}", filtered.len(), extra_suffix);
+        println!("Total: {} models", valid);
         Ok(())
     }
 
