@@ -1,5 +1,6 @@
 pub mod config;
 pub mod registry;
+pub mod dependency;
 pub mod models;
 pub mod capabilities;
 pub mod commands;
