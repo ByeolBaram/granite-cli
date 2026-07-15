@@ -87,7 +87,10 @@ enum ModelSubcommands {
 
 #[derive(Subcommand, Debug)]
 enum CapabilitySubcommands {
-    /// List all available capabilities
+    /// Show the catalog of all available capabilities
+    Catalog,
+
+    /// List all configured capabilities
     List,
 
     /// Show detailed capability information
@@ -105,7 +108,10 @@ enum CapabilitySubcommands {
 
 #[derive(Subcommand, Debug)]
 enum ProviderSubcommands {
-    /// List configured providers
+    /// Show the catalog of all available providers
+    Catalog,
+
+    /// List all configured providers
     List,
 
     /// Interactive provider setup wizard
@@ -185,12 +191,12 @@ async fn main() {
             println!();
             println!("Available commands:");
             println!("  model        Model management (catalog, list, info, setup)");
-            println!("  capability   Capability management (list, info, setup)");
-            println!("  provider     Provider management (list, setup, health)");
+            println!("  capability   Capability management (catalog, list, info, setup)");
+            println!("  provider     Provider management (catalog, list, setup, health)");
             println!("  configure    Configure tools (Phase 3)");
             println!("  launch       Launch tool with overlay (Phase 3)");
             println!();
-            println!("Try 'granite-cli model list' to get started.");
+            println!("Try 'granite-cli provider catalog' to get started.");
             Ok(())
         }
     };
@@ -236,6 +242,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
 
 async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
     match subcmd {
+        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx),
         CapabilitySubcommands::List => CapabilityCommands::list(ctx),
         CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
         CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
@@ -244,6 +251,7 @@ async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcomma
 
 async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
     match subcmd {
+        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
         ProviderSubcommands::List => ProviderCommands::list(ctx),
         ProviderSubcommands::Setup { provider_id } => ProviderCommands::setup(ctx, &provider_id).await,
         ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,

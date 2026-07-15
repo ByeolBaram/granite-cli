@@ -8,54 +8,49 @@ use crate::providers::{PROVIDER_REGISTRY, AuthType, HealthStatus};
 pub struct ProviderCommands;
 
 impl ProviderCommands {
-    /// List all providers from the static registry, indicating which are configured.
-    pub fn list(ctx: &crate::AppContext) -> Result<()> {
+    pub fn catalog(_ctx: &crate::AppContext) -> Result<()> {
         let providers = PROVIDER_REGISTRY.entries();
 
+        let filtered = providers.len();
+
         println!();
-        println!("{:<20} {:<10} {:<35} {}", "ID", "TYPE", "ENDPOINT", "STATUS");
-        println!("{:<20} {:<10} {:<35} {}", "----", "----", "--------", "------");
+        println!("{:<20} {:<10} {:<35}", "ID", "TYPE", "ENDPOINT");
+        println!("{:<20} {:<10} {:<35}", "----", "----", "--------");
 
         for (provider_id, provider) in &providers {
-            let status = if ctx.config.providers.contains_key(*provider_id) {
-                "CONFIGURED"
-            } else {
-                "BUNDLED"
-            };
-
             println!(
-                "{:<20} {:<10} {:<35} {}",
+                "{:<20} {:<10} {:<35}",
                 provider_id,
                 provider.provider_type,
                 provider.default_endpoint,
-                status,
             );
         }
 
-        // Show configured providers not in the registry
-        let mut extra_configured = Vec::<String>::new();
-        for id in ctx.config.providers.keys() {
-            if PROVIDER_REGISTRY.get(id).is_none() {
-                extra_configured.push(id.clone());
-            }
-        }
-        extra_configured.sort();
+        println!();
+        println!("Total: {} providers", filtered);
+        Ok(())
+    }
 
-        if !extra_configured.is_empty() {
-            println!();
-            println!("Additional configured providers:");
-            for id in &extra_configured {
-                println!("  - {} (CONFIGURED)", id);
-            }
+    pub fn list(_ctx: &crate::AppContext) -> Result<()> {
+
+        println!();
+        println!("{:<20} {:<25} {:<10} {:<35}", "ID", "NAME", "TYPE", "ENDPOINT");
+        println!("{:<20} {:<25} {:<10} {:<35}", "----", "----", "----", "--------");
+
+        let mut valid = 0;
+        for (provider_id, provider_config) in _ctx.config.providers.clone() {
+            valid += 1;
+            println!(
+                "{:<20} {:<25} {:<10} {:<35}",
+                provider_id,
+                provider_config.name,
+                provider_config.provider_type,
+                provider_config.endpoint,
+            );
         }
 
         println!();
-        let extra_suffix = if extra_configured.is_empty() {
-            String::new()
-        } else {
-            format!(", {} additional configured", extra_configured.len())
-        };
-        println!("Total: {} providers{}", providers.len(), extra_suffix);
+        println!("Total: {} providers", valid);
         Ok(())
     }
 
