@@ -20,6 +20,7 @@ num_cpus = "1"
 sys-info = "0.9"
 html2md = "0.2"
 thiserror = "2"
+schemars = "1.2.1"
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
