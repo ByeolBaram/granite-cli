@@ -67,6 +67,9 @@ macro_rules! define_factory {
 
                 /// Construct an instance with the given config
                 fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait>;
+
+                /// JSON schema of the config this implementation expects
+                fn config_schema(&self) -> schemars::Schema;
             }
 
             /// Trait that implementations must provide to supply metadata.
@@ -74,6 +77,16 @@ macro_rules! define_factory {
             pub trait [<Has $trait Metadata>] {
                 /// Return metadata describing this implementation
                 fn metadata() -> $metadata;
+
+                /// Return the JSON schema of the config this implementation's
+                /// `ConfigConstructable::new` expects. Implementations with a
+                /// real config struct should override this with
+                /// `schemars::schema_for!(TheirConfigType)`; the default is an
+                /// opaque schema for implementations with no structured config
+                /// worth exposing (e.g. test doubles).
+                fn config_schema() -> schemars::Schema {
+                    schemars::schema_for!(serde_json::Value)
+                }
             }
 
             /// Implementation of the internal metadata trait for any type T
@@ -88,6 +101,10 @@ macro_rules! define_factory {
 
                 fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait> {
                     Box::new(T::new(cfg))
+                }
+
+                fn config_schema(&self) -> schemars::Schema {
+                    T::config_schema()
                 }
             }
 
@@ -174,6 +191,20 @@ macro_rules! define_factory {
                         .map(|(k, v)| (*k, v.describe()))
                         .collect()
                 }
+
+                /// Get the config JSON schema for a specific implementation by name.
+                ///
+                /// # Arguments
+                ///
+                /// * `name` - The name of the implementation
+                ///
+                /// # Returns
+                ///
+                /// * `Some(schema)` - Schema of the config `construct` expects, if found
+                /// * `None` - If name not registered
+                pub(crate) fn config_schema(&self, name: &str) -> Option<schemars::Schema> {
+                    self.registry.get(name).map(|x| x.config_schema())
+                }
             }
         }
 
@@ -181,6 +212,10 @@ macro_rules! define_factory {
             fn default() -> Self {
                 Self::new()
             }
+        }
+
+        impl $crate::dependency::Catalogued for dyn $trait {
+            type Metadata = $metadata;
         }
     };
 }
@@ -244,9 +279,18 @@ mod tests {
         }
     }
 
+    #[derive(schemars::JsonSchema)]
+    struct TestImpl2Config {
+        value: i32,
+    }
+
     impl HasTestTraitMetadata for TestImpl2 {
         fn metadata() -> String {
             "TestImpl2: Another test implementation".to_string()
+        }
+
+        fn config_schema() -> schemars::Schema {
+            schemars::schema_for!(TestImpl2Config)
         }
     }
 
@@ -316,5 +360,35 @@ mod tests {
     fn test_factory_default() {
         let factory = TestTraitFactory::default();
         assert_eq!(factory.entries().len(), 0);
+    }
+
+    #[test]
+    fn test_config_schema_default_is_opaque() {
+        let mut factory = TestTraitFactory::new();
+        factory.register::<TestImpl1>("impl1");
+
+        // TestImpl1 never overrides config_schema, so it gets the default
+        // opaque `serde_json::Value` schema rather than failing to compile.
+        let schema = factory.config_schema("impl1").unwrap();
+        assert_eq!(schema, schemars::schema_for!(serde_json::Value));
+    }
+
+    #[test]
+    fn test_config_schema_uses_override() {
+        let mut factory = TestTraitFactory::new();
+        factory.register::<TestImpl2>("impl2");
+
+        let schema = factory.config_schema("impl2").unwrap();
+        let properties = schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("object schema with properties");
+        assert!(properties.contains_key("value"));
+    }
+
+    #[test]
+    fn test_config_schema_unknown() {
+        let factory = TestTraitFactory::new();
+        assert!(factory.config_schema("unknown").is_none());
     }
 }

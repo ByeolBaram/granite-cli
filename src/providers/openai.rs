@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 /*-- OpenAI Provider Configuration -------------------------------------------*/
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct OpenAIProviderConfig {
     /// Base URL for the OpenAI-compatible API
     pub base_url: String,
@@ -211,6 +211,10 @@ impl HasProviderMetadata for OpenAIProvider {
             ],
         }
     }
+
+    fn config_schema() -> schemars::Schema {
+        schemars::schema_for!(OpenAIProviderConfig)
+    }
 }
 
 /*-- tests -------------------------------------------------------------------*/
@@ -226,6 +230,19 @@ mod tests {
         assert!(config.api_key.is_none());
         assert_eq!(config.timeout_secs, 10);
         assert!(config.verify_ssl);
+    }
+
+    #[test]
+    fn test_provider_config_schema_reflects_real_config_struct() {
+        let schema = OpenAIProvider::config_schema();
+        let properties = schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .expect("object schema with properties");
+        assert!(properties.contains_key("base_url"));
+        assert!(properties.contains_key("api_key"));
+        assert!(properties.contains_key("timeout_secs"));
+        assert!(properties.contains_key("verify_ssl"));
     }
 
     #[test]

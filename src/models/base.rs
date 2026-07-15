@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /*-- ModelFunction Enum ------------------------------------------------------*/
 
 /// Functional capabilities that models can provide
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ModelFunction {
 
     /*-- Chat Functions --*/

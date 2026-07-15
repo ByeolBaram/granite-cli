@@ -31,7 +31,7 @@ impl std::fmt::Display for ApiType {
 /*-- ApiEndpoint Enum --------------------------------------------------------*/
 
 /// Specific API endpoints within an API family
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ApiEndpoint {
     /// /v1/chat/completions
     OpenAIChat,
