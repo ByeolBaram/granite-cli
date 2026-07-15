@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn test_all_models_registered() {
-        let models = MODEL_REGISTRY.list();
+        let models = MODEL_REGISTRY.entries();
         assert!(models.len() > 0, "Expected models to be registered");
     }
 
@@ -34,7 +34,6 @@ mod tests {
         assert!(model.is_some(), "granite-3.1-8b-instruct should be registered");
 
         let metadata = model.unwrap();
-        assert_eq!(metadata.id, "granite-3.1-8b-instruct");
         assert_eq!(metadata.family, "Granite 3.1");
         assert_eq!(metadata.version, "3.1");
         assert_eq!(metadata.context_length, 131072);
@@ -55,8 +54,8 @@ mod tests {
 
     #[test]
     fn test_all_model_ids() {
-        let models = MODEL_REGISTRY.list();
-        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        let models = MODEL_REGISTRY.entries();
+        let ids: Vec<&str> = models.keys().copied().collect();
 
         assert!(ids.contains(&"granite-3.1-8b-instruct"));
         assert!(ids.contains(&"granite-guardian-3.1-8b"));

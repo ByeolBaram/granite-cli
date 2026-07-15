@@ -207,7 +207,6 @@ mod tests {
 
     #[async_trait]
     impl Provider for TestProvider {
-        fn id(&self) -> &str { "test" }
         fn name(&self) -> &str { "Test" }
         fn function_endpoints(&self) -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
             self.functions.clone()
@@ -235,7 +234,6 @@ mod tests {
     }
 
     impl crate::models::Model for TestModel {
-        fn id(&self) -> &str { "test-model" }
         fn family(&self) -> &str { "test" }
         fn version(&self) -> &str { "1.0" }
         fn size(&self) -> u64 { 1000 }

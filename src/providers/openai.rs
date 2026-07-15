@@ -231,7 +231,6 @@ mod tests {
     #[test]
     fn test_provider_metadata() {
         let meta = OpenAIProvider::metadata();
-        assert_eq!(meta.id, "openai-compatible");
         assert_eq!(meta.name, "OpenAI Compatible Provider");
         assert!(meta.supported_api_types.contains(&ApiType::OpenAI));
         assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Chat));

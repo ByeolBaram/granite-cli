@@ -300,14 +300,14 @@ mod tests {
     }
 
     #[test]
-    fn test_factory_list() {
+    fn test_factory_entries() {
         let mut factory = TestTraitFactory::new();
         factory.register::<TestImpl1>("impl1");
         factory.register::<TestImpl2>("impl2");
 
-        let list = factory.list();
-        assert_eq!(list.len(), 2);
-        let metadata_strs: Vec<String> = list.into_iter().map(|m| m.clone()).collect();
+        let entries = factory.entries();
+        assert_eq!(entries.len(), 2);
+        let metadata_strs: Vec<String> = entries.into_values().collect();
         assert!(metadata_strs.iter().any(|s| s.contains("TestImpl1")));
         assert!(metadata_strs.iter().any(|s| s.contains("TestImpl2")));
     }
@@ -315,6 +315,6 @@ mod tests {
     #[test]
     fn test_factory_default() {
         let factory = TestTraitFactory::default();
-        assert_eq!(factory.list().len(), 0);
+        assert_eq!(factory.entries().len(), 0);
     }
 }
