@@ -1,4 +1,5 @@
 // Standard
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 /*-- Provider Registry -------------------------------------------------------*/
@@ -8,6 +9,51 @@ pub static PROVIDER_REGISTRY: LazyLock<base::ProviderFactory> = LazyLock::new(||
     factory.register::<openai::OpenAIProvider>("openai-compatible");
     factory
 });
+
+/*-- ProviderSource -----------------------------------------------------------*/
+
+/// The real `Configured<dyn Provider>`: eagerly constructs a live provider
+/// instance for every enabled `ProviderConfig`, keyed by its instance
+/// nickname (`provider_id`) rather than its catalog type (`provider_type`) --
+/// this is what lets multiple named instances of one catalog type (e.g.
+/// `openai-compatible` backing `llama-cpp`, `ollama`, `lm-studio`) coexist.
+pub struct ProviderSource {
+    constructed: Vec<(String, Box<dyn Provider>)>,
+}
+
+impl ProviderSource {
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        let constructed = config
+            .providers
+            .values()
+            .filter(|provider_config| provider_config.enabled)
+            .filter_map(|provider_config| {
+                PROVIDER_REGISTRY
+                    .construct(&provider_config.provider_type, &provider_config.config)
+                    .ok()
+                    .map(|provider| (provider_config.provider_id.clone(), provider))
+            })
+            .collect();
+        Self { constructed }
+    }
+}
+
+impl crate::dependency::Configured<dyn Provider> for ProviderSource {
+    fn instances(&self) -> Vec<(String, &(dyn Provider + 'static))> {
+        self.constructed
+            .iter()
+            .map(|(id, provider)| (id.clone(), provider.as_ref()))
+            .collect()
+    }
+
+    fn catalog(&self) -> HashMap<&'static str, ProviderMetadata> {
+        PROVIDER_REGISTRY.entries()
+    }
+
+    fn config_schema(&self, type_name: &str) -> Option<schemars::Schema> {
+        PROVIDER_REGISTRY.config_schema(type_name)
+    }
+}
 
 /*-- Module Declarations -----------------------------------------------------*/
 
@@ -19,3 +65,81 @@ pub use base::{
 
 mod openai;
 pub use openai::{OpenAIProvider, OpenAIProviderConfig};
+
+/*-- tests ---------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ProviderConfig};
+    use crate::dependency::{resolve, Configured, DependsOn, Requirement};
+
+    fn openai_provider_config(id: &str, base_url: &str) -> ProviderConfig {
+        ProviderConfig {
+            provider_id: id.to_string(),
+            provider_type: "openai-compatible".to_string(),
+            config: serde_json::json!({ "base_url": base_url }),
+            enabled: true,
+        }
+    }
+
+    fn config_with_two_named_instances() -> Config {
+        let mut config = Config::default();
+        config.providers.insert(
+            "llama-cpp".to_string(),
+            openai_provider_config("llama-cpp", "http://localhost:8080"),
+        );
+        config.providers.insert(
+            "ollama".to_string(),
+            openai_provider_config("ollama", "http://localhost:11434"),
+        );
+        config
+    }
+
+    #[test]
+    fn provider_source_constructs_one_instance_per_named_provider() {
+        let config = config_with_two_named_instances();
+        let source = ProviderSource::from_config(&config);
+
+        let mut ids: Vec<String> = source.instances().into_iter().map(|(id, _)| id).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["llama-cpp".to_string(), "ollama".to_string()]);
+    }
+
+    #[test]
+    fn provider_source_skips_disabled_providers() {
+        let mut config = config_with_two_named_instances();
+        config.providers.get_mut("ollama").unwrap().enabled = false;
+
+        let source = ProviderSource::from_config(&config);
+        let ids: Vec<String> = source.instances().into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids, vec!["llama-cpp".to_string()]);
+    }
+
+    struct AnyGguf;
+    impl Requirement<dyn Provider> for AnyGguf {
+        fn admits_type(&self, metadata: &ProviderMetadata) -> bool {
+            metadata.supported_formats.contains(&ModelFormat::GGUF)
+        }
+        fn admits_instance(&self, instance: &dyn Provider) -> bool {
+            instance.can_run_model("gguf", "fp16")
+        }
+    }
+    impl DependsOn<dyn Provider> for AnyGguf {
+        type Requirement = Self;
+        fn requirement(&self) -> Self {
+            AnyGguf
+        }
+    }
+
+    #[test]
+    fn resolve_surfaces_all_matching_named_instances() {
+        let config = config_with_two_named_instances();
+        let source = ProviderSource::from_config(&config);
+
+        let resolution = resolve(&AnyGguf, &source);
+        let mut ids = resolution.existing_instances;
+        ids.sort();
+        assert_eq!(ids, vec!["llama-cpp".to_string(), "ollama".to_string()]);
+    }
+}
