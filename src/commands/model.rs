@@ -3,9 +3,48 @@ use anyhow::Result;
 use dialoguer::{Confirm, Input};
 
 // Local
+use crate::commands::ProviderCommands;
+use crate::dependency::{self, DependsOn, Requirement};
 use crate::models::{MODEL_REGISTRY, ModelType};
+use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 
 pub struct ModelCommands;
+
+/*-- Model -> Provider dependency --------------------------------------------*/
+
+/// What a model variant needs from a provider: support for its format and
+/// precision. Concrete `Requirement`/`DependsOn` pairing for the abstract
+/// dependency-resolution framework in `dependency::mod`.
+#[derive(Clone)]
+struct VariantRequirement {
+    format: String,
+    precision: String,
+}
+
+impl Requirement<dyn Provider> for VariantRequirement {
+    fn admits_type(&self, metadata: &ProviderMetadata) -> bool {
+        metadata
+            .supported_formats
+            .iter()
+            .any(|f| f.to_string().eq_ignore_ascii_case(&self.format))
+            && metadata
+                .supported_precisions
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(&self.precision))
+    }
+
+    fn admits_instance(&self, instance: &dyn Provider) -> bool {
+        instance.can_run_model(&self.format, &self.precision)
+    }
+}
+
+impl DependsOn<dyn Provider> for VariantRequirement {
+    type Requirement = Self;
+
+    fn requirement(&self) -> Self {
+        self.clone()
+    }
+}
 
 impl ModelCommands {
     pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
@@ -119,7 +158,6 @@ impl ModelCommands {
                     println!("  Provider: {:?}", configured.provider_id);
                     println!("  Variant: {:?}", configured.variant);
                     println!("  Enabled: {}", configured.enabled);
-                    println!("  API Key: {}", masked(configured.api_key.as_deref()));
                 }
 
                 Ok(())
@@ -135,7 +173,7 @@ impl ModelCommands {
         }
     }
 
-    pub fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
+    pub async fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 println!("\nSetting up model: {}", model_id);
@@ -144,11 +182,6 @@ impl ModelCommands {
                 println!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length);
                 println!("Type: {}", model.model_type);
                 println!();
-
-                let provider_id = Input::new()
-                    .with_prompt("Provider ID (leave empty for now, will be configured later)")
-                    .default(String::new())
-                    .interact_text()?;
 
                 let variant_options: Vec<_> = model.variants.iter()
                     .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
@@ -176,22 +209,25 @@ impl ModelCommands {
                     }
                 }
 
+                let requirement = VariantRequirement {
+                    format: selected_variant.format.clone(),
+                    precision: selected_variant.precision.clone(),
+                };
+                let source = ProviderSource::from_config(&ctx.config);
+                let resolution = dependency::resolve(&requirement, &source);
+
+                let provider_id = Self::select_provider(ctx, &resolution).await?;
+
                 let model_config = crate::config::ModelConfig {
                     model_id: model_id.to_string(),
-                    provider_id: if provider_id.is_empty() { None } else { Some(provider_id) },
+                    provider_id,
                     variant: Some(format!("{}/{}", selected_variant.format, selected_variant.precision)),
-                    endpoint: None,
-                    api_key: None,
                     enabled: true,
                 };
 
                 ctx.config.insert_model(model_id, model_config);
 
                 println!("\nModel '{}' configured successfully!", model_id);
-                println!("Configure a provider to complete setup:");
-                println!("  granite-cli provider setup <provider-id>");
-                println!("Then set the provider_id in models.yaml, or run:");
-                println!("  granite-cli configure <tool-id>");
 
                 Ok(())
             }
@@ -205,12 +241,110 @@ impl ModelCommands {
             }
         }
     }
+
+    /// Resolve which provider instance to use for a model variant, prompting
+    /// to configure a new one (with its own instance nickname, distinct from
+    /// its catalog type) when no existing instance satisfies it.
+    async fn select_provider(
+        ctx: &mut crate::AppContext,
+        resolution: &dependency::Resolution,
+    ) -> Result<Option<String>> {
+        if resolution.is_unsatisfiable() {
+            println!("\nNo provider supports this variant's format/precision yet.");
+            println!("Configure a provider later, then set its id on this model.");
+            return Ok(None);
+        }
+
+        const CONFIGURE_NEW: &str = "Configure a new provider...";
+        let mut options = resolution.existing_instances.clone();
+        if !resolution.configurable_types.is_empty() {
+            options.push(CONFIGURE_NEW.to_string());
+        }
+
+        let choice = if options.len() == 1 {
+            0
+        } else {
+            dialoguer::Select::new()
+                .with_prompt("Select a provider for this model")
+                .items(&options)
+                .default(0)
+                .interact()?
+        };
+
+        if options[choice] != CONFIGURE_NEW {
+            return Ok(Some(options[choice].clone()));
+        }
+
+        let provider_type = if resolution.configurable_types.len() == 1 {
+            resolution.configurable_types[0]
+        } else {
+            let type_index = dialoguer::Select::new()
+                .with_prompt("Select a provider type to configure")
+                .items(&resolution.configurable_types)
+                .default(0)
+                .interact()?;
+            resolution.configurable_types[type_index]
+        };
+
+        let nickname: String = Input::new()
+            .with_prompt("Name this provider instance")
+            .with_initial_text(provider_type)
+            .interact_text()?;
+
+        ProviderCommands::setup(ctx, provider_type, Some(&nickname)).await?;
+
+        Ok(Some(nickname))
+    }
 }
 
-fn masked(api_key: Option<&str>) -> String {
-    match api_key {
-        Some(key) if key.len() > 8 => format!("{}****{}", &key[..4], &key[key.len() - 4..]),
-        Some(_) => "****".to_string(),
-        None => "(not set)".to_string(),
+/*-- tests -----------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::{ModelFormat, ProviderType};
+    use crate::registry::ConfigConstructable;
+
+    fn metadata_supporting(formats: Vec<ModelFormat>, precisions: Vec<&str>) -> ProviderMetadata {
+        ProviderMetadata {
+            name: "Test Provider".to_string(),
+            description: "".to_string(),
+            provider_type: ProviderType::Local,
+            default_endpoint: "http://localhost".to_string(),
+            supported_api_types: vec![],
+            default_function_endpoints: std::collections::HashMap::new(),
+            supported_formats: formats,
+            supported_precisions: precisions.into_iter().map(String::from).collect(),
+            authentication: vec![],
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn admits_type_matches_format_and_precision_case_insensitively() {
+        let requirement = VariantRequirement { format: "GGUF".to_string(), precision: "FP16".to_string() };
+        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16", "fp32"]);
+        assert!(requirement.admits_type(&metadata));
+    }
+
+    #[test]
+    fn admits_type_rejects_unsupported_format() {
+        let requirement = VariantRequirement { format: "gguf".to_string(), precision: "fp16".to_string() };
+        let metadata = metadata_supporting(vec![ModelFormat::Safetensors], vec!["fp16"]);
+        assert!(!requirement.admits_type(&metadata));
+    }
+
+    #[test]
+    fn admits_type_rejects_unsupported_precision() {
+        let requirement = VariantRequirement { format: "gguf".to_string(), precision: "bfloat16".to_string() };
+        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16", "fp32"]);
+        assert!(!requirement.admits_type(&metadata));
+    }
+
+    #[test]
+    fn admits_instance_defers_to_the_provider_instance() {
+        let requirement = VariantRequirement { format: "safetensors".to_string(), precision: "bfloat16".to_string() };
+        let provider = crate::providers::OpenAIProvider::new(&serde_json::json!({ "base_url": "http://localhost:8080" }));
+        assert!(requirement.admits_instance(&provider));
     }
 }

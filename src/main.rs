@@ -117,8 +117,14 @@ enum ProviderSubcommands {
 
     /// Interactive provider setup wizard
     Setup {
-        /// Provider ID to set up
-        provider_id: String,
+        /// Catalog provider type to set up (e.g. `openai-compatible`)
+        provider_type: String,
+
+        /// Nickname for this provider instance. Defaults to `provider_type`;
+        /// pass a distinct value to configure multiple named instances of
+        /// the same catalog type (e.g. `--id ollama`, `--id lm-studio`).
+        #[arg(long = "id")]
+        instance_id: Option<String>,
     },
 
     /// Check provider health
@@ -237,7 +243,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             ModelCommands::list(ctx, filter)
         }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
-        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id),
+        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }
 }
 
@@ -254,7 +260,9 @@ async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands)
     match subcmd {
         ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
         ProviderSubcommands::List => ProviderCommands::list(ctx),
-        ProviderSubcommands::Setup { provider_id } => ProviderCommands::setup(ctx, &provider_id).await,
+        ProviderSubcommands::Setup { provider_type, instance_id } => {
+            ProviderCommands::setup(ctx, &provider_type, instance_id.as_deref()).await
+        }
         ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
     }
 }
