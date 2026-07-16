@@ -99,6 +99,13 @@ def parse_variant(s):
     return variant
 
 
+# Valid model functions for validation
+VALID_FUNCTIONS = {
+    "Chat", "ToolCalling", "Thinking", "ImageUnderstanding", "Guardian",
+    "Embeddings", "Transcription", "Translation", "SpeakerAttribution", "KeywordBiasing"
+}
+
+
 def review_model(model, model_index, total):
     """Review a single model entry field by field."""
     print(f"\n{'─' * 60}")
@@ -136,8 +143,9 @@ def review_model(model, model_index, total):
                 model[field] = new_val
             # if "accept" we keep current
 
-    # required_provider_capabilities
-    print(f"\n  required_provider_capabilities: {model.get('required_provider_capabilities', [])} [edit Y/N?] ", end="", flush=True)
+    # supported_functions
+    functions = model.get('supported_functions', [])
+    print(f"\n  supported_functions: {functions} [edit Y/N?] ", end="", flush=True)
     try:
         choice = input().strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -148,8 +156,8 @@ def review_model(model, model_index, total):
         return False
 
     if choice == 'y':
-        value = model.get('required_provider_capabilities', [])
-        print(f"  Enter comma-separated list (or type 'q' to quit): ", end="", flush=True)
+        print(f"  Enter comma-separated functions (or 'q' to quit): ")
+        print(f"  Valid: {', '.join(sorted(VALID_FUNCTIONS))}")
         try:
             raw = input().strip()
         except (EOFError, KeyboardInterrupt):
@@ -162,7 +170,13 @@ def review_model(model, model_index, total):
         if raw == '':
             pass  # keep current
         else:
-            model['required_provider_capabilities'] = parse_list(raw)
+            raw_funcs = parse_list(raw)
+            # Validate functions
+            invalid = [f for f in raw_funcs if f not in VALID_FUNCTIONS]
+            if invalid:
+                print(f"  Warning: unknown functions: {', '.join(invalid)}. Keeping current.")
+            else:
+                model['supported_functions'] = raw_funcs
 
     # variants
     variants = model.get('variants', [])

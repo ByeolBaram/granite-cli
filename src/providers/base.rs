@@ -1,7 +1,120 @@
+use crate::models::ModelFunction;
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::Duration;
+
+/*-- ApiType Enum ------------------------------------------------------------*/
+
+/// API protocol families that providers can implement
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApiType {
+    /// OpenAI-compatible API protocol
+    OpenAI,
+    /// Ollama API protocol
+    Ollama,
+    /// Anthropic API protocol
+    Anthropic,
+}
+
+impl std::fmt::Display for ApiType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ApiType::OpenAI => write!(f, "OpenAI"),
+            ApiType::Ollama => write!(f, "Ollama"),
+            ApiType::Anthropic => write!(f, "Anthropic"),
+        }
+    }
+}
+
+/*-- ApiEndpoint Enum --------------------------------------------------------*/
+
+/// Specific API endpoints within an API family
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ApiEndpoint {
+    /// /v1/chat/completions
+    OpenAIChat,
+    /// /v1/embeddings
+    OpenAIEmbeddings,
+    /// /v1/audio/transcriptions
+    OpenAIAudioTranscription,
+    /// /api/chat
+    OllamaChat,
+    /// /api/embeddings
+    OllamaEmbeddings,
+    /// /v1/messages
+    AnthropicMessages,
+}
+
+impl ApiEndpoint {
+    /// Returns the API type this endpoint belongs to
+    pub fn api_type(&self) -> ApiType {
+        match self {
+            ApiEndpoint::OpenAIChat
+            | ApiEndpoint::OpenAIEmbeddings
+            | ApiEndpoint::OpenAIAudioTranscription => ApiType::OpenAI,
+
+            ApiEndpoint::OllamaChat
+            | ApiEndpoint::OllamaEmbeddings => ApiType::Ollama,
+
+            ApiEndpoint::AnthropicMessages => ApiType::Anthropic,
+        }
+    }
+
+    /// Returns the endpoint path
+    pub fn path(&self) -> &'static str {
+        match self {
+            ApiEndpoint::OpenAIChat => "/v1/chat/completions",
+            ApiEndpoint::OpenAIEmbeddings => "/v1/embeddings",
+            ApiEndpoint::OpenAIAudioTranscription => "/v1/audio/transcriptions",
+            ApiEndpoint::OllamaChat => "/api/chat",
+            ApiEndpoint::OllamaEmbeddings => "/api/embeddings",
+            ApiEndpoint::AnthropicMessages => "/v1/messages",
+        }
+    }
+
+    /// Returns the model functions this endpoint provides
+    pub fn provides_functions(&self) -> Vec<ModelFunction> {
+        match self {
+            ApiEndpoint::OpenAIChat
+            | ApiEndpoint::OllamaChat
+            | ApiEndpoint::AnthropicMessages => vec![
+                ModelFunction::Chat,
+                ModelFunction::ToolCalling,
+                ModelFunction::Thinking,
+                ModelFunction::ImageUnderstanding,
+                ModelFunction::Guardian,
+            ],
+
+            ApiEndpoint::OpenAIEmbeddings
+            | ApiEndpoint::OllamaEmbeddings => vec![
+                ModelFunction::Embeddings,
+            ],
+
+            ApiEndpoint::OpenAIAudioTranscription => vec![
+                ModelFunction::Transcription,
+                ModelFunction::Translation,
+                ModelFunction::SpeakerAttribution,
+                ModelFunction::KeywordBiasing,
+            ],
+        }
+    }
+}
+
+impl std::fmt::Display for ApiEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} ({})",
+            self.api_type(),
+            self.path(),
+            self.provides_functions()
+                .iter()
+                .map(|m| m.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
 
 /*-- Provider Trait ----------------------------------------------------------*/
 
@@ -9,9 +122,14 @@ use std::time::Duration;
 /// All providers must implement this trait along with ConfigConstructable.
 #[async_trait]
 pub trait Provider: ConfigConstructable + Send + Sync {
-    fn id(&self) -> &str;
     fn name(&self) -> &str;
-    fn api_capabilities(&self) -> Vec<ApiSurface>;
+
+    /// Returns the mapping of model functions to API endpoints this provider instance supports.
+    /// This is runtime/configuration-specific.
+    fn function_endpoints(&self) -> HashMap<ModelFunction, Vec<ApiEndpoint>>;
+
+    /// Returns the API types this provider implementation supports (type-level).
+    fn supported_api_types(&self) -> Vec<ApiType>;
 
     // Model support
     fn supported_formats(&self) -> Vec<ModelFormat>;
@@ -22,6 +140,19 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 
     // Health
     async fn health_check(&self) -> Result<HealthStatus, ProviderError>;
+
+    /// Helper: Check if this provider can serve a specific function
+    fn supports_function(&self, function: &ModelFunction) -> bool {
+        self.function_endpoints().contains_key(function)
+    }
+
+    /// Helper: Get endpoints for a specific function
+    fn endpoints_for_function(&self, function: &ModelFunction) -> Vec<ApiEndpoint> {
+        self.function_endpoints()
+            .get(function)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 /*-- Metadata Types ----------------------------------------------------------*/
@@ -29,12 +160,17 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 /// Metadata describing a provider implementation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderMetadata {
-    pub id: String,
     pub name: String,
     pub description: String,
     pub provider_type: ProviderType,
     pub default_endpoint: String,
-    pub api_capabilities: Vec<ApiSurface>,
+
+    /// API types this provider implementation supports (AND logic)
+    pub supported_api_types: Vec<ApiType>,
+
+    /// Default function-to-endpoint mappings for this provider type
+    pub default_function_endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
+
     pub supported_formats: Vec<ModelFormat>,
     pub supported_precisions: Vec<String>,
     pub authentication: Vec<AuthType>,
@@ -45,31 +181,13 @@ impl std::fmt::Display for ProviderMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{} ({}): {} - {}",
-            self.id, self.provider_type, self.name, self.description
+            "{}: {} - {}",
+            self.provider_type, self.name, self.description
         )
     }
 }
 
 /*-- Supporting Types --------------------------------------------------------*/
-
-/// API surfaces that providers can support.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ApiSurface {
-    OpenAIChat,         // /v1/chat/completions
-    OllamaChat,         // /api/chat
-    AnthropicMessages,  // /v1/messages
-}
-
-impl std::fmt::Display for ApiSurface {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ApiSurface::OpenAIChat => write!(f, "OpenAI Chat (/v1/chat/completions)"),
-            ApiSurface::OllamaChat => write!(f, "Ollama Chat (/api/chat)"),
-            ApiSurface::AnthropicMessages => write!(f, "Anthropic Messages (/v1/messages)"),
-        }
-    }
-}
 
 /// Model formats that providers can serve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,3 +272,49 @@ pub enum ProviderError {
 use crate::define_factory;
 
 define_factory!(Provider, ProviderMetadata, ProviderFactory);
+
+/*-- tests -------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_api_endpoint_paths() {
+        assert_eq!(ApiEndpoint::OpenAIChat.path(), "/v1/chat/completions");
+        assert_eq!(ApiEndpoint::OpenAIEmbeddings.path(), "/v1/embeddings");
+        assert_eq!(ApiEndpoint::OpenAIAudioTranscription.path(), "/v1/audio/transcriptions");
+        assert_eq!(ApiEndpoint::OllamaChat.path(), "/api/chat");
+        assert_eq!(ApiEndpoint::OllamaEmbeddings.path(), "/api/embeddings");
+        assert_eq!(ApiEndpoint::AnthropicMessages.path(), "/v1/messages");
+    }
+
+    #[test]
+    fn test_api_endpoint_types() {
+        assert!(matches!(ApiEndpoint::OpenAIChat.api_type(), ApiType::OpenAI));
+        assert!(matches!(ApiEndpoint::OllamaChat.api_type(), ApiType::Ollama));
+        assert!(matches!(ApiEndpoint::AnthropicMessages.api_type(), ApiType::Anthropic));
+    }
+
+    #[test]
+    fn test_provides_functions() {
+        let chat_functions = ApiEndpoint::OpenAIChat.provides_functions();
+        assert!(chat_functions.contains(&ModelFunction::Chat));
+        assert!(chat_functions.contains(&ModelFunction::ToolCalling));
+
+        let embedding_functions = ApiEndpoint::OpenAIEmbeddings.provides_functions();
+        assert_eq!(embedding_functions.len(), 1);
+        assert!(embedding_functions.contains(&ModelFunction::Embeddings));
+
+        let audio_functions = ApiEndpoint::OpenAIAudioTranscription.provides_functions();
+        assert!(audio_functions.contains(&ModelFunction::Transcription));
+    }
+
+    #[test]
+    fn test_model_function_display() {
+use crate::models::ModelFunction;
+        assert_eq!(ModelFunction::Chat.to_string(), "Chat");
+        assert_eq!(ModelFunction::ImageUnderstanding.to_string(), "Image Understanding");
+        assert_eq!(ModelFunction::Transcription.to_string(), "Transcription");
+    }
+}

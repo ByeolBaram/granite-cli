@@ -1,5 +1,6 @@
 pub mod config;
 pub mod registry;
+pub mod dependency;
 pub mod models;
 pub mod capabilities;
 pub mod commands;
@@ -58,7 +59,14 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum ModelSubcommands {
-    /// List all available models
+    /// Show the catalog of all available models
+    Catalog {
+        /// Filter by model type
+        #[arg(short, long)]
+        r#type: Option<String>,
+    },
+
+    /// List all configured models
     List {
         /// Filter by model type
         #[arg(short, long)]
@@ -80,7 +88,10 @@ enum ModelSubcommands {
 
 #[derive(Subcommand, Debug)]
 enum CapabilitySubcommands {
-    /// List all available capabilities
+    /// Show the catalog of all available capabilities
+    Catalog,
+
+    /// List all configured capabilities
     List,
 
     /// Show detailed capability information
@@ -98,13 +109,22 @@ enum CapabilitySubcommands {
 
 #[derive(Subcommand, Debug)]
 enum ProviderSubcommands {
-    /// List configured providers
+    /// Show the catalog of all available providers
+    Catalog,
+
+    /// List all configured providers
     List,
 
     /// Interactive provider setup wizard
     Setup {
-        /// Provider ID to set up
-        provider_id: String,
+        /// Catalog provider type to set up (e.g. `openai-compatible`)
+        provider_type: String,
+
+        /// Nickname for this provider instance. Defaults to `provider_type`;
+        /// pass a distinct value to configure multiple named instances of
+        /// the same catalog type (e.g. `--id ollama`, `--id lm-studio`).
+        #[arg(long = "id")]
+        instance_id: Option<String>,
     },
 
     /// Check provider health
@@ -177,13 +197,13 @@ async fn main() {
             println!("Usage: granite-cli <command> [subcommand] [options]");
             println!();
             println!("Available commands:");
-            println!("  model        Model management (list, info, setup)");
-            println!("  capability   Capability management (list, info, setup)");
-            println!("  provider     Provider management (list, setup, health)");
+            println!("  model        Model management (catalog, list, info, setup)");
+            println!("  capability   Capability management (catalog, list, info, setup)");
+            println!("  provider     Provider management (catalog, list, setup, health)");
             println!("  configure    Configure tools (Phase 3)");
             println!("  launch       Launch tool with overlay (Phase 3)");
             println!();
-            println!("Try 'granite-cli model list' to get started.");
+            println!("Try 'granite-cli provider catalog' to get started.");
             Ok(())
         }
     };
@@ -196,7 +216,19 @@ async fn main() {
 
 async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
-        // TODO: Determine the valid types from the model registry
+        ModelSubcommands::Catalog { r#type } => {
+            let filter = match r#type.as_deref() {
+                Some("text") => Some(models::ModelType::Text),
+                Some("vision") => Some(models::ModelType::Vision),
+                Some("speech") => Some(models::ModelType::Speech),
+                Some("embedding") => Some(models::ModelType::Embedding),
+                Some(t) => {
+                    anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
+                }
+                None => None,
+            };
+            ModelCommands::catalog(ctx, filter)
+        }
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
                 Some("text") => Some(models::ModelType::Text),
@@ -211,12 +243,13 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             ModelCommands::list(ctx, filter)
         }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
-        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id),
+        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }
 }
 
 async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
     match subcmd {
+        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx),
         CapabilitySubcommands::List => CapabilityCommands::list(ctx),
         CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
         CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
@@ -225,8 +258,11 @@ async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcomma
 
 async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
     match subcmd {
+        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
         ProviderSubcommands::List => ProviderCommands::list(ctx),
-        ProviderSubcommands::Setup { provider_id } => ProviderCommands::setup(ctx, &provider_id).await,
+        ProviderSubcommands::Setup { provider_type, instance_id } => {
+            ProviderCommands::setup(ctx, &provider_type, instance_id.as_deref()).await
+        }
         ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
     }
 }

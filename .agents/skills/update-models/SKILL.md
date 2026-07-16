@@ -51,7 +51,7 @@ git diff -- resources/models.yaml
 - [ ] All model IDs are unique
 - [ ] Descriptions are accurate and informative prose
 - [ ] Tags are appropriate and consistent
-- [ ] Provider capabilities match model formats
+- [ ] Supported functions match model type and use cases
 - [ ] Variant sizes are reasonable
 - [ ] No duplicate entries
 - [ ] New models are properly categorized
@@ -75,10 +75,10 @@ pub struct ModelMetadata {
     pub context_length: u64,                    // Max context tokens
     pub model_type: ModelType,                  // Text/Vision/Speech/Embedding
     pub huggingface_repo: String,               // HF repo path
-    pub required_provider_capabilities: Vec<String>, // Provider requirements
     pub variants: Vec<ModelVariant>,            // Available formats
     pub description: Option<String>,            // Human-readable description
     pub tags: Vec<String>,                      // Categorization tags
+    pub supported_functions: Vec<ModelFunction>, // Logical capabilities
 }
 
 pub struct ModelVariant {
@@ -88,6 +88,19 @@ pub struct ModelVariant {
     pub url: String,       // URL to the model
 }
 ```
+
+### Supported Functions Mapping
+
+Functions are inferred from `model_type` by `scripts/utils/infer-functions.sh`:
+
+| model_type | supported_functions |
+|---|---|
+| Text | `[Chat]` |
+| Vision | `[Chat, ImageUnderstanding]` |
+| Speech | `[Chat, Transcription]` |
+| Embedding | `[Embeddings]` |
+
+These can be manually edited during review to add functions like `ToolCalling`, `Thinking`, etc.
 
 ## Error Handling
 
@@ -157,7 +170,7 @@ If you encounter rate limits there are two things to try:
 
 | Script | Purpose |
 |--------|---------|
-| `infer-capabilities.sh` | Determine provider capabilities |
+| `infer-functions.sh` | Infer supported model functions from model type |
 | `format-description.sh` | Generate description template |
 | `suggest-tags.sh` | Suggest tags based on model type |
 | `hf-curl.sh` | Run a curl call against huggingface with HF_TOKEN if available |
@@ -186,8 +199,9 @@ When HuggingFace or Ollama APIs change:
 To support new model types (e.g., "Granite Audio"):
 1. Add to collection category mapping in `01-list-collections.sh`
 2. Add ModelType variant in `src/models/base.rs`
-3. Update field mapping rules in `05-generate-yaml.sh`
-4. Document in this SKILL.md
+3. Add ModelFunction variant in `src/models/base.rs`
+4. Update field mapping rules in `05-generate-yaml.sh` and `infer-functions.sh`
+5. Update this documentation
 
 ## Related Documentation
 

@@ -50,8 +50,6 @@ pub struct ModelConfig {
     pub model_id: String,
     pub provider_id: Option<String>,
     pub variant: Option<String>,
-    pub endpoint: Option<String>,
-    pub api_key: Option<String>,
     pub enabled: bool,
 }
 
@@ -61,8 +59,6 @@ impl Default for ModelConfig {
             model_id: String::new(),
             provider_id: None,
             variant: None,
-            endpoint: None,
-            api_key: None,
             enabled: true,
         }
     }
@@ -71,11 +67,9 @@ impl Default for ModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     pub provider_id: String,
-    pub name: String,
     #[serde(rename = "type")]
     pub provider_type: String,
-    pub endpoint: String,
-    pub api_key: Option<String>,
+    pub config: serde_json::Value,
     pub enabled: bool,
 }
 
@@ -83,10 +77,8 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             provider_id: String::new(),
-            name: String::new(),
             provider_type: String::new(),
-            endpoint: String::new(),
-            api_key: None,
+            config: serde_json::Value::Object(serde_json::Map::new()),
             enabled: true,
         }
     }

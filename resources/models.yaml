@@ -5,9 +5,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-h-1b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -87,6 +84,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-h-350m
   family: Granite 4.0 Nano Language Models
   version: '4.0'
@@ -94,9 +93,6 @@
   context_length: 32768
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-h-350m
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -176,6 +172,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-1b
   family: Granite 4.0 Nano Language Models
   version: '4.0'
@@ -183,9 +181,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-1b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -263,6 +258,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-350m
   family: Granite 4.0 Nano Language Models
   version: '4.0'
@@ -270,9 +267,6 @@
   context_length: 32768
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-350m
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -352,6 +346,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.1-30b
   family: Granite 4.1 Language Models
   version: '4.1'
@@ -359,9 +355,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.1-30b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -442,6 +435,8 @@
   tags:
   - reasoning
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.1-8b
   family: Granite 4.1 Language Models
   version: '4.1'
@@ -449,9 +444,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.1-8b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -532,6 +524,8 @@
   tags:
   - general-purpose
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.1-3b
   family: Granite 4.1 Language Models
   version: '4.1'
@@ -539,9 +533,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.1-3b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -622,6 +613,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-docling-258M
   family: Granite Docling
   version: ''
@@ -629,9 +622,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-docling-258M
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: BF16
@@ -657,6 +647,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-docling-258M-mlx
   family: Granite Docling
   version: ''
@@ -664,8 +657,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-docling-258M-mlx
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: null
@@ -679,6 +670,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-4.0-micro
   family: Granite 4.0 Language Models
   version: '4.0'
@@ -686,9 +680,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-micro
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -771,6 +762,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-h-micro
   family: Granite 4.0 Language Models
   version: '4.0'
@@ -778,9 +771,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-h-micro
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -863,6 +853,8 @@
   tags:
   - efficient
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-h-tiny
   family: Granite 4.0 Language Models
   version: '4.0'
@@ -870,9 +862,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-h-tiny
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -955,6 +944,8 @@
   tags:
   - general-purpose
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-h-small
   family: Granite 4.0 Language Models
   version: '4.0'
@@ -962,9 +953,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-h-small
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -1047,6 +1035,8 @@
   tags:
   - reasoning
   - text
+  supported_functions:
+  - Chat
 - id: granite-4.0-tiny-preview
   family: Granite 4.0 Language Models
   version: '4.0'
@@ -1054,9 +1044,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-4.0-tiny-preview
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -1133,6 +1120,8 @@
   tags:
   - general-purpose
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.3-2b-instruct
   family: Granite 3.3
   version: '3.3'
@@ -1140,9 +1129,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.3-2b-instruct
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -1227,6 +1213,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.3-8b-instruct
   family: Granite 3.3
   version: '3.3'
@@ -1234,9 +1222,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.3-8b-instruct
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -1321,6 +1306,8 @@
   - general-purpose
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-speech-4.1-2b
   family: Granite Speech
   version: '4.1'
@@ -1328,9 +1315,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-speech-4.1-2b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -1371,6 +1355,9 @@
   - efficient
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-speech-4.1-2b-plus
   family: Granite Speech
   version: '4.1'
@@ -1378,9 +1365,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-speech-4.1-2b-plus
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -1422,6 +1406,9 @@
   - efficient
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-4.0-1b-speech
   family: Granite Speech
   version: '4.0'
@@ -1429,9 +1416,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-4.0-1b-speech
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -1475,6 +1459,9 @@
   - efficient
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-speech-3.3-8b
   family: Granite Speech
   version: '3.3'
@@ -1482,8 +1469,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-speech-3.3-8b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1507,6 +1492,9 @@
   - general-purpose
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-speech-3.3-2b
   family: Granite Speech
   version: '3.3'
@@ -1514,8 +1502,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-speech-3.3-2b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1539,6 +1525,9 @@
   - efficient
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-speech-3.2-8b
   family: Granite Speech
   version: '3.2'
@@ -1546,8 +1535,6 @@
   context_length: 8192
   model_type: Speech
   huggingface_repo: ibm-granite/granite-speech-3.2-8b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1571,6 +1558,9 @@
   - general-purpose
   - speech
   - transcription
+  supported_functions:
+  - Chat
+  - Transcription
 - id: granite-vision-4.1-4b
   family: Granite Vision
   version: '4.1'
@@ -1578,9 +1568,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-vision-4.1-4b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -1610,23 +1597,19 @@
     precision: null
     size_gb: 3.997
     url: ibm-granite/granite-vision-4.1-4b
-  description: 'Granite Vision 4.1 4B is a vision-language model (VLM) that delivers
-    frontier-level
-
-    performance on structured document extraction tasks — chart extraction, table
-    extraction,
-
-    and semantic key-value pair extraction — in a compact 4B parameter footprint,
-    providing
-
-    a lightweight alternative to much larger frontier models for these tasks:
-
-    '
+  description: "Granite Vision 4.1 4B is a vision-language model (VLM) that delivers\
+    \ frontier-level\nperformance on structured document extraction tasks \u2014 chart\
+    \ extraction, table extraction,\nand semantic key-value pair extraction \u2014\
+    \ in a compact 4B parameter footprint, providing\na lightweight alternative to\
+    \ much larger frontier models for these tasks:\n"
   tags:
   - efficient
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-4.0-3b-vision
   family: Granite Vision
   version: '4.0'
@@ -1634,8 +1617,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-4.0-3b-vision
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: null
@@ -1655,6 +1636,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-vision-3.3-2b
   family: Granite Vision
   version: '3.3'
@@ -1662,9 +1646,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-vision-3.3-2b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -1706,6 +1687,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-vision-3.2-2b
   family: Granite Vision
   version: '3.2'
@@ -1713,8 +1697,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-vision-3.2-2b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: null
@@ -1738,6 +1720,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-vision-3.1-2b-preview
   family: Granite Vision
   version: '3.1'
@@ -1745,8 +1730,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-vision-3.1-2b-preview
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: null
@@ -1767,6 +1750,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-vision-3.3-2b-embedding
   family: Granite Vision
   version: '3.3'
@@ -1774,8 +1760,6 @@
   context_length: 8192
   model_type: Vision
   huggingface_repo: ibm-granite/granite-vision-3.3-2b-embedding
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: float32
@@ -1800,6 +1784,9 @@
   - image
   - multimodal
   - vision
+  supported_functions:
+  - Chat
+  - ImageUnderstanding
 - id: granite-3.2-2b-instruct
   family: Granite 3.2
   version: '3.2'
@@ -1807,8 +1794,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.2-2b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1830,6 +1815,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.2-8b-instruct
   family: Granite 3.2
   version: '3.2'
@@ -1837,8 +1824,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.2-8b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1860,6 +1845,8 @@
   - general-purpose
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.2-8b-instruct-preview
   family: Granite 3.2
   version: '3.2'
@@ -1867,8 +1854,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.2-8b-instruct-preview
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1891,6 +1876,8 @@
   - general-purpose
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.1-8b-instruct
   family: Granite 3.1
   version: '3.1'
@@ -1898,8 +1885,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.1-8b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1921,6 +1906,8 @@
   - general-purpose
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.1-2b-instruct
   family: Granite 3.1
   version: '3.1'
@@ -1928,8 +1915,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.1-2b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1951,6 +1936,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.1-3b-a800m-instruct
   family: Granite 3.1
   version: '3.1'
@@ -1958,8 +1945,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.1-3b-a800m-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -1981,6 +1966,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.1-1b-a400m-instruct
   family: Granite 3.1
   version: '3.1'
@@ -1988,8 +1975,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.1-1b-a400m-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2011,6 +1996,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-embedding-311m-multilingual-r2
   family: Granite Embedding
   version: r2
@@ -2018,8 +2005,6 @@
   context_length: 32768
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-311m-multilingual-r2
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: null
@@ -2039,6 +2024,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-97m-multilingual-r2
   family: Granite Embedding
   version: r2
@@ -2046,8 +2033,6 @@
   context_length: 32768
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-97m-multilingual-r2
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: null
@@ -2067,6 +2052,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-english-r2
   family: Granite Embedding
   version: r2
@@ -2074,8 +2061,6 @@
   context_length: 8192
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-english-r2
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2091,6 +2076,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-small-english-r2
   family: Granite Embedding
   version: r2
@@ -2098,8 +2085,6 @@
   context_length: 8192
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-small-english-r2
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2116,6 +2101,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-reranker-english-r2
   family: Granite Embedding
   version: r2
@@ -2123,8 +2110,6 @@
   context_length: 8192
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-reranker-english-r2
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: float32
@@ -2141,6 +2126,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-278m-multilingual
   family: Granite Embedding
   version: ''
@@ -2148,8 +2135,6 @@
   context_length: 514
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-278m-multilingual
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2171,6 +2156,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-107m-multilingual
   family: Granite Embedding
   version: ''
@@ -2178,8 +2165,6 @@
   context_length: 514
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-107m-multilingual
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2202,6 +2187,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-30m-english
   family: Granite Embedding
   version: ''
@@ -2209,8 +2196,6 @@
   context_length: 514
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-30m-english
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2235,6 +2220,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-embedding-125m-english
   family: Granite Embedding
   version: ''
@@ -2242,8 +2229,6 @@
   context_length: 514
   model_type: Embedding
   huggingface_repo: ibm-granite/granite-embedding-125m-english
-  required_provider_capabilities:
-  - OpenAIEmbeddings
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2268,6 +2253,8 @@
   - efficient
   - embedding
   - retrieval
+  supported_functions:
+  - Embeddings
 - id: granite-3.0-8b-instruct
   family: Granite 3.0
   version: '3.0'
@@ -2275,8 +2262,6 @@
   context_length: 4096
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.0-8b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2297,6 +2282,8 @@
   - general-purpose
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.0-2b-instruct
   family: Granite 3.0
   version: '3.0'
@@ -2304,8 +2291,6 @@
   context_length: 4096
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.0-2b-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2326,6 +2311,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.0-3b-a800m-instruct
   family: Granite 3.0
   version: '3.0'
@@ -2333,8 +2320,6 @@
   context_length: 4096
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.0-3b-a800m-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2356,6 +2341,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-3.0-1b-a400m-instruct
   family: Granite 3.0
   version: '3.0'
@@ -2363,8 +2350,6 @@
   context_length: 4096
   model_type: Text
   huggingface_repo: ibm-granite/granite-3.0-1b-a400m-instruct
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2386,6 +2371,8 @@
   - efficient
   - instruct
   - text
+  supported_functions:
+  - Chat
 - id: granite-guardian-4.1-8b
   family: Granite Guardian
   version: '4.1'
@@ -2393,9 +2380,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-4.1-8b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q2_K
@@ -2481,6 +2465,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.3-8b
   family: Granite Guardian
   version: '3.3'
@@ -2488,9 +2474,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.3-8b
-  required_provider_capabilities:
-  - OllamaChat
-  - OpenAIChat
   variants:
   - format: GGUF
     precision: Q4_K_M
@@ -2535,6 +2518,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.2-3b-a800m
   family: Granite Guardian
   version: '3.2'
@@ -2542,8 +2527,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.2-3b-a800m
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2571,6 +2554,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.2-5b
   family: Granite Guardian
   version: '3.2'
@@ -2578,8 +2563,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.2-5b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2602,6 +2585,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.1-8b
   family: Granite Guardian
   version: '3.1'
@@ -2609,8 +2594,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.1-8b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2632,6 +2615,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.1-2b
   family: Granite Guardian
   version: '3.1'
@@ -2639,8 +2624,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.1-2b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2662,6 +2645,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.0-8b
   family: Granite Guardian
   version: '3.0'
@@ -2669,8 +2654,6 @@
   context_length: 8192
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.0-8b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2688,6 +2671,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.0-2b
   family: Granite Guardian
   version: '3.0'
@@ -2695,8 +2680,6 @@
   context_length: 8192
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.0-2b
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2714,6 +2697,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-hap-125m
   family: Granite Guardian
   version: ''
@@ -2721,8 +2706,6 @@
   context_length: 514
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-hap-125m
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: float32
@@ -2738,6 +2721,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-hap-38m
   family: Granite Guardian
   version: ''
@@ -2745,8 +2730,6 @@
   context_length: 514
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-hap-38m
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: float32
@@ -2766,6 +2749,8 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian
 - id: granite-guardian-3.2-8b-factuality-detection
   family: Granite Guardian
   version: '3.2'
@@ -2773,8 +2758,6 @@
   context_length: 131072
   model_type: Text
   huggingface_repo: ibm-granite/granite-guardian-3.2-8b-factuality-detection
-  required_provider_capabilities:
-  - OpenAIChat
   variants:
   - format: safetensors
     precision: bfloat16
@@ -2791,3 +2774,5 @@
   - moderation
   - safety
   - text
+  supported_functions:
+  - Guardian

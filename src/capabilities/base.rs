@@ -1,7 +1,9 @@
+use crate::models::ModelFunction;
+use crate::providers::Provider;
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 /*-- Capability Trait --------------------------------------------------------*/
@@ -10,7 +12,6 @@ use std::path::PathBuf;
 /// All capabilities must implement this trait along with ConfigConstructable.
 #[async_trait]
 pub trait Capability: ConfigConstructable + Send + Sync {
-    fn id(&self) -> &str;
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn dependencies(&self) -> Vec<Dependency>;
@@ -41,7 +42,6 @@ pub trait Capability: ConfigConstructable + Send + Sync {
 /// Metadata describing a capability implementation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityMetadata {
-    pub id: String,
     pub name: String,
     pub description: String,
     pub dependencies: Vec<Dependency>,
@@ -50,7 +50,7 @@ pub struct CapabilityMetadata {
 
 impl std::fmt::Display for CapabilityMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.id, self.description)
+        write!(f, "{}", self.description)
     }
 }
 
@@ -148,3 +148,162 @@ pub struct ToolConfig {
 use crate::define_factory;
 
 define_factory!( Capability, CapabilityMetadata, CapabilityFactory);
+
+/*-- Capability Matching Logic ------------------------------------------------*/
+
+/// Check if a provider instance can serve a model for a specific function
+pub fn can_provider_serve_model_function(
+    provider: &dyn Provider,
+    model: &dyn crate::models::Model,
+    function: &ModelFunction,
+) -> bool {
+    if !model.supported_functions().contains(function) {
+        return false;
+    }
+    provider.supports_function(function)
+}
+
+/// Check if a provider instance can serve a model for any function
+pub fn can_provider_serve_model(
+    provider: &dyn Provider,
+    model: &dyn crate::models::Model,
+) -> bool {
+    let provider_eps = provider.function_endpoints();
+    let provider_functions: HashSet<_> = provider_eps.keys().collect();
+    let model_functions: HashSet<_> = model.supported_functions().iter().collect();
+    !provider_functions.is_disjoint(&model_functions)
+}
+
+/// Get the functions a provider can serve for a model
+pub fn get_servable_functions(
+    provider: &dyn Provider,
+    model: &dyn crate::models::Model,
+) -> Vec<ModelFunction> {
+    let provider_functions: HashSet<_> = provider.function_endpoints().keys().cloned().collect();
+    let model_functions: HashSet<_> = model.supported_functions().iter().cloned().collect();
+    provider_functions.intersection(&model_functions).cloned().collect()
+}
+
+/*-- tests -------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::{ApiEndpoint, ApiType, HealthStatus, ModelFormat, ProviderError, ProviderMetadata, ProviderType};
+    use crate::models::{ModelMetadata, ModelType, ModelVariant};
+    use std::collections::HashMap;
+
+    struct TestProvider {
+        functions: HashMap<ModelFunction, Vec<ApiEndpoint>>,
+    }
+
+    impl crate::registry::ConfigConstructable for TestProvider {
+        fn new(_cfg: &serde_json::Value) -> Self {
+            Self {
+                functions: HashMap::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Provider for TestProvider {
+        fn name(&self) -> &str { "Test" }
+        fn function_endpoints(&self) -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
+            self.functions.clone()
+        }
+        fn supported_api_types(&self) -> Vec<ApiType> { vec![] }
+        fn supported_formats(&self) -> Vec<ModelFormat> { vec![] }
+        fn supported_precisions(&self) -> Vec<String> { vec![] }
+        async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
+            Ok(HealthStatus {
+                healthy: true,
+                latency: std::time::Duration::from_millis(0),
+                error: None,
+            })
+        }
+    }
+
+    struct TestModel {
+        functions: Vec<ModelFunction>,
+    }
+
+    impl crate::registry::ConfigConstructable for TestModel {
+        fn new(_cfg: &serde_json::Value) -> Self {
+            Self { functions: vec![] }
+        }
+    }
+
+    impl crate::models::Model for TestModel {
+        fn family(&self) -> &str { "test" }
+        fn version(&self) -> &str { "1.0" }
+        fn size(&self) -> u64 { 1000 }
+        fn context_length(&self) -> u64 { 4096 }
+        fn model_type(&self) -> &ModelType { &ModelType::Text }
+        fn huggingface_repo(&self) -> &str { "test/repo" }
+        fn variants(&self) -> &[ModelVariant] { &[] }
+        fn description(&self) -> Option<&str> { None }
+        fn tags(&self) -> &[String] { &[] }
+        fn supported_functions(&self) -> &[ModelFunction] { &self.functions }
+    }
+
+    #[test]
+    fn test_provider_serves_function() {
+        let mut provider = TestProvider {
+            functions: HashMap::from([
+                (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
+                (ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]),
+            ]),
+        };
+
+        let mut model = TestModel {
+            functions: vec![ModelFunction::Chat, ModelFunction::Thinking],
+        };
+
+        assert!(can_provider_serve_model_function(&provider, &model, &ModelFunction::Chat));
+        assert!(!can_provider_serve_model_function(&provider, &model, &ModelFunction::Embeddings));
+        assert!(!can_provider_serve_model_function(&provider, &model, &ModelFunction::Transcription));
+    }
+
+    #[test]
+    fn test_can_serve_any_function() {
+        let mut provider = TestProvider {
+            functions: HashMap::from([
+                (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
+            ]),
+        };
+
+        let mut model1 = TestModel {
+            functions: vec![ModelFunction::Chat],
+        };
+        let mut model2 = TestModel {
+            functions: vec![ModelFunction::Transcription],
+        };
+
+        assert!(can_provider_serve_model(&provider, &model1));
+        assert!(!can_provider_serve_model(&provider, &model2));
+    }
+
+    #[test]
+    fn test_get_servable_functions() {
+        let mut provider = TestProvider {
+            functions: HashMap::from([
+                (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
+                (ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]),
+            ]),
+        };
+
+        let mut model = TestModel {
+            functions: vec![
+                ModelFunction::Chat,
+                ModelFunction::Thinking,
+                ModelFunction::Embeddings,
+            ],
+        };
+
+        let servable = get_servable_functions(&provider, &model);
+        assert_eq!(servable.len(), 2);
+        assert!(servable.contains(&ModelFunction::Chat));
+        assert!(servable.contains(&ModelFunction::Embeddings));
+    }
+}
+
