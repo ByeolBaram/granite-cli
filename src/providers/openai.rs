@@ -3,7 +3,7 @@ use crate::providers::base::{
     ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat, Provider, ProviderError,
     ProviderMetadata, ProviderType, HasProviderMetadata,
 };
-use crate::registry::ConfigConstructable;
+use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ pub struct OpenAIProviderConfig {
     pub base_url: String,
 
     /// API key for authentication (optional for local providers)
-    pub api_key: Option<String>,
+    pub api_key: Option<Secret>,
 
     /// Timeout for health checks in seconds
     #[serde(default = "default_timeout")]
@@ -140,7 +140,7 @@ impl Provider for OpenAIProvider {
         let mut request = self.client.get(&url);
 
         if let Some(ref api_key) = self.config.api_key {
-            request = request.bearer_auth(api_key);
+            request = request.bearer_auth(&api_key.0);
         }
 
         match request.send().await {
@@ -215,6 +215,10 @@ impl HasProviderMetadata for OpenAIProvider {
     fn config_schema() -> schemars::Schema {
         schemars::schema_for!(OpenAIProviderConfig)
     }
+
+    fn default_config() -> serde_json::Value {
+        serde_json::to_value(OpenAIProviderConfig::default()).unwrap_or_default()
+    }
 }
 
 /*-- tests -------------------------------------------------------------------*/
@@ -264,7 +268,7 @@ mod tests {
         });
         let provider = OpenAIProvider::new(&cfg);
         assert_eq!(provider.config.base_url, "http://example.com:8080");
-        assert_eq!(provider.config.api_key, Some("test-key".to_string()));
+        assert_eq!(provider.config.api_key, Some(Secret("test-key".to_string())));
         assert_eq!(provider.config.timeout_secs, 30);
     }
 
