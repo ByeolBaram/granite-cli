@@ -1,3 +1,6 @@
+mod secret;
+pub use secret::Secret;
+
 /*-- Generic Factory Infrastructure ------------------------------------------*/
 
 /// Core trait that all factory-managed types must implement.
@@ -70,6 +73,9 @@ macro_rules! define_factory {
 
                 /// JSON schema of the config this implementation expects
                 fn config_schema(&self) -> schemars::Schema;
+
+                /// Default config value for this implementation
+                fn default_config(&self) -> serde_json::Value;
             }
 
             /// Trait that implementations must provide to supply metadata.
@@ -86,6 +92,15 @@ macro_rules! define_factory {
                 /// worth exposing (e.g. test doubles).
                 fn config_schema() -> schemars::Schema {
                     schemars::schema_for!(serde_json::Value)
+                }
+
+                /// Return the default config value for this implementation.
+                /// Implementations with a real config struct should override
+                /// this with their struct's own `Default` impl, serialized;
+                /// the default is an empty object for implementations with no
+                /// structured config worth exposing (e.g. test doubles).
+                fn default_config() -> serde_json::Value {
+                    serde_json::Value::Object(serde_json::Map::new())
                 }
             }
 
@@ -105,6 +120,10 @@ macro_rules! define_factory {
 
                 fn config_schema(&self) -> schemars::Schema {
                     T::config_schema()
+                }
+
+                fn default_config(&self) -> serde_json::Value {
+                    T::default_config()
                 }
             }
 
@@ -205,6 +224,20 @@ macro_rules! define_factory {
                 pub(crate) fn config_schema(&self, name: &str) -> Option<schemars::Schema> {
                     self.registry.get(name).map(|x| x.config_schema())
                 }
+
+                /// Get the default config value for a specific implementation by name.
+                ///
+                /// # Arguments
+                ///
+                /// * `name` - The name of the implementation
+                ///
+                /// # Returns
+                ///
+                /// * `Some(value)` - Default config value, if found
+                /// * `None` - If name not registered
+                pub(crate) fn default_config(&self, name: &str) -> Option<serde_json::Value> {
+                    self.registry.get(name).map(|x| x.default_config())
+                }
             }
         }
 
@@ -291,6 +324,10 @@ mod tests {
 
         fn config_schema() -> schemars::Schema {
             schemars::schema_for!(TestImpl2Config)
+        }
+
+        fn default_config() -> serde_json::Value {
+            serde_json::json!({ "value": 7 })
         }
     }
 
@@ -390,5 +427,31 @@ mod tests {
     fn test_config_schema_unknown() {
         let factory = TestTraitFactory::new();
         assert!(factory.config_schema("unknown").is_none());
+    }
+
+    #[test]
+    fn test_default_config_default_is_empty_object() {
+        let mut factory = TestTraitFactory::new();
+        factory.register::<TestImpl1>("impl1");
+
+        // TestImpl1 never overrides default_config, so it gets the default
+        // empty object rather than failing to compile.
+        let value = factory.default_config("impl1").unwrap();
+        assert_eq!(value, serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_default_config_uses_override() {
+        let mut factory = TestTraitFactory::new();
+        factory.register::<TestImpl2>("impl2");
+
+        let value = factory.default_config("impl2").unwrap();
+        assert_eq!(value, serde_json::json!({ "value": 7 }));
+    }
+
+    #[test]
+    fn test_default_config_unknown() {
+        let factory = TestTraitFactory::new();
+        assert!(factory.default_config("unknown").is_none());
     }
 }
