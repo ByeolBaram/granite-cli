@@ -1,5 +1,5 @@
 pub mod hardware;
-pub mod schema_prompt;
+pub mod ui;
 
 pub use hardware::{HardwareProfile, detect_hardware};
-pub use schema_prompt::prompt_from_schema;
+pub use ui::prompt_from_schema;
