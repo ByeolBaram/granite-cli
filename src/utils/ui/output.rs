@@ -94,3 +94,85 @@ impl Output for CaptureOutput {
 // capture across threads, which is always true in practice.
 unsafe impl Send for CaptureOutput {}
 unsafe impl Sync for CaptureOutput {}
+
+/*-- tests --*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make() -> CaptureOutput {
+        CaptureOutput::default()
+    }
+
+    #[test]
+    fn capture_default_starts_with_all_vecs_empty() {
+        let out = make();
+        assert!(out.tables.borrow().is_empty());
+        assert!(out.details.borrow().is_empty());
+        assert!(out.statuses.borrow().is_empty());
+        assert!(out.infos.borrow().is_empty());
+        assert!(out.warns.borrow().is_empty());
+        assert!(out.errors.borrow().is_empty());
+    }
+
+    #[test]
+    fn capture_records_table_title_headers_rows() {
+        let out = make();
+        out.table(
+            "My Table",
+            &["A", "B"],
+            &[vec!["r1a".to_string(), "r1b".to_string()]],
+        );
+        let tables = out.tables.borrow();
+        assert_eq!(tables.len(), 1);
+        let (title, headers, rows) = &tables[0];
+        assert_eq!(title, "My Table");
+        assert_eq!(headers, &["A".to_string(), "B".to_string()]);
+        assert_eq!(rows[0], vec!["r1a".to_string(), "r1b".to_string()]);
+    }
+
+    #[test]
+    fn capture_records_multiple_tables_in_order() {
+        let out = make();
+        out.table("T1", &["X"], &[vec!["a".to_string()]]);
+        out.table("T2", &["Y"], &[vec!["b".to_string()]]);
+        let tables = out.tables.borrow();
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables[0].0, "T1");
+        assert_eq!(tables[1].0, "T2");
+    }
+
+    #[test]
+    fn capture_records_detail_title_and_field_pairs() {
+        let out = make();
+        out.detail("Item", &[("Key", "Value".to_string()), ("Foo", "Bar".to_string())]);
+        let details = out.details.borrow();
+        assert_eq!(details.len(), 1);
+        let (title, fields) = &details[0];
+        assert_eq!(title, "Item");
+        assert_eq!(fields[0], ("Key".to_string(), "Value".to_string()));
+        assert_eq!(fields[1], ("Foo".to_string(), "Bar".to_string()));
+    }
+
+    #[test]
+    fn capture_records_info_warn_error_to_separate_vecs() {
+        let out = make();
+        out.info("hello");
+        out.warn("careful");
+        out.error("boom");
+        assert_eq!(*out.infos.borrow(), vec!["hello"]);
+        assert_eq!(*out.warns.borrow(), vec!["careful"]);
+        assert_eq!(*out.errors.borrow(), vec!["boom"]);
+    }
+
+    #[test]
+    fn capture_records_status_with_ok_flag_and_detail() {
+        let out = make();
+        out.status("provider-a", true, "");
+        out.status("provider-b", false, "connection refused");
+        let statuses = out.statuses.borrow();
+        assert_eq!(statuses[0], ("provider-a".to_string(), true, "".to_string()));
+        assert_eq!(statuses[1], ("provider-b".to_string(), false, "connection refused".to_string()));
+    }
+}
