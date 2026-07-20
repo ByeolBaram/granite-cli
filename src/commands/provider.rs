@@ -188,3 +188,98 @@ impl ProviderCommands {
         Ok(status)
     }
 }
+
+/*-- tests --*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ProviderConfig};
+    use crate::utils::ui::CaptureOutput;
+
+    fn empty_ctx() -> crate::AppContext {
+        crate::AppContext { config: Config::default() }
+    }
+
+    fn ctx_with_provider(id: &str, url: &str) -> crate::AppContext {
+        let mut ctx = empty_ctx();
+        ctx.config.providers.insert(id.to_string(), ProviderConfig {
+            provider_id: id.to_string(),
+            provider_type: "openai-compatible".to_string(),
+            config: serde_json::json!({ "base_url": url }),
+            enabled: true,
+        });
+        ctx
+    }
+
+    // ── catalog ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn catalog_table_has_id_type_endpoint_columns() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ProviderCommands::catalog(&ctx, &out).unwrap();
+        let tables = out.tables.borrow();
+        assert_eq!(tables.len(), 1);
+        let (_, headers, _) = &tables[0];
+        assert!(headers.contains(&"ID".to_string()));
+        assert!(headers.contains(&"TYPE".to_string()));
+        assert!(headers.contains(&"ENDPOINT".to_string()));
+    }
+
+    #[test]
+    fn catalog_contains_openai_compatible_entry() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ProviderCommands::catalog(&ctx, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert!(rows.iter().any(|r| r[0] == "openai-compatible"));
+    }
+
+    // ── list ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_empty_config_has_zero_rows() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ProviderCommands::list(&ctx, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[test]
+    fn list_configured_provider_shows_base_url() {
+        let ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
+        let out = CaptureOutput::default();
+        ProviderCommands::list(&ctx, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].iter().any(|c| c.contains("11434")));
+    }
+
+    #[test]
+    fn list_disabled_provider_still_appears() {
+        let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
+        ctx.config.providers.get_mut("my-ollama").unwrap().enabled = false;
+        let out = CaptureOutput::default();
+        ProviderCommands::list(&ctx, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].iter().any(|c| c == "false"));
+    }
+
+    // ── health ────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn health_no_providers_emits_info_message() {
+        let mut ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ProviderCommands::health(&mut ctx, None, &out).await.unwrap();
+        assert!(!out.infos.borrow().is_empty());
+        assert!(out.statuses.borrow().is_empty());
+    }
+}
