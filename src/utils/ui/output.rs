@@ -1,13 +1,35 @@
 use std::cell::RefCell;
+use std::sync::LazyLock;
+
+use crate::registry::ConfigConstructable;
 
 /*-- public --*/
+
+/// Metadata describing a registered output backend.
+#[derive(Debug, Clone)]
+pub struct OutputMetadata {
+    pub name: String,
+    pub description: String,
+}
+
+// Generate OutputFactory and HasOutputMetadata via the existing macro.
+use crate::define_factory;
+define_factory!(Output, OutputMetadata, OutputFactory);
+
+/// Global registry of output backends.
+/// Backends are registered by name and constructed on demand via --output flag.
+pub static OUTPUT_REGISTRY: LazyLock<OutputFactory> = LazyLock::new(|| {
+    let mut f = OutputFactory::new();
+    f.register::<crate::utils::ui::backends::terminal::TerminalOutput>("terminal");
+    f
+});
 
 /// The core output abstraction.
 ///
 /// All command methods receive `out: &dyn Output` as their final parameter.
 /// Command code never calls `println!` directly — it calls these methods and
 /// the registered backend decides how to render.
-pub trait Output: Send + Sync {
+pub trait Output: ConfigConstructable + Send + Sync {
     /// Render a tabular result (catalog, list, health).
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]);
 
@@ -51,6 +73,12 @@ pub struct CaptureOutput {
     pub infos: RefCell<Vec<String>>,
     pub warns: RefCell<Vec<String>>,
     pub errors: RefCell<Vec<String>>,
+}
+
+impl ConfigConstructable for CaptureOutput {
+    fn new(_cfg: &serde_json::Value) -> Self {
+        Self::default()
+    }
 }
 
 impl Output for CaptureOutput {
@@ -100,6 +128,35 @@ unsafe impl Sync for CaptureOutput {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── OutputFactory registry ────────────────────────────────────────────────
+
+    #[test]
+    fn output_registry_contains_terminal_backend() {
+        assert!(OUTPUT_REGISTRY.get("terminal").is_some());
+    }
+
+    #[test]
+    fn output_registry_construct_unknown_returns_err() {
+        let result = OUTPUT_REGISTRY.construct("nonexistent", &serde_json::json!({}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn output_registry_entries_count_matches_registered() {
+        let entries = OUTPUT_REGISTRY.entries();
+        assert!(entries.len() >= 1);
+        assert!(entries.contains_key("terminal"));
+    }
+
+    #[test]
+    fn output_metadata_has_non_empty_name_and_description() {
+        let meta = OUTPUT_REGISTRY.get("terminal").unwrap();
+        assert!(!meta.name.is_empty());
+        assert!(!meta.description.is_empty());
+    }
+
+    // ── CaptureOutput ─────────────────────────────────────────────────────────
 
     fn make() -> CaptureOutput {
         CaptureOutput::default()

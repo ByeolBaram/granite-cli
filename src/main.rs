@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
-use utils::ui::{CaptureOutput, Output};
+use utils::ui::{Output, OUTPUT_REGISTRY};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -22,6 +22,10 @@ extern crate paste;
 #[command(name = "granite-cli")]
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
 struct Cli {
+    /// Output format: terminal (default), plain, json
+    #[arg(long, global = true, default_value = "terminal")]
+    output: String,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -165,8 +169,12 @@ impl AppContext {
 async fn main() {
     let cli = Cli::parse();
 
-    // Temporary plain output until OutputFactory lands in commit 7.
-    let out = CaptureOutput::default();
+    let out = OUTPUT_REGISTRY
+        .construct(&cli.output, &serde_json::json!({}))
+        .unwrap_or_else(|_| {
+            eprintln!("Unknown output format '{}'. Valid: terminal, plain, json", cli.output);
+            std::process::exit(1);
+        });
 
     let result = match cli.command {
         Some(Commands::Model(subcmd)) => {
@@ -174,21 +182,21 @@ async fn main() {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_model_command(&mut ctx, subcmd, &out).await
+            run_model_command(&mut ctx, subcmd, out.as_ref()).await
         }
         Some(Commands::Capability(subcmd)) => {
             let mut ctx = AppContext::new().unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_capability_command(&mut ctx, subcmd, &out).await
+            run_capability_command(&mut ctx, subcmd, out.as_ref()).await
         }
         Some(Commands::Provider(subcmd)) => {
             let mut ctx = AppContext::new().unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_provider_command(&mut ctx, subcmd, &out).await
+            run_provider_command(&mut ctx, subcmd, out.as_ref()).await
         }
         Some(Commands::Configure(args)) => run_configure(args).await,
         Some(Commands::Launch { .. }) => {
@@ -211,33 +219,6 @@ async fn main() {
             Ok(())
         }
     };
-
-    // Flush captured output to stdout (temporary until TerminalOutput backend lands)
-    for line in out.infos.borrow().iter()
-        .chain(out.warns.borrow().iter())
-    {
-        println!("{}", line);
-    }
-    for (title, headers, rows) in out.tables.borrow().iter() {
-        println!("\n{}", title);
-        println!("{}", headers.join("  "));
-        for row in rows {
-            println!("{}", row.join("  "));
-        }
-    }
-    for (title, fields) in out.details.borrow().iter() {
-        println!("\n{}", title);
-        for (k, v) in fields {
-            println!("  {}: {}", k, v);
-        }
-    }
-    for (label, ok, detail) in out.statuses.borrow().iter() {
-        let mark = if *ok { "✓" } else { "✗" };
-        println!("{} {} {}", mark, label, detail);
-    }
-    for line in out.errors.borrow().iter() {
-        eprintln!("Error: {}", line);
-    }
 
     if let Err(e) = result {
         eprintln!("Error: {}", e);
