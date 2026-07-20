@@ -1,0 +1,503 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>granite-cli: UI Redesign — Commit Plan</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #fff; color: #1f2328; padding: 32px 16px 64px; }
+  .container { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 15px; font-weight: 700; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }
+  h3 { font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+  p { margin-bottom: 10px; }
+  code { font-family: "SF Mono","Consolas","Menlo",monospace; font-size: 12px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 1px 5px; }
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; font-family: "SF Mono","Consolas","Menlo",monospace; font-size: 12px; line-height: 1.55; overflow-x: auto; margin-bottom: 12px; white-space: pre; }
+  .note  { background: #f0f6ff; border-left: 3px solid #3b82d4; padding: 9px 12px; margin-bottom: 12px; border-radius: 0 4px 4px 0; font-size: 13px; }
+  .ok    { background: #f0faf4; border-left: 3px solid #22c55e; padding: 9px 12px; margin-bottom: 12px; border-radius: 0 4px 4px 0; font-size: 13px; }
+  .warn  { background: #fffbf0; border-left: 3px solid #d97706; padding: 9px 12px; margin-bottom: 12px; border-radius: 0 4px 4px 0; font-size: 13px; }
+  ul, ol { padding-left: 20px; margin-bottom: 10px; }
+  li { margin-bottom: 3px; }
+  .commit {
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    margin-bottom: 24px; overflow: hidden;
+  }
+  .commit-header {
+    padding: 12px 16px; background: #f7f8fa;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .commit-num {
+    background: #1f2328; color: white;
+    border-radius: 50%; width: 24px; height: 24px; min-width: 24px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; margin-top: 1px;
+  }
+  .commit-meta { flex: 1; }
+  .commit-msg { font-weight: 700; font-size: 14px; font-family: "SF Mono","Consolas","Menlo",monospace; }
+  .commit-desc { font-size: 12px; color: #57606a; margin-top: 2px; }
+  .commit-body { padding: 14px 16px; }
+  .file-list { list-style: none; padding: 0; margin: 0 0 12px; }
+  .file-list li {
+    display: flex; align-items: center; gap: 8px;
+    font-family: "SF Mono","Consolas","Menlo",monospace; font-size: 12px;
+    padding: 3px 0; border-bottom: 1px solid #f3f4f6;
+  }
+  .file-list li:last-child { border-bottom: none; }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    border-radius: 3px; padding: 1px 5px; flex-shrink: 0; width: 46px; text-align: center;
+  }
+  .tag-new  { background: #dcfce7; color: #166534; }
+  .tag-mod  { background: #dbeafe; color: #1d4ed8; }
+  .tag-del  { background: #fee2e2; color: #991b1b; }
+  .tag-mv   { background: #ede9fe; color: #5b21b6; }
+  .test-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #f0faf4; border: 1px solid #bbf7d0;
+    border-radius: 4px; padding: 3px 8px;
+    font-size: 12px; color: #166534;
+  }
+  .test-pill-new {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #fffbf0; border: 1px solid #fde68a;
+    border-radius: 4px; padding: 3px 8px;
+    font-size: 12px; color: #92400e;
+  }
+  .divider { height: 1px; background: #e5e7eb; margin: 12px 0; }
+  .rule-box {
+    background: #f7f8fa; border: 1px solid #e5e7eb;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
+    font-size: 13px;
+  }
+  .rule-box strong { display: block; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #57606a; }
+  .toc { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 18px; margin-bottom: 28px; }
+  .toc a { color: #3b82d4; text-decoration: none; }
+  .toc li { margin-bottom: 2px; }
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>granite-cli: UI Redesign — Commit Plan</h1>
+<p class="subtitle">Branch: <code>feature/ratatui</code> · Baseline: 71 tests passing · Each commit leaves the test suite green.</p>
+
+<div class="toc">
+  <strong>Commits</strong>
+  <ol style="margin-top:8px">
+    <li><a href="#c1">refactor: remove web_fetch and unused deps</a></li>
+    <li><a href="#c2">refactor: move schema_prompt into utils/ui/prompt module</a></li>
+    <li><a href="#c3">feat: add Output trait and CaptureOutput test double</a></li>
+    <li><a href="#c4">test: add CaptureOutput self-tests</a></li>
+    <li><a href="#c5">refactor: thread Output through model commands</a></li>
+    <li><a href="#c6">refactor: thread Output through provider and capability commands</a></li>
+    <li><a href="#c7">feat: add OutputFactory registry and --output global flag</a></li>
+    <li><a href="#c8">feat: add PlainOutput and JsonOutput backends with contract tests</a></li>
+    <li><a href="#c9">feat: add TerminalOutput ratatui one-shot backend</a></li>
+    <li><a href="#c10">feat: add interactive TUI home screen (no-args entry point)</a></li>
+  </ol>
+</div>
+
+<div class="rule-box">
+  <strong>Ground rules for every commit</strong>
+  <ul style="margin:0">
+    <li><code>cargo test</code> passes before and after. If it goes red mid-commit, the commit is wrong.</li>
+    <li>Each commit is independently revertable — no commit depends on code in the next one.</li>
+    <li>Commit message format: <code>type: short summary in imperative</code> (matches existing history).</li>
+    <li>No commit mixes refactoring with new features. Structure changes and behaviour changes are separate.</li>
+  </ul>
+</div>
+
+
+<h2 id="c1">Commit 1</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">1</div>
+    <div class="commit-meta">
+      <div class="commit-msg">refactor: remove web_fetch and unused deps</div>
+      <div class="commit-desc">Zero-risk cleanup. No behaviour changes. Gets dead code out before we start building.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-del">DEL</span> src/utils/web_fetch.rs</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/mod.rs — remove <code>pub mod web_fetch</code> and its re-exports</li>
+      <li><span class="tag tag-mod">MOD</span> Cargo.toml — remove <code>reqwest</code>, <code>html2md</code></li>
+    </ul>
+    <div class="note">Verify <code>regex</code> is not used anywhere else before removing it from Cargo.toml. Run <code>grep -r "regex::" src/</code> — if only in web_fetch.rs, remove it too. It is, so it goes.</div>
+    <span class="test-pill">✓ 71 → 68 tests (3 web_fetch tests deleted with the file)</span>
+  </div>
+</div>
+
+
+<h2 id="c2">Commit 2</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">2</div>
+    <div class="commit-meta">
+      <div class="commit-msg">refactor: move schema_prompt into utils/ui/prompt module</div>
+      <div class="commit-desc">Pure file move. No logic changes. Sets up the ui/ module home for everything that follows.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/mod.rs — <code>pub mod prompt; pub use prompt::prompt_from_schema;</code></li>
+      <li><span class="tag tag-mv">MV</span> src/utils/schema_prompt.rs → src/utils/ui/prompt.rs — verbatim move, zero edits inside</li>
+      <li><span class="tag tag-del">DEL</span> src/utils/schema_prompt.rs</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/mod.rs — replace <code>pub mod schema_prompt</code> with <code>pub mod ui; pub use ui::prompt_from_schema;</code></li>
+    </ul>
+    <div class="note">The public API <code>crate::utils::prompt_from_schema</code> is unchanged. <code>src/commands/provider.rs</code> imports it via <code>crate::utils::prompt_from_schema</code> — that path still works. No other file needs touching.</div>
+    <span class="test-pill">✓ 68 → 68 tests (same count, same tests, just moved)</span>
+  </div>
+</div>
+
+
+<h2 id="c3">Commit 3</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">3</div>
+    <div class="commit-meta">
+      <div class="commit-msg">feat: add Output trait and CaptureOutput test double</div>
+      <div class="commit-desc">The core abstraction. No command code changes yet — purely additive. CaptureOutput lives here so it's available to command tests immediately.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/output.rs — <code>Output</code> trait + <code>CaptureOutput</code> struct</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/mod.rs — add <code>pub mod output; pub use output::{Output, CaptureOutput};</code></li>
+    </ul>
+
+    <h3>What goes in output.rs</h3>
+    <pre>
+pub trait Output: Send + Sync {
+    fn table(&amp;self, title: &amp;str, headers: &amp;[&amp;str], rows: &amp;[Vec&lt;String&gt;]);
+    fn detail(&amp;self, title: &amp;str, fields: &amp;[(&amp;str, String)]);
+    fn status(&amp;self, label: &amp;str, ok: bool, detail: &amp;str);
+    fn info(&amp;self, msg: &amp;str);
+    fn warn(&amp;self, msg: &amp;str);
+    fn error(&amp;self, msg: &amp;str);
+}
+
+// CaptureOutput uses RefCell&lt;Vec&gt; internally because Output methods
+// take &amp;self — interior mutability is required for the spy to record calls.
+pub struct CaptureOutput {
+    pub tables:   RefCell&lt;Vec&lt;(String, Vec&lt;String&gt;, Vec&lt;Vec&lt;String&gt;&gt;)&gt;&gt;,
+    pub details:  RefCell&lt;Vec&lt;(String, Vec&lt;(String, String)&gt;)&gt;&gt;,
+    pub statuses: RefCell&lt;Vec&lt;(String, bool, String)&gt;&gt;,
+    pub infos:    RefCell&lt;Vec&lt;String&gt;&gt;,
+    pub warns:    RefCell&lt;Vec&lt;String&gt;&gt;,
+    pub errors:   RefCell&lt;Vec&lt;String&gt;&gt;,
+}</pre>
+    <div class="note"><code>RefCell</code> is Rust's way of saying "I promise only one thing accesses this at a time, but I need to mutate through a shared reference." It's safe for single-threaded test code. Commands run single-threaded, so this is fine.</div>
+    <span class="test-pill">✓ 68 → 68 tests (no existing tests affected — purely additive)</span>
+  </div>
+</div>
+
+
+<h2 id="c4">Commit 4</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">4</div>
+    <div class="commit-meta">
+      <div class="commit-msg">test: add CaptureOutput self-tests</div>
+      <div class="commit-desc">Tests for the test double itself. Kept as a separate commit so the test double is proven correct before it's used in command tests.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/output.rs — add <code>#[cfg(test)] mod tests { … }</code> block</li>
+    </ul>
+    <h3>Tests added</h3>
+    <ul>
+      <li><code>capture_records_table_title_headers_rows</code></li>
+      <li><code>capture_records_multiple_tables_in_order</code></li>
+      <li><code>capture_records_info_warn_error_to_separate_vecs</code></li>
+      <li><code>capture_records_status_with_ok_flag_and_detail</code></li>
+      <li><code>capture_default_starts_with_all_vecs_empty</code></li>
+      <li><code>capture_detail_records_title_and_field_pairs</code></li>
+    </ul>
+    <span class="test-pill-new">+ 6 new tests</span>
+    <span class="test-pill" style="margin-left:8px">✓ 74 total</span>
+  </div>
+</div>
+
+
+<h2 id="c5">Commit 5</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">5</div>
+    <div class="commit-meta">
+      <div class="commit-msg">refactor: thread Output through model commands</div>
+      <div class="commit-desc">Replace all println! in model commands with out.* calls. Add command-layer tests. One domain at a time so diffs stay readable.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-mod">MOD</span> src/commands/model.rs — add <code>out: &amp;dyn Output</code> param to <code>catalog</code>, <code>list</code>, <code>info</code>. Replace every <code>println!</code> with <code>out.*</code> calls.</li>
+      <li><span class="tag tag-mod">MOD</span> src/main.rs — thread <code>&amp;out</code> into <code>run_model_command</code> and its callsites.</li>
+    </ul>
+    <div class="warn"><code>setup</code> is NOT touched in this commit. It interleaves <code>println!</code> with <code>dialoguer</code> prompts. That's a separate migration (Phase 5 from the architecture plan). One signature change at a time.</div>
+    <h3>Tests added in src/commands/model.rs</h3>
+    <ul>
+      <li><code>catalog_table_has_correct_column_headers</code></li>
+      <li><code>catalog_no_filter_returns_all_models</code></li>
+      <li><code>catalog_text_filter_returns_only_text_models</code></li>
+      <li><code>catalog_vision_filter_returns_only_vision_models</code></li>
+      <li><code>catalog_unknown_filter_emits_info_not_table</code></li>
+      <li><code>list_empty_config_renders_zero_rows</code></li>
+      <li><code>list_configured_model_shows_provider_id</code></li>
+      <li><code>list_unknown_model_id_in_config_is_skipped</code></li>
+      <li><code>info_known_model_renders_detail_with_family_and_context</code></li>
+      <li><code>info_unknown_model_returns_err</code></li>
+    </ul>
+    <span class="test-pill-new">+ 10 new tests</span>
+    <span class="test-pill" style="margin-left:8px">✓ 84 total</span>
+  </div>
+</div>
+
+
+<h2 id="c6">Commit 6</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">6</div>
+    <div class="commit-meta">
+      <div class="commit-msg">refactor: thread Output through provider and capability commands</div>
+      <div class="commit-desc">Same pattern as commit 5, applied to providers and capabilities in one shot since both are smaller.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-mod">MOD</span> src/commands/provider.rs — <code>catalog</code>, <code>list</code>, <code>health</code> get <code>out: &amp;dyn Output</code>. All <code>println!</code> in those methods replaced. <code>setup</code> not touched.</li>
+      <li><span class="tag tag-mod">MOD</span> src/commands/capability.rs — <code>catalog</code>, <code>list</code>, <code>info</code> get <code>out: &amp;dyn Output</code>. <code>setup</code> not touched.</li>
+      <li><span class="tag tag-mod">MOD</span> src/main.rs — thread <code>&amp;out</code> into <code>run_provider_command</code> and <code>run_capability_command</code>.</li>
+    </ul>
+    <h3>Tests added in src/commands/provider.rs</h3>
+    <ul>
+      <li><code>catalog_table_has_id_type_endpoint_columns</code></li>
+      <li><code>list_empty_config_has_zero_rows</code></li>
+      <li><code>list_configured_provider_shows_base_url</code></li>
+      <li><code>list_disabled_provider_still_appears_in_list</code></li>
+      <li><code>health_no_providers_emits_info_message</code></li>
+    </ul>
+    <h3>Tests added in src/commands/capability.rs</h3>
+    <ul>
+      <li><code>catalog_table_has_id_name_dependencies_columns</code></li>
+      <li><code>list_empty_config_has_zero_rows</code></li>
+      <li><code>info_unknown_capability_returns_err</code></li>
+    </ul>
+    <span class="test-pill-new">+ 13 new tests</span>
+    <span class="test-pill" style="margin-left:8px">✓ 97 total</span>
+  </div>
+</div>
+
+
+<h2 id="c7">Commit 7</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">7</div>
+    <div class="commit-meta">
+      <div class="commit-msg">feat: add OutputFactory registry and --output global flag</div>
+      <div class="commit-desc">Wire the Output system into the factory pattern. Add the --output CLI flag. TerminalOutput is a stub (just println!) at this point — ratatui comes in commit 9.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/backends/mod.rs — declares backend submodules</li>
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/backends/terminal.rs — <code>TerminalOutput</code> stub using <code>println!</code> internally (identical output to before, just routed through the trait)</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/output.rs — add <code>OutputMetadata</code> struct, <code>define_factory!(Output, OutputMetadata, OutputFactory)</code></li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/mod.rs — add <code>OUTPUT_REGISTRY</code> static, register <code>TerminalOutput</code> as <code>"terminal"</code></li>
+      <li><span class="tag tag-mod">MOD</span> src/main.rs — add <code>#[arg(long, global=true, default_value="terminal")] output: String</code> to <code>Cli</code>. Construct <code>out</code> from <code>OUTPUT_REGISTRY.construct(&amp;cli.output, …)</code> in the <code>Some(cmd)</code> arm.</li>
+    </ul>
+    <div class="note">After this commit <code>granite-cli model catalog</code> still works exactly as before — <code>TerminalOutput</code> calls <code>println!</code> just like the old code did. The factory layer is in place but the rendering hasn't changed yet.</div>
+    <h3>Tests added in src/utils/ui/output.rs</h3>
+    <ul>
+      <li><code>output_registry_contains_terminal_backend</code></li>
+      <li><code>output_registry_construct_unknown_returns_err</code></li>
+      <li><code>output_registry_entries_count_matches_registered</code></li>
+      <li><code>output_metadata_has_non_empty_name_and_description</code></li>
+    </ul>
+    <span class="test-pill-new">+ 4 new tests</span>
+    <span class="test-pill" style="margin-left:8px">✓ 101 total</span>
+  </div>
+</div>
+
+
+<h2 id="c8">Commit 8</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">8</div>
+    <div class="commit-meta">
+      <div class="commit-msg">feat: add PlainOutput and JsonOutput backends with contract tests</div>
+      <div class="commit-desc">The two non-ratatui backends. Plain is for piped/CI use. JSON enables --output json for scripting. Both get full contract tests because they produce text output that can be asserted without a terminal.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/backends/plain.rs — no ANSI, plain text tables via simple column formatting</li>
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/backends/json.rs — serialises each <code>table()</code>/<code>detail()</code> call to a JSON object, printed to stdout</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/backends/mod.rs — declare both modules</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/mod.rs — register <code>PlainOutput</code> as <code>"plain"</code>, <code>JsonOutput</code> as <code>"json"</code> in <code>OUTPUT_REGISTRY</code></li>
+    </ul>
+
+    <h3>Contract test macro (used in both backend test modules)</h3>
+    <pre>
+macro_rules! output_contract_tests {
+    ($make:expr) =&gt; {
+        #[test] fn empty_table_does_not_panic() { $make.table("T", &amp;["A"], &amp;[]); }
+        #[test] fn single_row_table_does_not_panic() { $make.table("T", &amp;["A"], &amp;[vec!["x".into()]]); }
+        #[test] fn hundred_row_table_does_not_panic() { /* … */ }
+        #[test] fn table_with_empty_cell_does_not_panic() { /* … */ }
+        #[test] fn detail_with_no_fields_does_not_panic() { /* … */ }
+        #[test] fn status_ok_does_not_panic() { /* … */ }
+        #[test] fn status_fail_does_not_panic() { /* … */ }
+        #[test] fn info_empty_string_does_not_panic() { /* … */ }
+    };
+}
+
+// plain.rs tests: output_contract_tests!(PlainOutput::new());
+// json.rs tests:  output_contract_tests!(JsonOutput::new());
+    </pre>
+
+    <h3>JSON-specific assertions (output is inspectable)</h3>
+    <ul>
+      <li><code>json_table_output_is_valid_json</code> — parse the captured stdout, assert it deserialises</li>
+      <li><code>json_table_contains_title_headers_rows_keys</code></li>
+      <li><code>json_detail_contains_title_and_fields_keys</code></li>
+    </ul>
+
+    <div class="note">JSON output is testable by capturing stdout in a <code>Vec&lt;u8&gt;</code> via a writer-injectable constructor: <code>JsonOutput::with_writer(writer)</code>. This avoids the need to spawn a subprocess or inspect real stdout.</div>
+
+    <span class="test-pill-new">+ ~20 new tests (8 contract × 2 backends + 3 JSON-specific + 2 registry)</span>
+    <span class="test-pill" style="margin-left:8px">✓ ~121 total</span>
+  </div>
+</div>
+
+
+<h2 id="c9">Commit 9</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">9</div>
+    <div class="commit-meta">
+      <div class="commit-msg">feat: add TerminalOutput ratatui one-shot backend</div>
+      <div class="commit-desc">Replace the println! stub in TerminalOutput with real ratatui rendering. This is the first commit that uses ratatui in production code. No new tests — TerminalOutput requires a real terminal so it's verified manually.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/tui.rs — <code>setup_terminal()</code>, <code>restore_terminal()</code>, <code>render_once(widget)</code> helpers</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/backends/terminal.rs — replace <code>println!</code> internals with ratatui <code>Table</code>, <code>Paragraph</code>, <code>List</code> widgets routed through <code>render_once()</code></li>
+    </ul>
+
+    <h3>What render_once does</h3>
+    <pre>
+// src/utils/ui/tui.rs
+pub fn render_once(widget: impl Widget + 'static) -&gt; anyhow::Result&lt;()&gt; {
+    crossterm::terminal::enable_raw_mode()?;
+    let mut t = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
+    t.draw(|frame| frame.render_widget(widget, frame.area()))?;
+    crossterm::terminal::disable_raw_mode()?;
+    Ok(())
+}
+    </pre>
+
+    <h3>What TerminalOutput::table() now does</h3>
+    <pre>
+fn table(&amp;self, title: &amp;str, headers: &amp;[&amp;str], rows: &amp;[Vec&lt;String&gt;]) {
+    let header_row = Row::new(headers.iter().map(|h| Cell::from(*h).bold()));
+    let data_rows: Vec&lt;Row&gt; = rows.iter()
+        .map(|r| Row::new(r.iter().map(|c| Cell::from(c.as_str()))))
+        .collect();
+    let widths = /* auto-calculate from content */;
+    let table = Table::new(data_rows, widths)
+        .header(header_row)
+        .block(Block::bordered().title(title));
+    render_once(table).unwrap_or_else(|_| { /* fallback to PlainOutput */ });
+}
+    </pre>
+    <div class="warn">If <code>render_once</code> fails (e.g. stdout is not a tty — piped to a file), fall back to the <code>PlainOutput</code> impl silently. This makes <code>granite-cli model catalog &gt; out.txt</code> still work correctly.</div>
+    <span class="test-pill">✓ same count — no new tests (terminal rendering requires a real tty)</span>
+  </div>
+</div>
+
+
+<h2 id="c10">Commit 10</h2>
+<div class="commit">
+  <div class="commit-header">
+    <div class="commit-num">10</div>
+    <div class="commit-meta">
+      <div class="commit-msg">feat: add interactive TUI home screen (no-args entry point)</div>
+      <div class="commit-desc">The None arm of main() becomes a full ratatui application. Navigation panel + content pane. Reuses the same widget code from TerminalOutput.</div>
+    </div>
+  </div>
+  <div class="commit-body">
+    <ul class="file-list">
+      <li><span class="tag tag-new">NEW</span> src/utils/ui/app.rs — <code>App</code> struct, <code>run_interactive_tui(ctx)</code>, <code>AppMode</code> enum, key handler, render loop</li>
+      <li><span class="tag tag-mod">MOD</span> src/utils/ui/mod.rs — <code>pub mod app; pub use app::run_interactive_tui;</code></li>
+      <li><span class="tag tag-mod">MOD</span> src/main.rs — <code>None</code> arm calls <code>utils::ui::run_interactive_tui(ctx).await</code> instead of the <code>println!</code> block</li>
+    </ul>
+
+    <h3>App state</h3>
+    <pre>
+pub enum Section { Models, Providers, Capabilities }
+pub enum AppMode { Browse, Detail(String) }
+
+pub struct App {
+    ctx: AppContext,
+    section: Section,     // which left-nav item is selected
+    row: usize,           // which row in the content table is selected
+    mode: AppMode,        // Browse = table, Detail(id) = detail pane
+}
+    </pre>
+
+    <h3>Key bindings</h3>
+    <pre>
+KeyCode::Char('q') | KeyCode::Esc  → quit
+KeyCode::Tab                        → cycle section (Models → Providers → Capabilities)
+KeyCode::Up / KeyCode::Char('k')   → row up
+KeyCode::Down / KeyCode::Char('j') → row down
+KeyCode::Enter                      → AppMode::Detail(selected_id)
+KeyCode::Backspace                  → back to Browse
+    </pre>
+
+    <h3>App state tests (no terminal needed)</h3>
+    <ul>
+      <li><code>app_default_section_is_models</code></li>
+      <li><code>app_tab_cycles_through_sections</code></li>
+      <li><code>app_down_increments_row</code></li>
+      <li><code>app_down_does_not_exceed_row_count</code></li>
+      <li><code>app_up_at_zero_stays_at_zero</code></li>
+      <li><code>app_enter_sets_detail_mode_with_correct_id</code></li>
+      <li><code>app_backspace_from_detail_returns_to_browse</code></li>
+      <li><code>app_tab_resets_row_to_zero</code></li>
+    </ul>
+
+    <div class="note">The ratatui render loop itself isn't tested (needs a real terminal), but the <em>state machine</em> — what happens to <code>App</code> when keys are pressed — is pure logic with no I/O. Those 8 tests exercise 100% of the navigable behaviour.</div>
+
+    <span class="test-pill-new">+ 8 new tests</span>
+    <span class="test-pill" style="margin-left:8px">✓ ~129 total</span>
+  </div>
+</div>
+
+
+<h2>Summary</h2>
+<table>
+  <tr><th>#</th><th>Commit</th><th>Files changed</th><th>New tests</th><th>Running total</th></tr>
+  <tr><td>1</td><td>remove web_fetch</td><td>3</td><td>−3</td><td>68</td></tr>
+  <tr><td>2</td><td>move schema_prompt → ui/prompt</td><td>4</td><td>0</td><td>68</td></tr>
+  <tr><td>3</td><td>Output trait + CaptureOutput</td><td>2</td><td>0</td><td>68</td></tr>
+  <tr><td>4</td><td>CaptureOutput self-tests</td><td>1</td><td>+6</td><td>74</td></tr>
+  <tr><td>5</td><td>Output → model commands</td><td>2</td><td>+10</td><td>84</td></tr>
+  <tr><td>6</td><td>Output → provider + capability commands</td><td>3</td><td>+13</td><td>97</td></tr>
+  <tr><td>7</td><td>OutputFactory + --output flag</td><td>4</td><td>+4</td><td>101</td></tr>
+  <tr><td>8</td><td>Plain + JSON backends</td><td>4</td><td>+20</td><td>121</td></tr>
+  <tr><td>9</td><td>TerminalOutput ratatui backend</td><td>2</td><td>0</td><td>121</td></tr>
+  <tr><td>10</td><td>Interactive TUI home screen</td><td>3</td><td>+8</td><td>~129</td></tr>
+</table>
+
+<footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,246 @@
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>granite-cli Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.6; background: #ffffff; color: #1f2328; }
+  .page { max-width: 760px; margin: 0 auto; padding: 32px 24px 48px; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  h2 { font-size: 16px; font-weight: 700; margin: 32px 0 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { font-size: 13px; font-weight: 600; margin: 16px 0 6px; color: #3b82d4; text-transform: uppercase; letter-spacing: 0.05em; }
+  p { margin-bottom: 10px; font-size: 14px; }
+  .subtitle { color: #57606a; font-size: 13px; margin-bottom: 24px; }
+  code { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 3px; padding: 1px 5px; }
+  pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin-bottom: 12px; font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; line-height: 1.7; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+  th { text-align: left; padding: 6px 10px; background: #f7f8fa; border: 1px solid #e5e7eb; font-weight: 600; color: #57606a; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 6px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .note { background: #eff6ff; border-left: 3px solid #3b82d4; padding: 10px 14px; border-radius: 0 4px 4px 0; margin-bottom: 12px; font-size: 13px; color: #1e3a5f; }
+  .warn { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 0 4px 4px 0; margin-bottom: 12px; font-size: 13px; color: #78350f; }
+  ul { padding-left: 20px; margin-bottom: 12px; }
+  li { margin-bottom: 4px; font-size: 13px; }
+  .flow { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+  .flow-row { display: flex; align-items: stretch; gap: 6px; }
+  .flow-box { flex: 1; border: 1px solid #e5e7eb; border-radius: 5px; padding: 8px 12px; font-size: 12px; }
+  .flow-box strong { display: block; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .flow-box.blue { border-color: #93c5fd; background: #eff6ff; }
+  .flow-box.green { border-color: #6ee7b7; background: #ecfdf5; }
+  .flow-box.purple { border-color: #c4b5fd; background: #f5f3ff; }
+  .flow-box.amber { border-color: #fcd34d; background: #fffbeb; }
+  .flow-box.red { border-color: #fca5a5; background: #fef2f2; }
+  .flow-box.gray { border-color: #e5e7eb; background: #f7f8fa; }
+  .arrow { color: #57606a; font-size: 16px; text-align: center; padding: 2px 0; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .card { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 14px; }
+  .card h4 { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .card p, .card li { font-size: 12px; color: #57606a; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #57606a; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 600; white-space: nowrap; margin-left: 4px; }
+  .tag-done { background: #d1fae5; color: #065f46; }
+  .tag-stub { background: #f7f8fa; color: #57606a; border: 1px solid #e5e7eb; }
+  .tag-partial { background: #fef3c7; color: #92400e; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>granite-cli — Architecture &amp; Terminal Flow</h1>
+  <p class="subtitle">How the pieces fit together — for someone new to Rust</p>
+
+  <h2>1. The Coupled Parts at a Glance</h2>
+  <p>The project has five distinct layers that each talk to the layer below. Understanding this stack is the key to navigating any file in the codebase.</p>
+
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-box blue"><strong>Terminal / CLI layer</strong><code>src/main.rs</code> — clap parses argv into typed structs, routes to a command handler</div>
+    </div>
+    <div class="arrow">↓ calls</div>
+    <div class="flow-row">
+      <div class="flow-box green"><strong>Command layer</strong><code>src/commands/{model,provider,capability}.rs</code> — interactive wizards, output formatting with <code>println!</code></div>
+    </div>
+    <div class="arrow">↓ reads from</div>
+    <div class="flow-row">
+      <div class="flow-box purple"><strong>Registry layer</strong><code>MODEL_REGISTRY</code>, <code>PROVIDER_REGISTRY</code>, <code>CAPABILITY_REGISTRY</code> — static catalogs of what exists</div>
+    </div>
+    <div class="arrow">↓ resolves against</div>
+    <div class="flow-row">
+      <div class="flow-box amber"><strong>Dependency layer</strong><code>src/dependency/mod.rs</code> + <code>src/providers/mod.rs::ProviderSource</code> — matches what's needed to what's available</div>
+    </div>
+    <div class="arrow">↓ persists to/from</div>
+    <div class="flow-row">
+      <div class="flow-box gray"><strong>Config layer</strong><code>src/config/mod.rs</code> — YAML files in <code>~/.config/granite-cli/</code> — the user's saved choices</div>
+    </div>
+  </div>
+
+  <h2>2. How a Terminal Command Actually Works</h2>
+  <p>Take <code>granite-cli model setup granite-3.1-8b-instruct</code> as a concrete walkthrough:</p>
+
+  <h3>Step 1 — clap parses the arguments (main.rs)</h3>
+  <pre>// The #[derive(Parser)] macro generates this automatically.
+// After Cli::parse(), the struct is fully populated:
+Cli {
+    command: Some(Commands::Model(
+        ModelSubcommands::Setup {
+            model_id: "granite-3.1-8b-instruct"
+        }
+    ))
+}</pre>
+  <p>No parsing code is written by hand. The structs <em>are</em> the CLI definition. clap generates help text, error messages, and type coercion from the struct annotations.</p>
+
+  <h3>Step 2 — main() routes to the right handler</h3>
+  <pre>match cli.command {
+    Some(Commands::Model(subcmd)) =&gt; {
+        let mut ctx = AppContext::new()?;  // loads config from disk
+        run_model_command(&amp;mut ctx, subcmd).await
+    }
+    ...
+}</pre>
+  <p><code>AppContext</code> is just a wrapper around <code>Config</code> — it's the user's saved state (which models they've configured, which providers, etc.). It's passed into every command handler.</p>
+
+  <h3>Step 3 — the command handler runs (commands/model.rs)</h3>
+  <pre>pub async fn setup(ctx: &amp;mut AppContext, model_id: &amp;str) -&gt; Result&lt;()&gt; {
+    // 1. Look up model in the static registry
+    let model = MODEL_REGISTRY.get(model_id)?;
+
+    // 2. dialoguer prompts — Select shows a numbered list the user
+    //    navigates with arrow keys and confirms with Enter
+    let variant_index = dialoguer::Select::new()
+        .with_prompt("Select model variant:")
+        .items(&amp;variant_options)
+        .interact()?;  // ← blocks here waiting for user input
+
+    // 3. dependency resolver — finds providers that can run this variant
+    let requirement = VariantRequirement { format, precision };
+    let source = ProviderSource::from_config(&amp;ctx.config);
+    let resolution = dependency::resolve(&amp;requirement, &amp;source);
+
+    // 4. more dialoguer prompts to pick/configure a provider
+
+    // 5. save to config
+    ctx.config.insert_model(model_id, model_config);
+}</pre>
+
+  <h3>Step 4 — dialoguer handles all terminal interaction</h3>
+  <p>The project uses the <code>dialoguer</code> crate for every interactive prompt. There are three types used:</p>
+  <table>
+    <thead><tr><th>Dialoguer type</th><th>What it shows</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>dialoguer::Select</code></td><td>Numbered list, arrow key navigation</td><td>Pick a variant, pick a provider</td></tr>
+      <tr><td><code>dialoguer::Input</code></td><td>Text field with optional default</td><td>Enter a URL, name an instance</td></tr>
+      <tr><td><code>dialoguer::Confirm</code></td><td>Y/N prompt</td><td>Overwrite existing config?</td></tr>
+      <tr><td><code>dialoguer::Password</code></td><td>Masked text input</td><td>API keys (via <code>Secret</code> schema marker)</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Every <code>.interact()?</code> call blocks — it gives control to the terminal and waits for the user to press Enter. The <code>?</code> propagates any error up to <code>main()</code>.</div>
+
+  <h3>Step 5 — schema-driven config prompt (utils/schema_prompt.rs)</h3>
+  <p>For providers, the prompt wizard is completely generic. Instead of hardcoding "ask for base_url, then ask for api_key", it reads the <strong>JSON schema</strong> of the provider's config struct and generates prompts for every field automatically:</p>
+  <pre>// In provider setup:
+let schema = PROVIDER_REGISTRY.config_schema("openai-compatible");
+let defaults = PROVIDER_REGISTRY.default_config("openai-compatible");
+let config = prompt_from_schema(&amp;schema, &amp;defaults)?;
+// Walks the schema, shows an Input for each string field,
+// Password for fields marked "format: password" (Secret type),
+// Confirm for booleans, etc.</pre>
+  <p>This means adding a new field to <code>OpenAIProviderConfig</code> automatically adds it to the setup wizard — no wizard code to update.</p>
+
+  <h2>3. The Registry Layer — catalog vs configured</h2>
+  <p>After the upstream merge, every resource type has two distinct views. This is the most important conceptual split in the project:</p>
+
+  <div class="two-col">
+    <div class="card">
+      <h4>catalog / REGISTRY (static, compile-time)</h4>
+      <ul>
+        <li>Built from <code>resources/models.yaml</code> via <code>build.rs</code></li>
+        <li>Registered in the <code>LazyLock</code> statics at startup</li>
+        <li>Represents what <em>could exist</em> — what granite-cli ships with</li>
+        <li>Commands: <code>model catalog</code>, <code>provider catalog</code>, <code>capability catalog</code></li>
+        <li>Never changes without a recompile</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>list / Config (dynamic, user-configured)</h4>
+      <ul>
+        <li>Loaded from <code>~/.config/granite-cli/</code> YAML at startup</li>
+        <li>Represents what the <em>user has set up</em> — their actual instances</li>
+        <li>Commands: <code>model list</code>, <code>provider list</code>, <code>capability list</code></li>
+        <li>Changes every time the user runs a <code>setup</code> command</li>
+        <li>Multiple instances of one catalog type are allowed (e.g. two <code>openai-compatible</code> providers with different URLs)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>4. The Dependency Layer — how model→provider matching works</h2>
+  <p>When you run <code>model setup</code> and pick a GGUF/Q4_K_M variant, the CLI needs to find a provider that can actually serve it. This is handled by <code>src/dependency/mod.rs</code>:</p>
+  <pre>// 1. Express what the model variant needs as a Requirement
+let requirement = VariantRequirement {
+    format: "GGUF",
+    precision: "Q4_K_M",
+};
+
+// 2. Build a view of all configured + catalog providers
+let source = ProviderSource::from_config(&amp;ctx.config);
+
+// 3. Resolve — pure logic, no I/O
+let resolution = dependency::resolve(&amp;requirement, &amp;source);
+// resolution.existing_instances = ["my-ollama"]   ← already configured, matches
+// resolution.configurable_types = ["openai-compatible"] ← in catalog, could match</pre>
+
+  <p>The resolver works in two passes for each dependency:</p>
+  <table>
+    <thead><tr><th>Pass</th><th>What it checks</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Instance-level</strong></td><td>Already-configured live instances</td><td><code>admits_instance(&amp;dyn Provider)</code> — asks the real object</td></tr>
+      <tr><td><strong>Type-level</strong></td><td>Catalog entries (not yet configured)</td><td><code>admits_type(&amp;ProviderMetadata)</code> — checks metadata only</td></tr>
+    </tbody>
+  </table>
+  <p>The command layer then turns a <code>Resolution</code> into user interaction: show existing matches as choices, offer "configure a new one" backed by the catalog types.</p>
+
+  <h2>5. The Config Layer — how state persists</h2>
+  <p>Every <code>setup</code> command ends by calling something like:</p>
+  <pre>ctx.config.insert_model(model_id, model_config);
+// This immediately writes to ~/.config/granite-cli/models/&lt;id&gt;.yaml</pre>
+  <p>The config directory layout after a user has set up one model and one provider:</p>
+  <pre>~/.config/granite-cli/
+├── config.yaml                       # routing + shell settings
+├── models/
+│   └── granite-3.1-8b-instruct.yaml  # ModelConfig { provider_id, variant, enabled }
+├── providers/
+│   └── my-ollama.yaml                # ProviderConfig { provider_type: "openai-compatible",
+│                                     #                  config: { base_url, api_key } }
+├── capabilities/                     # empty until capabilities are registered
+└── tools/                            # empty until Phase 3</pre>
+  <div class="note">The <code>ProviderConfig.config</code> field is a raw <code>serde_json::Value</code> — it's whatever the schema-driven prompt collected. This is how the same <code>ProviderConfig</code> struct can hold configuration for any provider type without knowing the provider's concrete struct at compile time.</div>
+
+  <h2>6. The ModelFunction concept (new in this merge)</h2>
+  <p>The upstream merge added <code>ModelFunction</code> as the vocabulary that connects models to providers. Instead of matching on API surface names directly, the system now asks: <em>"what can this model do?"</em> and <em>"what does this provider serve?"</em></p>
+  <table>
+    <thead><tr><th>ModelFunction</th><th>Served by endpoint</th><th>Which models</th></tr></thead>
+    <tbody>
+      <tr><td><code>Chat</code>, <code>ToolCalling</code>, <code>Thinking</code></td><td><code>OpenAIChat</code>, <code>OllamaChat</code>, <code>AnthropicMessages</code></td><td>Text models</td></tr>
+      <tr><td><code>ImageUnderstanding</code></td><td><code>OpenAIChat</code> (vision-capable)</td><td>Vision models</td></tr>
+      <tr><td><code>Embeddings</code></td><td><code>OpenAIEmbeddings</code>, <code>OllamaEmbeddings</code></td><td>Embedding models</td></tr>
+      <tr><td><code>Transcription</code>, <code>Translation</code></td><td><code>OpenAIAudioTranscription</code></td><td>Speech models</td></tr>
+      <tr><td><code>Guardian</code></td><td><code>OpenAIChat</code></td><td>Guardian models</td></tr>
+    </tbody>
+  </table>
+
+  <h2>7. What's still missing (stub / TODO)</h2>
+  <table>
+    <thead><tr><th>Area</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Ollama + Anthropic providers</td><td><span class="tag tag-stub">not started</span> Only <code>openai-compatible</code> is registered</td></tr>
+      <tr><td>Capability implementations</td><td><span class="tag tag-stub">not started</span> Registry is empty, all hooks commented out</td></tr>
+      <tr><td>Recursive dependency resolution</td><td><span class="tag tag-partial">partial</span> <code>resolve()</code> exists but doesn't trigger setup flows</td></tr>
+      <tr><td><code>configure</code> + <code>launch</code> commands</td><td><span class="tag tag-stub">Phase 3</span> Both return placeholder strings</td></tr>
+      <tr><td><code>model list --type</code> hardcoded strings</td><td><span class="tag tag-partial">open issue #6</span></td></tr>
+      <tr><td>GPU detection in hardware profile</td><td><span class="tag tag-stub">always None</span></td></tr>
+    </tbody>
+  </table>
+
+  <footer>Made with IBM Bob</footer>
+</div>
+</body>
+</html>
