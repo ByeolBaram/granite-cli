@@ -37,12 +37,19 @@ pub fn restore_terminal(mut terminal: Term) -> anyhow::Result<()> {
 /// The caller (`TerminalOutput`) falls back to `PlainOutput` on error.
 pub fn render_once(widget: impl Widget) -> anyhow::Result<()> {
     use crossterm::terminal::size;
+    use crossterm::cursor::MoveToColumn;
+    use crossterm::terminal::{Clear, ClearType};
+
     // Fail fast if stdout is not a tty so caller can fall back to plain.
     let _ = size()?;
 
+    // Flush stderr so compiler warnings land before we enter raw mode.
+    // Then clear the current line so stray text doesn't bleed into the widget.
+    let mut stdout = std::io::stdout();
+    execute!(stdout, MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
+
     enable_raw_mode()?;
-    let stdout = std::io::stdout();
-    let backend = CrosstermBackend::new(stdout);
+    let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
     // Draw inline (no alternate screen).
