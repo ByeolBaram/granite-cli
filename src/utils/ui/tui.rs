@@ -9,7 +9,8 @@ use std::io::Stdout;
 
 pub type Term = Terminal<CrosstermBackend<Stdout>>;
 
-/// Enter raw mode and return a ready-to-use Terminal.
+/// Enter raw mode + alternate screen and return a ready-to-use Terminal.
+/// Used by the interactive TUI (`run_interactive_tui`) which owns the full screen.
 pub fn setup_terminal() -> anyhow::Result<Term> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -17,7 +18,7 @@ pub fn setup_terminal() -> anyhow::Result<Term> {
     Ok(Terminal::new(CrosstermBackend::new(std::io::stdout()))?)
 }
 
-/// Restore the terminal to its original state.
+/// Restore the terminal after `setup_terminal`.
 pub fn restore_terminal(mut terminal: Term) -> anyhow::Result<()> {
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -25,16 +26,32 @@ pub fn restore_terminal(mut terminal: Term) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Render a single widget to the terminal, then immediately restore.
-/// Used by `TerminalOutput` for one-shot non-interactive command output.
+/// Render a single widget inline in the main screen buffer, then print a
+/// newline so the shell prompt appears below the output.
 ///
-/// If setup fails (stdout is not a tty, or terminal is too small) the error
-/// is returned to the caller, which falls back to `PlainOutput`.
+/// This is used by `TerminalOutput` for one-shot command output
+/// (`model catalog`, `provider catalog`, etc.). It deliberately does NOT
+/// enter the alternate screen — output must persist after the command exits.
+///
+/// Returns `Err` when stdout is not a tty (pipe / file redirect / CI).
+/// The caller (`TerminalOutput`) falls back to `PlainOutput` on error.
 pub fn render_once(widget: impl Widget) -> anyhow::Result<()> {
-    let mut terminal = setup_terminal()?;
+    use crossterm::terminal::size;
+    // Fail fast if stdout is not a tty so caller can fall back to plain.
+    let _ = size()?;
+
+    enable_raw_mode()?;
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Draw inline (no alternate screen).
     terminal.draw(|frame| {
         frame.render_widget(widget, frame.area());
     })?;
-    restore_terminal(terminal)?;
+
+    disable_raw_mode()?;
+    // Move cursor below the rendered output so the shell prompt is clean.
+    println!();
     Ok(())
 }
