@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
-use utils::ui::{Output, OUTPUT_REGISTRY};
+use utils::ui::{run_interactive_tui, Output, OUTPUT_REGISTRY};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -204,19 +204,11 @@ async fn main() {
             Ok(())
         }
         None => {
-            println!("granite-cli - Universal Model Adapter with Capabilities");
-            println!();
-            println!("Usage: granite-cli <command> [subcommand] [options]");
-            println!();
-            println!("Available commands:");
-            println!("  model        Model management (catalog, list, info, setup)");
-            println!("  capability   Capability management (catalog, list, info, setup)");
-            println!("  provider     Provider management (catalog, list, setup, health)");
-            println!("  configure    Configure tools (Phase 3)");
-            println!("  launch       Launch tool with overlay (Phase 3)");
-            println!();
-            println!("Try 'granite-cli provider catalog' to get started.");
-            Ok(())
+            let ctx = AppContext::new().unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_interactive_tui(ctx).await
         }
     };
 
