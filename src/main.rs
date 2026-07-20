@@ -13,6 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
+use utils::ui::{CaptureOutput, Output};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -164,27 +165,30 @@ impl AppContext {
 async fn main() {
     let cli = Cli::parse();
 
+    // Temporary plain output until OutputFactory lands in commit 7.
+    let out = CaptureOutput::default();
+
     let result = match cli.command {
         Some(Commands::Model(subcmd)) => {
             let mut ctx = AppContext::new().unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_model_command(&mut ctx, subcmd).await
+            run_model_command(&mut ctx, subcmd, &out).await
         }
         Some(Commands::Capability(subcmd)) => {
             let mut ctx = AppContext::new().unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_capability_command(&mut ctx, subcmd).await
+            run_capability_command(&mut ctx, subcmd, &out).await
         }
         Some(Commands::Provider(subcmd)) => {
             let mut ctx = AppContext::new().unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_provider_command(&mut ctx, subcmd).await
+            run_provider_command(&mut ctx, subcmd, &out).await
         }
         Some(Commands::Configure(args)) => run_configure(args).await,
         Some(Commands::Launch { .. }) => {
@@ -208,13 +212,40 @@ async fn main() {
         }
     };
 
+    // Flush captured output to stdout (temporary until TerminalOutput backend lands)
+    for line in out.infos.borrow().iter()
+        .chain(out.warns.borrow().iter())
+    {
+        println!("{}", line);
+    }
+    for (title, headers, rows) in out.tables.borrow().iter() {
+        println!("\n{}", title);
+        println!("{}", headers.join("  "));
+        for row in rows {
+            println!("{}", row.join("  "));
+        }
+    }
+    for (title, fields) in out.details.borrow().iter() {
+        println!("\n{}", title);
+        for (k, v) in fields {
+            println!("  {}: {}", k, v);
+        }
+    }
+    for (label, ok, detail) in out.statuses.borrow().iter() {
+        let mark = if *ok { "✓" } else { "✗" };
+        println!("{} {} {}", mark, label, detail);
+    }
+    for line in out.errors.borrow().iter() {
+        eprintln!("Error: {}", line);
+    }
+
     if let Err(e) = result {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
 
-async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
+async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands, out: &dyn Output) -> anyhow::Result<()> {
     match subcmd {
         ModelSubcommands::Catalog { r#type } => {
             let filter = match r#type.as_deref() {
@@ -227,7 +258,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 }
                 None => None,
             };
-            ModelCommands::catalog(ctx, filter)
+            ModelCommands::catalog(ctx, filter, out)
         }
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
@@ -240,30 +271,30 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 }
                 None => None,
             };
-            ModelCommands::list(ctx, filter)
+            ModelCommands::list(ctx, filter, out)
         }
-        ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
+        ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id, out),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }
 }
 
-async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
+async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands, out: &dyn Output) -> anyhow::Result<()> {
     match subcmd {
-        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx),
-        CapabilitySubcommands::List => CapabilityCommands::list(ctx),
-        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
+        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx, out),
+        CapabilitySubcommands::List => CapabilityCommands::list(ctx, out),
+        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id, out),
         CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
     }
 }
 
-async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
+async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands, out: &dyn Output) -> anyhow::Result<()> {
     match subcmd {
-        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
-        ProviderSubcommands::List => ProviderCommands::list(ctx),
+        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx, out),
+        ProviderSubcommands::List => ProviderCommands::list(ctx, out),
         ProviderSubcommands::Setup { provider_type, instance_id } => {
             ProviderCommands::setup(ctx, &provider_type, instance_id.as_deref()).await
         }
-        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
+        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref(), out).await,
     }
 }
 

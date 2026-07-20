@@ -5,56 +5,42 @@ use dialoguer::Confirm;
 // Local
 use crate::providers::{PROVIDER_REGISTRY, HealthStatus};
 use crate::utils::prompt_from_schema;
+use crate::utils::ui::Output;
 
 pub struct ProviderCommands;
 
 impl ProviderCommands {
-    pub fn catalog(_ctx: &crate::AppContext) -> Result<()> {
+    pub fn catalog(_ctx: &crate::AppContext, out: &dyn Output) -> Result<()> {
         let providers = PROVIDER_REGISTRY.entries();
 
-        let filtered = providers.len();
+        let mut rows: Vec<Vec<String>> = providers.iter().map(|(id, p)| {
+            vec![id.to_string(), p.provider_type.to_string(), p.default_endpoint.clone()]
+        }).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("{:<20} {:<10} {:<35}", "ID", "TYPE", "ENDPOINT");
-        println!("{:<20} {:<10} {:<35}", "----", "----", "--------");
-
-        for (provider_id, provider) in &providers {
-            println!(
-                "{:<20} {:<10} {:<35}",
-                provider_id,
-                provider.provider_type,
-                provider.default_endpoint,
-            );
-        }
-
-        println!();
-        println!("Total: {} providers", filtered);
+        out.table(
+            &format!("Provider Catalog ({} providers)", providers.len()),
+            &["ID", "TYPE", "ENDPOINT"],
+            &rows,
+        );
         Ok(())
     }
 
-    pub fn list(_ctx: &crate::AppContext) -> Result<()> {
-
-        println!();
-        println!("{:<20} {:<20} {:<10} {:<35}", "ID", "TYPE", "ENABLED", "BASE URL");
-        println!("{:<20} {:<20} {:<10} {:<35}", "----", "----", "-------", "--------");
-
-        let mut valid = 0;
-        for (provider_id, provider_config) in _ctx.config.providers.clone() {
-            valid += 1;
-            let base_url = provider_config.config.get("base_url")
+    pub fn list(_ctx: &crate::AppContext, out: &dyn Output) -> Result<()> {
+        let mut rows: Vec<Vec<String>> = _ctx.config.providers.iter().map(|(id, cfg)| {
+            let base_url = cfg.config.get("base_url")
                 .and_then(|v| v.as_str())
-                .unwrap_or("-");
-            println!(
-                "{:<20} {:<20} {:<10} {:<35}",
-                provider_id,
-                provider_config.provider_type,
-                provider_config.enabled,
-                base_url,
-            );
-        }
+                .unwrap_or("-")
+                .to_string();
+            vec![id.clone(), cfg.provider_type.clone(), cfg.enabled.to_string(), base_url]
+        }).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("Total: {} providers", valid);
+        out.table(
+            &format!("Configured Providers ({} providers)", rows.len()),
+            &["ID", "TYPE", "ENABLED", "BASE URL"],
+            &rows,
+        );
         Ok(())
     }
 
@@ -159,51 +145,33 @@ impl ProviderCommands {
     }
 
     /// Check health of a provider or all configured providers.
-    pub async fn health(ctx: &mut crate::AppContext, provider_id: Option<&str>) -> Result<()> {
+    pub async fn health(ctx: &mut crate::AppContext, provider_id: Option<&str>, out: &dyn Output) -> Result<()> {
         let providers_to_check: Vec<String> = match provider_id {
             Some(id) => vec![id.to_string()],
             None => ctx.config.providers.keys().cloned().collect(),
         };
 
         if providers_to_check.is_empty() {
-            println!("No configured providers to check.");
+            out.info("No configured providers to check.");
             return Ok(());
         }
-
-        println!();
-        println!("{:<20} {:<12} {:<10} {}", "PROVIDER", "LATENCY", "HEALTHY", "ERROR");
-        println!("{:<20} {:<12} {:<10} {}", "--------", "-------", "-------", "-----");
 
         for id in &providers_to_check {
             match Self::check_provider_health(ctx, id).await {
                 Ok(status) => {
-                    let latency_str = if status.latency.as_millis() < 1000 {
-                        format!("{}ms", status.latency.as_millis())
+                    let detail = if let Some(ref e) = status.error {
+                        format!("{} — {}", status.latency.as_millis(), e)
                     } else {
-                        format!("{:.2}s", status.latency.as_secs_f64())
+                        format!("{}ms", status.latency.as_millis())
                     };
-
-                    println!(
-                        "{:<20} {:<12} {:<10} {}",
-                        id,
-                        latency_str,
-                        status.healthy,
-                        status.error.as_deref().unwrap_or("-")
-                    );
+                    out.status(id, status.healthy, &detail);
                 }
                 Err(e) => {
-                    println!(
-                        "{:<20} {:<12} {:<10} {}",
-                        id,
-                        "N/A",
-                        false,
-                        e.to_string()
-                    );
+                    out.status(id, false, &e.to_string());
                 }
             }
         }
 
-        println!();
         Ok(())
     }
 

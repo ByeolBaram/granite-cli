@@ -7,6 +7,7 @@ use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
 use crate::models::{MODEL_REGISTRY, ModelType};
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
+use crate::utils::ui::Output;
 
 pub struct ModelCommands;
 
@@ -47,7 +48,7 @@ impl DependsOn<dyn Provider> for VariantRequirement {
 }
 
 impl ModelCommands {
-    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>, out: &dyn Output) -> Result<()> {
         let models = MODEL_REGISTRY.entries();
 
         let filtered: std::collections::HashMap<_, _> = match filter_type {
@@ -56,118 +57,106 @@ impl ModelCommands {
         };
 
         if filtered.is_empty() {
-            println!("No models found{}.", filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default());
+            out.info(&format!(
+                "No models found{}.",
+                filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default()
+            ));
             return Ok(());
         }
 
-        println!();
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE");
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12}", "----", "------", "----", "-------", "----");
-
-        for (model_id, model) in &filtered {
-            println!(
-                "{:<35} {:<18} {:<8} {:<12} {:<12}",
-                model_id,
-                model.family,
+        let mut rows: Vec<Vec<String>> = filtered.iter().map(|(model_id, model)| {
+            vec![
+                model_id.to_string(),
+                model.family.clone(),
                 format!("{}B", model.size / 1_000_000_000),
-                format!("{}", model.context_length),
+                model.context_length.to_string(),
                 model.model_type.to_string(),
-            );
-        }
+            ]
+        }).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("Total: {} models", filtered.len());
+        out.table(
+            &format!("Model Catalog ({} models)", filtered.len()),
+            &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
+            &rows,
+        );
         Ok(())
     }
 
-    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>, out: &dyn Output) -> Result<()> {
+        let mut rows: Vec<Vec<String>> = Vec::new();
 
-        println!();
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "PROVIDER");
-        println!("{:<35} {:<18} {:<8} {:<12} {:<12} {}", "----", "------", "----", "-------", "----", "--------");
-
-        let mut valid = 0;
-        for (model_id, model_config) in ctx.config.models.clone() {
-            if let Some(model_md) = MODEL_REGISTRY.get(&model_id) {
+        for (model_id, model_config) in &ctx.config.models {
+            if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
                 if let Some(ref t) = filter_type {
                     if model_md.model_type != *t {
                         continue;
                     }
                 }
-                valid += 1;
-                println!(
-                    "{:<35} {:<18} {:<8} {:<12} {:<12} {}",
-                    model_id,
-                    model_md.family,
+                rows.push(vec![
+                    model_id.clone(),
+                    model_md.family.clone(),
                     format!("{}B", model_md.size / 1_000_000_000),
-                    format!("{}", model_md.context_length),
+                    model_md.context_length.to_string(),
                     model_md.model_type.to_string(),
-                    match model_config.provider_id {
-                        Some(p_id) => p_id,
-                        None => "None".to_string(),
-                    },
-                );
+                    model_config.provider_id.clone().unwrap_or_else(|| "None".to_string()),
+                ]);
             }
         }
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("Total: {} models", valid);
+        out.table(
+            &format!("Configured Models ({} models)", rows.len()),
+            &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "PROVIDER"],
+            &rows,
+        );
         Ok(())
     }
 
-    pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
+    pub fn info(ctx: &crate::AppContext, model_id: &str, out: &dyn Output) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
-                println!();
-                println!("Model: {}", model_id);
-                println!("Family: {}", model.family);
-                println!("Version: {}", model.version);
-                println!("Size: {}B parameters ({:.2}B)", model.size, model.size as f64 / 1_000_000_000.0);
-                println!("Context Length: {} tokens", model.context_length);
-                println!("Type: {}", model.model_type);
-                println!("Hugging Face: {}", model.huggingface_repo);
+                let mut fields: Vec<(&str, String)> = vec![
+                    ("Family",        model.family.clone()),
+                    ("Version",       model.version.clone()),
+                    ("Size",          format!("{}B parameters ({:.2}B)", model.size, model.size as f64 / 1_000_000_000.0)),
+                    ("Context Length", format!("{} tokens", model.context_length)),
+                    ("Type",          model.model_type.to_string()),
+                    ("Hugging Face",  model.huggingface_repo.clone()),
+                ];
 
                 if let Some(desc) = &model.description {
-                    println!("\nDescription:");
-                    println!("  {}", desc);
+                    fields.push(("Description", desc.clone()));
                 }
-
                 if !model.tags.is_empty() {
-                    println!("\nTags: {}", model.tags.join(", "));
+                    fields.push(("Tags", model.tags.join(", ")));
                 }
 
-                println!("\nAvailable Variants:");
-                for variant in &model.variants {
-                    println!(
-                        "  - {} / {} ({:.1} GB) -> {}",
-                        variant.format,
-                        variant.precision,
-                        variant.size_gb,
-                        variant.url
-                    );
-                }
+                let variants_str = model.variants.iter()
+                    .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                fields.push(("Variants", variants_str));
 
-                println!("\nSupported Functions:");
-                for func in &model.supported_functions {
-                    println!("  - {}", func);
-                }
+                let funcs_str = model.supported_functions.iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                fields.push(("Supported Functions", funcs_str));
 
-                // Show configuration state
                 if let Some(configured) = ctx.config.get_model(model_id) {
-                    println!("\nConfiguration:");
-                    println!("  Provider: {:?}", configured.provider_id);
-                    println!("  Variant: {:?}", configured.variant);
-                    println!("  Enabled: {}", configured.enabled);
+                    fields.push(("Config: Provider", format!("{:?}", configured.provider_id)));
+                    fields.push(("Config: Variant",  format!("{:?}", configured.variant)));
+                    fields.push(("Config: Enabled",  configured.enabled.to_string()));
                 }
 
+                out.detail(model_id, &fields);
                 Ok(())
             }
             None => {
-                eprintln!("Error: Model '{}' not found in registry.", model_id);
-                println!("\nAvailable models:");
-                for (model_reg_id, _) in MODEL_REGISTRY.entries() {
-                    println!("  - {}", model_reg_id);
-                }
+                out.error(&format!("Model '{}' not found in registry.", model_id));
+                let available: Vec<_> = MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
+                out.info(&format!("Available models: {}", available.join(", ")));
                 anyhow::bail!("Model not found");
             }
         }
@@ -302,8 +291,158 @@ impl ModelCommands {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, ModelConfig};
     use crate::providers::{ModelFormat, ProviderType};
     use crate::registry::ConfigConstructable;
+    use crate::utils::ui::CaptureOutput;
+
+    fn empty_ctx() -> crate::AppContext {
+        crate::AppContext { config: Config::default() }
+    }
+
+    fn ctx_with_model(id: &str, provider_id: Option<&str>) -> crate::AppContext {
+        let mut ctx = empty_ctx();
+        ctx.config.models.insert(id.to_string(), ModelConfig {
+            model_id: id.to_string(),
+            provider_id: provider_id.map(String::from),
+            variant: None,
+            enabled: true,
+        });
+        ctx
+    }
+
+    // ── catalog ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn catalog_table_has_correct_column_headers() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::catalog(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        assert_eq!(tables.len(), 1);
+        let (_, headers, _) = &tables[0];
+        assert!(headers.contains(&"ID".to_string()));
+        assert!(headers.contains(&"FAMILY".to_string()));
+        assert!(headers.contains(&"SIZE".to_string()));
+        assert!(headers.contains(&"CONTEXT".to_string()));
+        assert!(headers.contains(&"TYPE".to_string()));
+    }
+
+    #[test]
+    fn catalog_no_filter_returns_all_models() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::catalog(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert!(!rows.is_empty(), "expected at least one model in catalog");
+    }
+
+    #[test]
+    fn catalog_text_filter_returns_only_text_models() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::catalog(&ctx, Some(ModelType::Text), &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        for row in rows {
+            assert_eq!(row[4], "Text", "all filtered rows should be Text type");
+        }
+    }
+
+    #[test]
+    fn catalog_vision_filter_returns_only_vision_models() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::catalog(&ctx, Some(ModelType::Vision), &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        for row in rows {
+            assert_eq!(row[4], "Vision");
+        }
+    }
+
+    #[test]
+    fn catalog_speech_filter_returns_only_speech_models() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::catalog(&ctx, Some(ModelType::Speech), &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        for row in rows {
+            assert_eq!(row[4], "Speech");
+        }
+    }
+
+    // ── list ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn list_empty_config_renders_zero_rows() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::list(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[test]
+    fn list_configured_model_shows_provider_id() {
+        let ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
+        let out = CaptureOutput::default();
+        ModelCommands::list(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].iter().any(|c| c == "my-ollama"));
+    }
+
+    #[test]
+    fn list_configured_model_without_provider_shows_none() {
+        let ctx = ctx_with_model("granite-3.1-8b-instruct", None);
+        let out = CaptureOutput::default();
+        ModelCommands::list(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        assert!(rows[0].iter().any(|c| c == "None"));
+    }
+
+    #[test]
+    fn list_unknown_model_id_in_config_is_skipped() {
+        let ctx = ctx_with_model("this-model-does-not-exist", Some("p1"));
+        let out = CaptureOutput::default();
+        ModelCommands::list(&ctx, None, &out).unwrap();
+        let tables = out.tables.borrow();
+        let (_, _, rows) = &tables[0];
+        // The unknown id is not in MODEL_REGISTRY, so it should be skipped
+        assert_eq!(rows.len(), 0);
+    }
+
+    // ── info ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn info_known_model_renders_detail_with_key_fields() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::info(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
+        let details = out.details.borrow();
+        assert_eq!(details.len(), 1);
+        let (title, fields) = &details[0];
+        assert_eq!(title, "granite-3.1-8b-instruct");
+        assert!(fields.iter().any(|(k, _)| k == "Family"));
+        assert!(fields.iter().any(|(k, _)| k == "Context Length"));
+        assert!(fields.iter().any(|(k, _)| k == "Supported Functions"));
+    }
+
+    #[test]
+    fn info_unknown_model_returns_err_and_emits_error() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        let result = ModelCommands::info(&ctx, "does-not-exist", &out);
+        assert!(result.is_err());
+        assert!(!out.errors.borrow().is_empty());
+    }
+
 
     fn metadata_supporting(formats: Vec<ModelFormat>, precisions: Vec<&str>) -> ProviderMetadata {
         ProviderMetadata {
