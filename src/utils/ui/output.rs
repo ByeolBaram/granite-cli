@@ -21,8 +21,59 @@ define_factory!(Output, OutputMetadata, OutputFactory);
 pub static OUTPUT_REGISTRY: LazyLock<OutputFactory> = LazyLock::new(|| {
     let mut f = OutputFactory::new();
     f.register::<crate::utils::ui::backends::terminal::TerminalOutput>("terminal");
+    f.register::<crate::utils::ui::backends::plain::PlainOutput>("plain");
+    f.register::<crate::utils::ui::backends::json::JsonOutput>("json");
     f
 });
+
+/// Generates panic-safety contract tests for any [`Output`] implementation.
+/// Invoke with the constructor expression as argument:
+///
+/// ```ignore
+/// output_contract_tests!(PlainOutput::new(&serde_json::json!({})));
+/// ```
+#[macro_export]
+macro_rules! output_contract_tests {
+    ($make:expr) => {
+        #[test]
+        fn contract_empty_table_does_not_panic() {
+            $make.table("T", &["A"], &[]);
+        }
+        #[test]
+        fn contract_single_row_table_does_not_panic() {
+            $make.table("T", &["A"], &[vec!["x".to_string()]]);
+        }
+        #[test]
+        fn contract_hundred_row_table_does_not_panic() {
+            let rows: Vec<Vec<String>> = (0..100)
+                .map(|i| vec![format!("id-{}", i), format!("val-{}", i)])
+                .collect();
+            $make.table("Big", &["ID", "VAL"], &rows);
+        }
+        #[test]
+        fn contract_table_with_empty_cell_does_not_panic() {
+            $make.table("T", &["A"], &[vec!["".to_string()]]);
+        }
+        #[test]
+        fn contract_detail_with_no_fields_does_not_panic() {
+            $make.detail("Empty", &[]);
+        }
+        #[test]
+        fn contract_status_ok_does_not_panic() {
+            $make.status("svc", true, "");
+        }
+        #[test]
+        fn contract_status_fail_does_not_panic() {
+            $make.status("svc", false, "timed out");
+        }
+        #[test]
+        fn contract_info_empty_string_does_not_panic() {
+            $make.info("");
+            $make.warn("");
+            $make.error("");
+        }
+    };
+}
 
 /// The core output abstraction.
 ///
@@ -132,8 +183,10 @@ mod tests {
     // ── OutputFactory registry ────────────────────────────────────────────────
 
     #[test]
-    fn output_registry_contains_terminal_backend() {
+    fn output_registry_contains_all_three_backends() {
         assert!(OUTPUT_REGISTRY.get("terminal").is_some());
+        assert!(OUTPUT_REGISTRY.get("plain").is_some());
+        assert!(OUTPUT_REGISTRY.get("json").is_some());
     }
 
     #[test]
@@ -143,17 +196,17 @@ mod tests {
     }
 
     #[test]
-    fn output_registry_entries_count_matches_registered() {
-        let entries = OUTPUT_REGISTRY.entries();
-        assert!(entries.len() >= 1);
-        assert!(entries.contains_key("terminal"));
+    fn output_registry_has_exactly_three_backends() {
+        assert_eq!(OUTPUT_REGISTRY.entries().len(), 3);
     }
 
     #[test]
     fn output_metadata_has_non_empty_name_and_description() {
-        let meta = OUTPUT_REGISTRY.get("terminal").unwrap();
-        assert!(!meta.name.is_empty());
-        assert!(!meta.description.is_empty());
+        for name in &["terminal", "plain", "json"] {
+            let meta = OUTPUT_REGISTRY.get(name).unwrap();
+            assert!(!meta.name.is_empty(), "{} name empty", name);
+            assert!(!meta.description.is_empty(), "{} description empty", name);
+        }
     }
 
     // ── CaptureOutput ─────────────────────────────────────────────────────────
