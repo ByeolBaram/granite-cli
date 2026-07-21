@@ -1,33 +1,37 @@
-use ratatui::{
-    layout::Constraint,
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
-};
+use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::backends::plain::PlainOutput;
 use crate::utils::ui::output::{HasOutputMetadata, Output, OutputMetadata};
-use crate::utils::ui::tui::render_once;
 
 /*-- public --*/
 
-/// The default terminal backend. Renders using ratatui one-shot mode:
-/// enable raw mode → draw one frame → restore terminal.
+/// The default terminal backend. Renders coloured, column-aligned output using
+/// direct crossterm ANSI codes alongside `println!`.
 ///
-/// Falls back to `PlainOutput` automatically when stdout is not a tty
-/// (e.g. piped to a file or CI environment).
-pub struct TerminalOutput;
+/// No ratatui widgets, no raw mode, no Terminal, no draw loop. Output prints
+/// directly to the terminal and stays there like any other CLI tool.
+///
+/// If stdout is not a tty (pipe, file redirect, CI — detected via
+/// `crossterm::terminal::size()`) every method delegates to `PlainOutput`.
+pub struct TerminalOutput {
+    is_tty: bool,
+}
 
 impl ConfigConstructable for TerminalOutput {
     fn new(_cfg: &serde_json::Value) -> Self {
-        Self
+        Self {
+            is_tty: crossterm::terminal::size().is_ok(),
+        }
     }
 }
 
 impl Output for TerminalOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
-        // Compute column widths from headers and all row cells
+        if !self.is_tty {
+            return PlainOutput.table(title, headers, rows);
+        }
+
         let col_count = headers.len();
         let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
         for row in rows {
@@ -38,129 +42,127 @@ impl Output for TerminalOutput {
             }
         }
 
-        let header_style = Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD);
+        // Title in bold
+        println!(
+            "\n{}{}{}",
+            SetAttribute(Attribute::Bold),
+            title,
+            SetAttribute(Attribute::Reset)
+        );
 
-        let header_cells: Vec<Cell> = headers
+        // Header row in cyan + bold
+        let header_line: String = headers
             .iter()
-            .map(|h| Cell::from(*h).style(header_style))
-            .collect();
-        let header_row = Row::new(header_cells).height(1);
+            .zip(widths.iter())
+            .map(|(h, w)| format!("{:<width$}", h, width = w))
+            .collect::<Vec<_>>()
+            .join("  ");
+        println!(
+            "{}{}{}{}",
+            SetForegroundColor(Color::Cyan),
+            SetAttribute(Attribute::Bold),
+            header_line,
+            ResetColor,
+        );
 
-        let data_rows: Vec<Row> = rows
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let style = if i % 2 == 0 {
-                    Style::default()
-                } else {
-                    Style::default().bg(Color::Rgb(30, 30, 30))
-                };
-                let cells: Vec<Cell> = row.iter().map(|c| Cell::from(c.as_str())).collect();
-                Row::new(cells).style(style).height(1)
-            })
-            .collect();
+        // Separator
+        let sep: String = widths.iter().map(|w| "─".repeat(*w)).collect::<Vec<_>>().join("  ");
+        println!("{}{}{}", SetForegroundColor(Color::DarkGrey), sep, ResetColor);
 
-        let constraints: Vec<Constraint> = widths
-            .iter()
-            .map(|w| Constraint::Length((*w + 2) as u16))
-            .collect();
-
-        let table = Table::new(data_rows, constraints)
-            .header(header_row)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(Span::styled(
-                        format!(" {} ", title),
-                        Style::default().add_modifier(Modifier::BOLD),
-                    )),
-            )
-            .column_spacing(1);
-
-        if render_once(table).is_err() {
-            PlainOutput.table(title, headers, rows);
+        // Data rows — alternate subtle dim on odd rows
+        for (i, row) in rows.iter().enumerate() {
+            let line: String = row
+                .iter()
+                .zip(widths.iter())
+                .map(|(c, w)| format!("{:<width$}", c, width = w))
+                .collect::<Vec<_>>()
+                .join("  ");
+            if i % 2 == 0 {
+                println!("{}", line);
+            } else {
+                println!(
+                    "{}{}{}",
+                    SetForegroundColor(Color::Grey),
+                    line,
+                    ResetColor
+                );
+            }
         }
     }
 
     fn detail(&self, title: &str, fields: &[(&str, String)]) {
-        let key_width = fields.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+        if !self.is_tty {
+            return PlainOutput.detail(title, fields);
+        }
 
-        let lines: Vec<Line> = fields
-            .iter()
-            .map(|(k, v)| {
-                Line::from(vec![
-                    Span::styled(
-                        format!("  {:<width$}  ", k, width = key_width),
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(v.clone()),
-                ])
-            })
-            .collect();
-
-        let para = Paragraph::new(lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(Span::styled(
-                    format!(" {} ", title),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
+        println!(
+            "\n{}{}{}",
+            SetAttribute(Attribute::Bold),
+            title,
+            SetAttribute(Attribute::Reset)
         );
 
-        if render_once(para).is_err() {
-            PlainOutput.detail(title, fields);
+        let key_width = fields.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+        for (k, v) in fields {
+            println!(
+                "  {}{:<width$}{}  {}",
+                SetForegroundColor(Color::Cyan),
+                k,
+                ResetColor,
+                v,
+                width = key_width,
+            );
         }
     }
 
     fn status(&self, label: &str, ok: bool, detail: &str) {
+        if !self.is_tty {
+            return PlainOutput.status(label, ok, detail);
+        }
+
         let (mark, colour) = if ok {
             ("✓", Color::Green)
         } else {
             ("✗", Color::Red)
         };
-        let line = if detail.is_empty() {
-            format!("  {} {}", mark, label)
+        if detail.is_empty() {
+            println!("  {}{}{}  {}", SetForegroundColor(colour), mark, ResetColor, label);
         } else {
-            format!("  {} {}  {}", mark, label, detail)
-        };
-        let para = Paragraph::new(Line::from(Span::styled(
-            line,
-            Style::default().fg(colour),
-        )));
-        if render_once(para).is_err() {
-            PlainOutput.status(label, ok, detail);
+            println!("  {}{}{}  {}  {}", SetForegroundColor(colour), mark, ResetColor, label, detail);
         }
     }
 
     fn info(&self, msg: &str) {
-        let para = Paragraph::new(msg);
-        if render_once(para).is_err() {
-            PlainOutput.info(msg);
+        if !self.is_tty {
+            return PlainOutput.info(msg);
         }
+        println!("{}", msg);
     }
 
     fn warn(&self, msg: &str) {
-        let para = Paragraph::new(Span::styled(
-            format!("Warning: {}", msg),
-            Style::default().fg(Color::Yellow),
-        ));
-        if render_once(para).is_err() {
-            PlainOutput.warn(msg);
+        if !self.is_tty {
+            return PlainOutput.warn(msg);
         }
+        println!(
+            "{}{}Warning:{} {}",
+            SetForegroundColor(Color::Yellow),
+            SetAttribute(Attribute::Bold),
+            ResetColor,
+            msg
+        );
     }
 
     fn error(&self, msg: &str) {
-        let para = Paragraph::new(Span::styled(
-            format!("Error: {}", msg),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        ));
-        if render_once(para).is_err() {
-            PlainOutput.error(msg);
+        if !self.is_tty {
+            return PlainOutput.error(msg);
         }
+        eprintln!(
+            "{}{}Error:{} {}",
+            SetForegroundColor(Color::Red),
+            SetAttribute(Attribute::Bold),
+            ResetColor,
+            msg
+        );
     }
 }
 
@@ -168,7 +170,8 @@ impl HasOutputMetadata for TerminalOutput {
     fn metadata() -> OutputMetadata {
         OutputMetadata {
             name: "terminal".to_string(),
-            description: "Rich ratatui terminal output with colour and borders".to_string(),
+            description: "Coloured ANSI terminal output; falls back to plain when not a tty"
+                .to_string(),
         }
     }
 }

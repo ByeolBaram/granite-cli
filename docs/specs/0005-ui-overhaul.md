@@ -149,9 +149,21 @@ dispatch_command(&mut ctx, cmd, out.as_ref()).await
 
 #### TerminalOutput (default)
 
-Renders using ratatui one-shot mode: `crossterm::terminal::enable_raw_mode()` → `terminal.draw(…)` → `crossterm::terminal::disable_raw_mode()`. Each `Output` method constructs a ratatui widget and calls the shared `render_once(widget)` helper in `src/utils/ui/tui.rs`.
+Renders using **direct crossterm ANSI codes** alongside `println!` — no ratatui
+widgets, no raw mode, no `Terminal`, no draw loop. Each `Output` method uses
+`crossterm::style::{SetForegroundColor, SetAttribute, ResetColor}` inline to
+produce coloured, column-aligned output that prints directly to the terminal
+and stays there, exactly like any other CLI tool.
 
-If stdout is not a tty (pipe or file redirection detected via `crossterm::terminal::is_raw_mode_enabled`), `TerminalOutput` falls back to `PlainOutput` behaviour automatically, making `granite-cli model catalog > out.txt` produce readable plain text.
+If stdout is not a tty (pipe or file redirection, detected via
+`crossterm::terminal::size()` failing), `TerminalOutput` delegates every call
+to `PlainOutput` automatically. This means `granite-cli model catalog > out.txt`
+produces readable plain text with no ANSI codes.
+
+Ratatui is **not used** by `TerminalOutput`. Ratatui belongs only in `app.rs`
+for the interactive full-screen TUI (`granite-cli` with no arguments). The
+two rendering targets — one-shot command output and interactive TUI — are
+distinct and use distinct mechanisms.
 
 #### PlainOutput
 
@@ -448,16 +460,13 @@ The choice to place `CaptureOutput` in the same file as the trait (rather than a
 of the trait, and co-locating it with the trait makes the contract explicit.
 
 #### `src/utils/ui/tui.rs`
-Low-level crossterm/ratatui plumbing extracted into one place:
+Low-level ratatui plumbing for the interactive TUI only:
 
 - **`setup_terminal()`** — enables raw mode, enters the alternate screen, returns a `Term`.
 - **`restore_terminal()`** — disables raw mode, leaves the alternate screen, shows the cursor.
-- **`render_once()`** — combines the two above for one-shot rendering (used by `TerminalOutput`).
-  Returns an error if the terminal cannot be entered, which callers use as the trigger to fall
-  back to `PlainOutput`.
+- **`Term`** type alias — `Terminal<CrosstermBackend<Stdout>>`.
 
-Having these three functions in a single file means every ratatui consumer imports from one
-place, and the setup/teardown pairing is impossible to split.
+`render_once()` was removed in the fix for issue #7 (see `docs/issues/0007-terminal-output-inline-render.md`). It was an attempt to use ratatui for one-shot command output, which is the wrong tool for that job. `tui.rs` now contains only what `app.rs` needs for the interactive TUI.
 
 #### `src/utils/ui/app.rs`
 The full interactive TUI application. Contains:
@@ -503,12 +512,17 @@ Contains `output_contract_tests!` plus 4 content-assertion tests that parse the 
 and check field names and values.
 
 #### `src/utils/ui/backends/terminal.rs`
-`TerminalOutput` — the default backend. Uses `render_once()` from `tui.rs` to render a
-ratatui widget and immediately restore the terminal. Each `Output` method builds the
-appropriate ratatui widget (`Table`, `Paragraph`, `List`) and calls `render_once`. If
-`render_once` returns an error (stdout is not a tty), the method falls back to `PlainOutput`
-behaviour transparently. This means `granite-cli model catalog > out.txt` produces readable
-plain text automatically with no extra flag.
+`TerminalOutput` — the default backend. Uses **direct crossterm ANSI codes** alongside
+`println!` for coloured, column-aligned output. No ratatui widgets, no raw mode, no `Terminal`.
+
+Non-tty detection is done once at the call site via `crossterm::terminal::size()` — if it
+returns an error stdout is not a tty and every method delegates to `PlainOutput` instead.
+This makes `granite-cli model catalog > out.txt` produce readable plain text automatically.
+
+The original implementation used ratatui one-shot rendering via `render_once()`, which caused
+compiler warnings from `cargo run` to bleed inside widget borders (issue #7). Replacing it
+with direct ANSI output resolves the issue and simplifies the code — `TerminalOutput` no
+longer depends on `tui.rs` at all.
 
 ### Files Changed
 
