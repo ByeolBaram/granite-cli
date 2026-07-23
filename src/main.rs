@@ -22,7 +22,7 @@ extern crate paste;
 #[command(name = "granite-cli")]
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
 struct Cli {
-    /// Output format: terminal (default), plain, json
+    /// Output format: terminal (default), plain, json, markdown
     #[arg(long, global = true, default_value = "terminal")]
     output: String,
 
@@ -76,6 +76,12 @@ enum ModelSubcommands {
         /// Filter by model type
         #[arg(short, long)]
         r#type: Option<String>,
+    },
+
+    /// Search the model catalog by ID or family
+    Search {
+        /// Case-insensitive substring to search for
+        query: String,
     },
 
     /// Show detailed model information
@@ -172,7 +178,7 @@ async fn main() {
     let out = OUTPUT_REGISTRY
         .construct(&cli.output, &serde_json::json!({}))
         .unwrap_or_else(|_| {
-            eprintln!("Unknown output format '{}'. Valid: terminal, plain, json", cli.output);
+            eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", cli.output);
             std::process::exit(1);
         });
 
@@ -246,6 +252,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands, out: 
             };
             ModelCommands::list(ctx, filter, out)
         }
+        ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query, out),
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id, out),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }

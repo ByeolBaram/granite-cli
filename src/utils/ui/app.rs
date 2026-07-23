@@ -51,6 +51,7 @@ pub struct App {
     pub row: usize,
     pub mode: AppMode,
     table_state: TableState,
+    pub detail_scroll: usize,
 }
 
 impl App {
@@ -63,6 +64,7 @@ impl App {
             row: 0,
             mode: AppMode::Browse,
             table_state,
+            detail_scroll: 0,
         }
     }
 
@@ -135,6 +137,13 @@ impl App {
             AppMode::Detail(_) => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => {
                     self.mode = AppMode::Browse;
+                    self.detail_scroll = 0;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.detail_scroll += 1;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(1);
                 }
                 _ => {}
             },
@@ -369,7 +378,8 @@ impl App {
 
         let para = Paragraph::new(content)
             .block(Block::default().borders(Borders::ALL).title(format!(" {} — Detail ", id)))
-            .wrap(ratatui::widgets::Wrap { trim: false });
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((self.detail_scroll as u16, 0));
         frame.render_widget(para, area);
     }
 
@@ -377,7 +387,7 @@ impl App {
         let hints = match &self.mode {
             AppMode::Browse => "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit",
             AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
-            AppMode::Detail(_) => "[Backspace/Esc] Back  [q] Quit",
+            AppMode::Detail(_) => "[↑↓/jk] Scroll  [Backspace/Esc/q] Back",
         };
         let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)));
         frame.render_widget(para, area);
@@ -611,5 +621,49 @@ mod tests {
         let a = app();
         let ids = a.filtered_ids("zzznomatch");
         assert!(ids.is_empty());
+    }
+
+    // ── detail scroll ────────────────────────────────────────────────────────
+
+    #[test]
+    fn detail_scroll_default_is_zero() {
+        let a = app();
+        assert_eq!(a.detail_scroll, 0);
+    }
+
+    #[test]
+    fn detail_down_increments_scroll() {
+        let mut a = app();
+        a.mode = AppMode::Detail("granite-3.1-8b-instruct".to_string());
+        a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(a.detail_scroll, 1);
+    }
+
+    #[test]
+    fn detail_up_at_zero_stays_zero() {
+        let mut a = app();
+        a.mode = AppMode::Detail("granite-3.1-8b-instruct".to_string());
+        a.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(a.detail_scroll, 0);
+    }
+
+    #[test]
+    fn detail_esc_resets_scroll_to_zero() {
+        let mut a = app();
+        a.mode = AppMode::Detail("granite-3.1-8b-instruct".to_string());
+        a.detail_scroll = 5;
+        a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(a.detail_scroll, 0);
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn detail_scroll_does_not_affect_browse_row() {
+        let mut a = app();
+        a.row = 2;
+        a.mode = AppMode::Detail("granite-3.1-8b-instruct".to_string());
+        a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(a.row, 2);
     }
 }

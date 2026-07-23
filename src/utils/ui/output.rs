@@ -23,6 +23,7 @@ pub static OUTPUT_REGISTRY: LazyLock<OutputFactory> = LazyLock::new(|| {
     f.register::<crate::utils::ui::backends::terminal::TerminalOutput>("terminal");
     f.register::<crate::utils::ui::backends::plain::PlainOutput>("plain");
     f.register::<crate::utils::ui::backends::json::JsonOutput>("json");
+    f.register::<crate::utils::ui::backends::markdown::MarkdownOutput>("markdown");
     f
 });
 
@@ -183,10 +184,11 @@ mod tests {
     // ── OutputFactory registry ────────────────────────────────────────────────
 
     #[test]
-    fn output_registry_contains_all_three_backends() {
+    fn output_registry_contains_all_backends() {
         assert!(OUTPUT_REGISTRY.get("terminal").is_some());
         assert!(OUTPUT_REGISTRY.get("plain").is_some());
         assert!(OUTPUT_REGISTRY.get("json").is_some());
+        assert!(OUTPUT_REGISTRY.get("markdown").is_some());
     }
 
     #[test]
@@ -196,13 +198,13 @@ mod tests {
     }
 
     #[test]
-    fn output_registry_has_exactly_three_backends() {
-        assert_eq!(OUTPUT_REGISTRY.entries().len(), 3);
+    fn output_registry_has_exactly_four_backends() {
+        assert_eq!(OUTPUT_REGISTRY.entries().len(), 4);
     }
 
     #[test]
     fn output_metadata_has_non_empty_name_and_description() {
-        for name in &["terminal", "plain", "json"] {
+        for name in &["terminal", "plain", "json", "markdown"] {
             let meta = OUTPUT_REGISTRY.get(name).unwrap();
             assert!(!meta.name.is_empty(), "{} name empty", name);
             assert!(!meta.description.is_empty(), "{} description empty", name);

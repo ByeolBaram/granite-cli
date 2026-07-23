@@ -5,7 +5,7 @@ use dialoguer::{Confirm, Input};
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
-use crate::models::{MODEL_REGISTRY, ModelType};
+use crate::models::{MODEL_REGISTRY, ModelType, Searchable};
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 use crate::utils::ui::Output;
 
@@ -48,6 +48,39 @@ impl DependsOn<dyn Provider> for VariantRequirement {
 }
 
 impl ModelCommands {
+    pub fn search(_ctx: &crate::AppContext, query: &str, out: &dyn Output) -> Result<()> {
+        let q = query.to_lowercase();
+        let models = MODEL_REGISTRY.entries();
+
+        let mut rows: Vec<Vec<String>> = models
+            .iter()
+            .filter(|(id, m)| {
+                id.to_lowercase().contains(&q)
+                    || m.search_fields().iter().any(|f| f.to_lowercase().contains(&q))
+            })
+            .map(|(id, m)| vec![
+                id.to_string(),
+                m.family.clone(),
+                format!("{}B", m.size / 1_000_000_000),
+                m.context_length.to_string(),
+                m.model_type.to_string(),
+            ])
+            .collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+
+        if rows.is_empty() {
+            out.info(&format!("No models found matching '{}'.", query));
+            return Ok(());
+        }
+
+        out.table(
+            &format!("Search results for '{}' ({} models)", query, rows.len()),
+            &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
+            &rows,
+        );
+        Ok(())
+    }
+
     pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>, out: &dyn Output) -> Result<()> {
         let models = MODEL_REGISTRY.entries();
 
@@ -485,5 +518,53 @@ mod tests {
         let requirement = VariantRequirement { format: "safetensors".to_string(), precision: "bfloat16".to_string() };
         let provider = crate::providers::OpenAIProvider::new(&serde_json::json!({ "base_url": "http://localhost:8080" }));
         assert!(requirement.admits_instance(&provider));
+    }
+
+    // ── search ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn search_returns_matching_models_by_id() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        // Use a query unique enough that it only appears in matching IDs, not in descriptions
+        ModelCommands::search(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
+        let tables = out.tables.borrow();
+        assert_eq!(tables.len(), 1);
+        let (_, _, rows) = &tables[0];
+        assert!(!rows.is_empty());
+        // Every returned row must have matched; verify at least one row has the exact model ID
+        assert!(rows.iter().any(|r| r[0] == "granite-3.1-8b-instruct"));
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::search(&ctx, "GRANITE", &out).unwrap();
+        let tables = out.tables.borrow();
+        assert!(!tables.is_empty());
+        let (_, _, rows) = &tables[0];
+        assert!(!rows.is_empty());
+    }
+
+    #[test]
+    fn search_no_match_emits_info_not_table() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        ModelCommands::search(&ctx, "zzznomatch", &out).unwrap();
+        assert!(out.tables.borrow().is_empty());
+        assert!(!out.infos.borrow().is_empty());
+    }
+
+    #[test]
+    fn search_family_match_returns_rows() {
+        let ctx = empty_ctx();
+        let out = CaptureOutput::default();
+        // "Granite 3.3" is a family name
+        ModelCommands::search(&ctx, "3.3", &out).unwrap();
+        let tables = out.tables.borrow();
+        assert!(!tables.is_empty());
+        let (_, _, rows) = &tables[0];
+        assert!(!rows.is_empty());
     }
 }

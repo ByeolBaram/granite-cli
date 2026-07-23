@@ -14,7 +14,7 @@ pub static MODEL_REGISTRY: LazyLock<base::ModelFactory> = LazyLock::new(|| {
 
 // Re-export types from base
 mod base;
-pub use base::{Model, ModelFunction, ModelMetadata, ModelType, ModelVariant};
+pub use base::{Model, ModelFunction, ModelMetadata, ModelType, ModelVariant, Searchable};
 
 /*-- tests -------------------------------------------------------------------*/
 
