@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::cell::RefCell;
 use std::sync::LazyLock;
 
 use crate::registry::ConfigConstructable;
@@ -115,6 +114,7 @@ pub trait Output: ConfigConstructable + Send + Sync + Any {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     /// A test double that records every `Output` call into inspectable `Vec`s.
     ///

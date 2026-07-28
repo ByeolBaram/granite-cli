@@ -5,8 +5,9 @@ use dialoguer::{Confirm, Input};
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
-use crate::models::{MODEL_REGISTRY, ModelType, Searchable};
+use crate::models::{MODEL_REGISTRY, ModelType};
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
+use crate::utils::Searchable;
 
 pub struct ModelCommands;
 
