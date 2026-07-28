@@ -1,5 +1,5 @@
 use crate::registry::ConfigConstructable;
-use crate::utils::ui::output::{HasOutputMetadata, Output, OutputMetadata};
+use crate::utils::ui::base::{self, HasUiMetadata, Ui, UiMetadata};
 
 /*-- public --*/
 
@@ -13,7 +13,7 @@ impl ConfigConstructable for MarkdownOutput {
     }
 }
 
-impl Output for MarkdownOutput {
+impl Ui for MarkdownOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
         println!("\n## {}\n", title);
         let header_line = format!("| {} |", headers.join(" | "));
@@ -46,11 +46,27 @@ impl Output for MarkdownOutput {
     fn info(&self, msg: &str)  { println!("{}", msg); }
     fn warn(&self, msg: &str)  { println!("Warning: {}", msg); }
     fn error(&self, msg: &str) { eprintln!("Error: {}", msg); }
+
+    fn select(&self, _prompt: &str, _items: &[String], _default: usize) -> anyhow::Result<usize> {
+        base::non_interactive()
+    }
+
+    fn confirm(&self, _prompt: &str, _default: bool) -> anyhow::Result<bool> {
+        base::non_interactive()
+    }
+
+    fn text(&self, _prompt: &str, _default: &str) -> anyhow::Result<String> {
+        base::non_interactive()
+    }
+
+    fn password(&self, _prompt: &str) -> anyhow::Result<String> {
+        base::non_interactive()
+    }
 }
 
-impl HasOutputMetadata for MarkdownOutput {
-    fn metadata() -> OutputMetadata {
-        OutputMetadata {
+impl HasUiMetadata for MarkdownOutput {
+    fn metadata() -> UiMetadata {
+        UiMetadata {
             name: "markdown".to_string(),
             description: "GFM markdown table output for documentation and GitHub".to_string(),
         }
@@ -62,13 +78,13 @@ impl HasOutputMetadata for MarkdownOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::ui::output::tests::CaptureOutput;
+    use crate::utils::ui::base::tests::CaptureUi;
 
-    crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({})));
+    crate::output_contract_tests!(Markdownbase::new(&serde_json::json!({})));
 
     #[test]
     fn markdown_table_contains_pipe_chars() {
-        let out = CaptureOutput::default();
+        let out = CaptureUi::default();
         out.table("Test", &["ID", "NAME"], &[vec!["id-1".to_string(), "name-1".to_string()]]);
         let tables = out.tables.borrow();
         // verify the CaptureOutput recorded correctly; live rendering tested via contract tests
@@ -78,19 +94,19 @@ mod tests {
     #[test]
     fn markdown_table_has_header_separator() {
         // Invoke the real MarkdownOutput (print-only) — just verifies no panic
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = Markdownbase::new(&serde_json::json!({}));
         md.table("T", &["ID", "NAME"], &[vec!["a".to_string(), "b".to_string()]]);
     }
 
     #[test]
     fn markdown_detail_is_two_column_table() {
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = Markdownbase::new(&serde_json::json!({}));
         md.detail("My Item", &[("Family", "Granite 3.1".to_string())]);
     }
 
     #[test]
     fn markdown_status_ok_contains_checkmark() {
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = Markdownbase::new(&serde_json::json!({}));
         md.status("my-service", true, "");
         md.status("my-service", false, "timeout");
     }
