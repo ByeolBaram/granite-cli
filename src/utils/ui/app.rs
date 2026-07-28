@@ -7,6 +7,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::capabilities::CAPABILITY_REGISTRY;
 use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
 use crate::utils::ui::tui::{restore_terminal, setup_terminal};
@@ -195,7 +196,7 @@ impl App {
         let mut ids: Vec<String> = match self.section {
             Section::Models => MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
             Section::Providers => PROVIDER_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
+            Section::Capabilities => CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
         };
         ids.sort();
         if q.is_empty() {
@@ -219,7 +220,7 @@ impl App {
             let count = match s {
                 Section::Models => MODEL_REGISTRY.entries().len(),
                 Section::Providers => PROVIDER_REGISTRY.entries().len(),
-                Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().len(),
+                Section::Capabilities => CAPABILITY_REGISTRY.entries().len(),
             };
             let style = if *s == self.section {
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
