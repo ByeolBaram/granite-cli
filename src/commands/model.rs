@@ -7,7 +7,6 @@ use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
 use crate::models::{MODEL_REGISTRY, ModelType, Searchable};
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
-use crate::utils::ui::Output;
 
 pub struct ModelCommands;
 
@@ -48,7 +47,7 @@ impl DependsOn<dyn Provider> for VariantRequirement {
 }
 
 impl ModelCommands {
-    pub fn search(_ctx: &crate::AppContext, query: &str, out: &dyn Output) -> Result<()> {
+    pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
         let q = query.to_lowercase();
         let models = MODEL_REGISTRY.entries();
 
@@ -69,11 +68,11 @@ impl ModelCommands {
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         if rows.is_empty() {
-            out.info(&format!("No models found matching '{}'.", query));
+            ctx.out.info(&format!("No models found matching '{}'.", query));
             return Ok(());
         }
 
-        out.table(
+        ctx.out.table(
             &format!("Search results for '{}' ({} models)", query, rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
@@ -81,7 +80,7 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>, out: &dyn Output) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
         let models = MODEL_REGISTRY.entries();
 
         let filtered: std::collections::HashMap<_, _> = match filter_type {
@@ -90,7 +89,7 @@ impl ModelCommands {
         };
 
         if filtered.is_empty() {
-            out.info(&format!(
+            ctx.out.info(&format!(
                 "No models found{}.",
                 filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default()
             ));
@@ -108,7 +107,7 @@ impl ModelCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        out.table(
+        ctx.out.table(
             &format!("Model Catalog ({} models)", filtered.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
@@ -116,7 +115,7 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>, out: &dyn Output) -> Result<()> {
+    pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
         let mut rows: Vec<Vec<String>> = Vec::new();
 
         for (model_id, model_config) in &ctx.config.models {
@@ -138,7 +137,7 @@ impl ModelCommands {
         }
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        out.table(
+        ctx.out.table(
             &format!("Configured Models ({} models)", rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "PROVIDER"],
             &rows,
@@ -146,7 +145,7 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn info(ctx: &crate::AppContext, model_id: &str, out: &dyn Output) -> Result<()> {
+    pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 let mut fields: Vec<(&str, String)> = vec![
@@ -183,13 +182,13 @@ impl ModelCommands {
                     fields.push(("Config: Enabled",  configured.enabled.to_string()));
                 }
 
-                out.detail(model_id, &fields);
+                ctx.out.detail(model_id, &fields);
                 Ok(())
             }
             None => {
-                out.error(&format!("Model '{}' not found in registry.", model_id));
+                ctx.out.error(&format!("Model '{}' not found in registry.", model_id));
                 let available: Vec<_> = MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
-                out.info(&format!("Available models: {}", available.join(", ")));
+                ctx.out.info(&format!("Available models: {}", available.join(", ")));
                 anyhow::bail!("Model not found");
             }
         }
@@ -330,7 +329,10 @@ mod tests {
     use crate::utils::ui::CaptureOutput;
 
     fn empty_ctx() -> crate::AppContext {
-        crate::AppContext { config: Config::default() }
+        crate::AppContext {
+            config: Config::default(),
+            out: Box::new(CaptureOutput::default()),
+        }
     }
 
     fn ctx_with_model(id: &str, provider_id: Option<&str>) -> crate::AppContext {
@@ -349,9 +351,8 @@ mod tests {
     #[test]
     fn catalog_table_has_correct_column_headers() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::catalog(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
@@ -364,9 +365,8 @@ mod tests {
     #[test]
     fn catalog_no_filter_returns_all_models() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::catalog(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty(), "expected at least one model in catalog");
     }
@@ -374,9 +374,8 @@ mod tests {
     #[test]
     fn catalog_text_filter_returns_only_text_models() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::catalog(&ctx, Some(ModelType::Text), &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Text", "all filtered rows should be Text type");
@@ -386,9 +385,8 @@ mod tests {
     #[test]
     fn catalog_vision_filter_returns_only_vision_models() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::catalog(&ctx, Some(ModelType::Vision), &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Vision");
@@ -398,9 +396,8 @@ mod tests {
     #[test]
     fn catalog_speech_filter_returns_only_speech_models() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::catalog(&ctx, Some(ModelType::Speech), &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Speech");
@@ -412,9 +409,8 @@ mod tests {
     #[test]
     fn list_empty_config_renders_zero_rows() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 0);
     }
@@ -422,9 +418,8 @@ mod tests {
     #[test]
     fn list_configured_model_shows_provider_id() {
         let ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
-        let out = CaptureOutput::default();
         ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
         assert!(rows[0].iter().any(|c| c == "my-ollama"));
@@ -433,9 +428,8 @@ mod tests {
     #[test]
     fn list_configured_model_without_provider_shows_none() {
         let ctx = ctx_with_model("granite-3.1-8b-instruct", None);
-        let out = CaptureOutput::default();
         ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert!(rows[0].iter().any(|c| c == "None"));
     }
@@ -443,9 +437,8 @@ mod tests {
     #[test]
     fn list_unknown_model_id_in_config_is_skipped() {
         let ctx = ctx_with_model("this-model-does-not-exist", Some("p1"));
-        let out = CaptureOutput::default();
         ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         // The unknown id is not in MODEL_REGISTRY, so it should be skipped
         assert_eq!(rows.len(), 0);
@@ -456,9 +449,8 @@ mod tests {
     #[test]
     fn info_known_model_renders_detail_with_key_fields() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::info(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
-        let details = out.details.borrow();
+        let details = ctx.out.details.borrow();
         assert_eq!(details.len(), 1);
         let (title, fields) = &details[0];
         assert_eq!(title, "granite-3.1-8b-instruct");
@@ -470,10 +462,9 @@ mod tests {
     #[test]
     fn info_unknown_model_returns_err_and_emits_error() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         let result = ModelCommands::info(&ctx, "does-not-exist", &out);
         assert!(result.is_err());
-        assert!(!out.errors.borrow().is_empty());
+        assert!(!ctx.out.errors.borrow().is_empty());
     }
 
 
@@ -525,10 +516,9 @@ mod tests {
     #[test]
     fn search_returns_matching_models_by_id() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         // Use a query unique enough that it only appears in matching IDs, not in descriptions
         ModelCommands::search(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         assert_eq!(tables.len(), 1);
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
@@ -539,9 +529,8 @@ mod tests {
     #[test]
     fn search_is_case_insensitive() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::search(&ctx, "GRANITE", &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
@@ -550,19 +539,17 @@ mod tests {
     #[test]
     fn search_no_match_emits_info_not_table() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         ModelCommands::search(&ctx, "zzznomatch", &out).unwrap();
-        assert!(out.tables.borrow().is_empty());
-        assert!(!out.infos.borrow().is_empty());
+        assert!(ctx.out.tables.borrow().is_empty());
+        assert!(!ctx.out.infos.borrow().is_empty());
     }
 
     #[test]
     fn search_family_match_returns_rows() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         // "Granite 3.3" is a family name
         ModelCommands::search(&ctx, "3.3", &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());

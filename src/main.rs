@@ -161,12 +161,14 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
+    pub out: Box<dyn Output>,
 }
 
 impl AppContext {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(out: Box<dyn Output>) -> anyhow::Result<Self> {
         Ok(Self {
             config: config::Config::new()?,
+            out,
         })
     }
 }
@@ -184,25 +186,25 @@ async fn main() {
 
     let result = match cli.command {
         Some(Commands::Model(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_model_command(&mut ctx, subcmd, out.as_ref()).await
+            run_model_command(&mut ctx, subcmd).await
         }
         Some(Commands::Capability(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_capability_command(&mut ctx, subcmd, out.as_ref()).await
+            run_capability_command(&mut ctx, subcmd).await
         }
         Some(Commands::Provider(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_provider_command(&mut ctx, subcmd, out.as_ref()).await
+            run_provider_command(&mut ctx, subcmd).await
         }
         Some(Commands::Configure(args)) => run_configure(args).await,
         Some(Commands::Launch { .. }) => {
@@ -210,7 +212,7 @@ async fn main() {
             Ok(())
         }
         None => {
-            let ctx = AppContext::new().unwrap_or_else(|e| {
+            let ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
@@ -224,7 +226,7 @@ async fn main() {
     }
 }
 
-async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands, out: &dyn Output) -> anyhow::Result<()> {
+async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> anyhow::Result<()> {
     match subcmd {
         ModelSubcommands::Catalog { r#type } => {
             let filter = match r#type.as_deref() {
@@ -237,7 +239,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands, out: 
                 }
                 None => None,
             };
-            ModelCommands::catalog(ctx, filter, out)
+            ModelCommands::catalog(ctx, filter)
         }
         ModelSubcommands::List { r#type } => {
             let filter = match r#type.as_deref() {
@@ -250,31 +252,31 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands, out: 
                 }
                 None => None,
             };
-            ModelCommands::list(ctx, filter, out)
+            ModelCommands::list(ctx, filter)
         }
-        ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query, out),
-        ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id, out),
+        ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query),
+        ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }
 }
 
-async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands, out: &dyn Output) -> anyhow::Result<()> {
+async fn run_capability_command(ctx: &mut AppContext, subcmd: CapabilitySubcommands) -> anyhow::Result<()> {
     match subcmd {
-        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx, out),
-        CapabilitySubcommands::List => CapabilityCommands::list(ctx, out),
-        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id, out),
+        CapabilitySubcommands::Catalog => CapabilityCommands::catalog(ctx),
+        CapabilitySubcommands::List => CapabilityCommands::list(ctx),
+        CapabilitySubcommands::Info { capability_id } => CapabilityCommands::info(ctx, &capability_id),
         CapabilitySubcommands::Setup { capability_id } => CapabilityCommands::setup(ctx, &capability_id).await,
     }
 }
 
-async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands, out: &dyn Output) -> anyhow::Result<()> {
+async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands) -> anyhow::Result<()> {
     match subcmd {
-        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx, out),
-        ProviderSubcommands::List => ProviderCommands::list(ctx, out),
+        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
+        ProviderSubcommands::List => ProviderCommands::list(ctx),
         ProviderSubcommands::Setup { provider_type, instance_id } => {
             ProviderCommands::setup(ctx, &provider_type, instance_id.as_deref()).await
         }
-        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref(), out).await,
+        ProviderSubcommands::Health { provider_id } => ProviderCommands::health(ctx, provider_id.as_deref()).await,
     }
 }
 

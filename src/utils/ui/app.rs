@@ -421,7 +421,10 @@ mod tests {
     use crate::config::Config;
 
     fn app() -> App {
-        App::new(crate::AppContext { config: Config::default() })
+        App::new(crate::AppContext {
+            config: Config::default(),
+            out: Box::new(CaptureOutput::default()),
+        })
     }
 
     // ── existing Browse tests ────────────────────────────────────────────────

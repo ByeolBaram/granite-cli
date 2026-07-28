@@ -7,12 +7,11 @@ use dialoguer::Confirm;
 
 // Local
 use crate::capabilities::CAPABILITY_REGISTRY;
-use crate::utils::ui::Output;
 
 pub struct CapabilityCommands;
 
 impl CapabilityCommands {
-    pub fn catalog(_ctx: &crate::AppContext, out: &dyn Output) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
         let capabilities = CAPABILITY_REGISTRY.entries();
 
         let mut rows: Vec<Vec<String>> = capabilities.iter().map(|(cap_id, cap)| {
@@ -22,7 +21,7 @@ impl CapabilityCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        out.table(
+        ctx.out.table(
             &format!("Capability Catalog ({} capabilities)", capabilities.len()),
             &["ID", "NAME", "DEPENDENCIES"],
             &rows,
@@ -30,8 +29,8 @@ impl CapabilityCommands {
         Ok(())
     }
 
-    pub fn list(_ctx: &crate::AppContext, out: &dyn Output) -> Result<()> {
-        let mut rows: Vec<Vec<String>> = _ctx.config.capabilities.iter().map(|(id, cfg)| {
+    pub fn list(ctx: &crate::AppContext) -> Result<()> {
+        let mut rows: Vec<Vec<String>> = ctx.config.capabilities.iter().map(|(id, cfg)| {
             let name = CAPABILITY_REGISTRY.get(id)
                 .map(|c| c.name.clone())
                 .unwrap_or_else(|| id.clone());
@@ -39,7 +38,7 @@ impl CapabilityCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        out.table(
+        ctx.out.table(
             &format!("Configured Capabilities ({} capabilities)", rows.len()),
             &["ID", "NAME", "ENABLED"],
             &rows,
@@ -47,7 +46,7 @@ impl CapabilityCommands {
         Ok(())
     }
 
-    pub fn info(ctx: &crate::AppContext, capability_id: &str, out: &dyn Output) -> Result<()> {
+    pub fn info(ctx: &crate::AppContext, capability_id: &str) -> Result<()> {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
                 let mut fields: Vec<(&str, String)> = vec![
@@ -68,7 +67,7 @@ impl CapabilityCommands {
                     }
                 }
 
-                out.detail(capability_id, &fields);
+                ctx.out.detail(capability_id, &fields);
                 Ok(())
             }
             None => {
@@ -77,10 +76,10 @@ impl CapabilityCommands {
                         ("Enabled", configured.enabled.to_string()),
                         ("Note", "Configured but not found in bundled registry.".to_string()),
                     ];
-                    out.detail(capability_id, &fields);
+                    ctx.out.detail(capability_id, &fields);
                     Ok(())
                 } else {
-                    out.error(&format!("Capability '{}' not found in registry.", capability_id));
+                    ctx.out.error(&format!("Capability '{}' not found in registry.", capability_id));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -277,7 +276,10 @@ mod tests {
     use crate::utils::ui::CaptureOutput;
 
     fn empty_ctx() -> crate::AppContext {
-        crate::AppContext { config: Config::default() }
+        crate::AppContext {
+            config: Config::default(),
+            out: Box::new(CaptureOutput::default()),
+        }
     }
 
     fn ctx_with_capability(id: &str, enabled: bool) -> crate::AppContext {
@@ -295,9 +297,8 @@ mod tests {
     #[test]
     fn catalog_table_has_id_name_dependencies_columns() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         CapabilityCommands::catalog(&ctx, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
@@ -310,9 +311,8 @@ mod tests {
     #[test]
     fn list_empty_config_has_zero_rows() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         CapabilityCommands::list(&ctx, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 0);
     }
@@ -320,9 +320,8 @@ mod tests {
     #[test]
     fn list_configured_capability_shows_enabled_state() {
         let ctx = ctx_with_capability("my-cap", true);
-        let out = CaptureOutput::default();
         CapabilityCommands::list(&ctx, &out).unwrap();
-        let tables = out.tables.borrow();
+        let tables = ctx.out.tables.borrow();
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
         assert!(rows[0].iter().any(|c| c == "true"));
@@ -333,7 +332,6 @@ mod tests {
     #[test]
     fn info_unknown_capability_returns_err() {
         let ctx = empty_ctx();
-        let out = CaptureOutput::default();
         let result = CapabilityCommands::info(&ctx, "does-not-exist", &out);
         assert!(result.is_err());
     }
@@ -341,9 +339,8 @@ mod tests {
     #[test]
     fn info_configured_only_capability_renders_detail_not_err() {
         let ctx = ctx_with_capability("custom-cap", false);
-        let out = CaptureOutput::default();
         let result = CapabilityCommands::info(&ctx, "custom-cap", &out);
         assert!(result.is_ok());
-        assert!(!out.details.borrow().is_empty());
+        assert!(!ctx.out.details.borrow().is_empty());
     }
 }
