@@ -428,7 +428,7 @@ mod tests {
         })
     }
 
-    // ── existing Browse tests ────────────────────────────────────────────────
+    // -- existing Browse tests ------------------------------------------------
 
     #[test]
     fn app_default_section_is_models() {
@@ -515,7 +515,7 @@ mod tests {
         assert!(quit);
     }
 
-    // ── scroll: TableState stays in sync ────────────────────────────────────
+    // -- scroll: TableState stays in sync ------------------------------------
 
     #[test]
     fn table_state_syncs_to_row_on_down() {
@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(a.table_state.selected(), Some(0));
     }
 
-    // ── search: mode transitions ─────────────────────────────────────────────
+    // -- search: mode transitions ---------------------------------------------
 
     #[test]
     fn search_slash_enters_search_mode() {
@@ -627,7 +627,7 @@ mod tests {
         assert!(ids.is_empty());
     }
 
-    // ── detail scroll ────────────────────────────────────────────────────────
+    // -- detail scroll --------------------------------------------------------
 
     #[test]
     fn detail_scroll_default_is_zero() {

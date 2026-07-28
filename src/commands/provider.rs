@@ -214,7 +214,7 @@ mod tests {
         ctx
     }
 
-    // ── catalog ──────────────────────────────────────────────────────────────
+    // -- catalog --------------------------------------------------------------
 
     #[test]
     fn catalog_table_has_id_type_endpoint_columns() {
@@ -237,7 +237,7 @@ mod tests {
         assert!(rows.iter().any(|r| r[0] == "openai-compatible"));
     }
 
-    // ── list ─────────────────────────────────────────────────────────────────
+    // -- list -----------------------------------------------------------------
 
     #[test]
     fn list_empty_config_has_zero_rows() {
@@ -269,7 +269,7 @@ mod tests {
         assert!(rows[0].iter().any(|c| c == "false"));
     }
 
-    // ── health ────────────────────────────────────────────────────────────────
+    // -- health ----------------------------------------------------------------
 
     #[tokio::test]
     async fn health_no_providers_emits_info_message() {

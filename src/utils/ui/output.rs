@@ -181,7 +181,7 @@ unsafe impl Sync for CaptureOutput {}
 mod tests {
     use super::*;
 
-    // ── OutputFactory registry ────────────────────────────────────────────────
+    // -- OutputFactory registry ------------------------------------------------
 
     #[test]
     fn output_registry_contains_all_backends() {
@@ -211,7 +211,7 @@ mod tests {
         }
     }
 
-    // ── CaptureOutput ─────────────────────────────────────────────────────────
+    // -- CaptureOutput ---------------------------------------------------------
 
     fn make() -> CaptureOutput {
         CaptureOutput::default()
