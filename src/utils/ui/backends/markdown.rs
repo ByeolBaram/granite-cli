@@ -62,7 +62,7 @@ impl HasOutputMetadata for MarkdownOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::ui::CaptureOutput;
+    use crate::utils::ui::output::tests::CaptureOutput;
 
     crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({})));
 

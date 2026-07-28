@@ -326,7 +326,7 @@ mod tests {
     use crate::config::{Config, ModelConfig};
     use crate::providers::{ModelFormat, ProviderType};
     use crate::registry::ConfigConstructable;
-    use crate::utils::ui::CaptureOutput;
+    use crate::utils::ui::output::tests::CaptureOutput;
 
     fn empty_ctx() -> crate::AppContext {
         crate::AppContext {

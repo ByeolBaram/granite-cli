@@ -186,7 +186,7 @@ captured in tests without spawning a subprocess.
 ### CaptureOutput (test double)
 
 Defined alongside the `Output` trait in `src/utils/ui/output.rs`. Available to all test
-modules via `use crate::utils::ui::CaptureOutput`. Uses `RefCell<Vec<…>>` for interior
+modules via `use crate::utils::ui::output::tests::CaptureOutput`. Uses `RefCell<Vec<…>>` for interior
 mutability (required because `Output` methods take `&self`).
 
 ```rust
