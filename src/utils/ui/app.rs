@@ -420,6 +420,7 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::utils::ui::CaptureOutput;
 
     fn app() -> App {
         App::new(crate::AppContext {

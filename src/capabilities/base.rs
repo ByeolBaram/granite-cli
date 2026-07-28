@@ -189,8 +189,8 @@ pub fn get_servable_functions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::{ApiEndpoint, ApiType, HealthStatus, ModelFormat, ProviderError, ProviderMetadata, ProviderType};
-    use crate::models::{ModelMetadata, ModelType, ModelVariant};
+    use crate::providers::{ApiEndpoint, ApiType, HealthStatus, ModelFormat, ProviderError};
+    use crate::models::{ModelType, ModelVariant};
     use std::collections::HashMap;
 
     struct TestProvider {
@@ -248,14 +248,14 @@ mod tests {
 
     #[test]
     fn test_provider_serves_function() {
-        let mut provider = TestProvider {
+        let provider = TestProvider {
             functions: HashMap::from([
                 (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
                 (ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]),
             ]),
         };
 
-        let mut model = TestModel {
+        let model = TestModel {
             functions: vec![ModelFunction::Chat, ModelFunction::Thinking],
         };
 
@@ -266,16 +266,16 @@ mod tests {
 
     #[test]
     fn test_can_serve_any_function() {
-        let mut provider = TestProvider {
+        let provider = TestProvider {
             functions: HashMap::from([
                 (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
             ]),
         };
 
-        let mut model1 = TestModel {
+        let model1 = TestModel {
             functions: vec![ModelFunction::Chat],
         };
-        let mut model2 = TestModel {
+        let model2 = TestModel {
             functions: vec![ModelFunction::Transcription],
         };
 
@@ -285,14 +285,14 @@ mod tests {
 
     #[test]
     fn test_get_servable_functions() {
-        let mut provider = TestProvider {
+        let provider = TestProvider {
             functions: HashMap::from([
                 (ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]),
                 (ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]),
             ]),
         };
 
-        let mut model = TestModel {
+        let model = TestModel {
             functions: vec![
                 ModelFunction::Chat,
                 ModelFunction::Thinking,

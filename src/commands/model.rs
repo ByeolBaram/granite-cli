@@ -335,6 +335,30 @@ mod tests {
         }
     }
 
+    macro_rules! tables {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+        };
+    }
+
+    macro_rules! details {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().details.borrow()
+        };
+    }
+
+    macro_rules! errors {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().errors.borrow()
+        };
+    }
+
+    macro_rules! infos {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().infos.borrow()
+        };
+    }
+
     fn ctx_with_model(id: &str, provider_id: Option<&str>) -> crate::AppContext {
         let mut ctx = empty_ctx();
         ctx.config.models.insert(id.to_string(), ModelConfig {
@@ -351,8 +375,8 @@ mod tests {
     #[test]
     fn catalog_table_has_correct_column_headers() {
         let ctx = empty_ctx();
-        ModelCommands::catalog(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::catalog(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
@@ -365,8 +389,8 @@ mod tests {
     #[test]
     fn catalog_no_filter_returns_all_models() {
         let ctx = empty_ctx();
-        ModelCommands::catalog(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::catalog(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty(), "expected at least one model in catalog");
     }
@@ -374,8 +398,8 @@ mod tests {
     #[test]
     fn catalog_text_filter_returns_only_text_models() {
         let ctx = empty_ctx();
-        ModelCommands::catalog(&ctx, Some(ModelType::Text), &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::catalog(&ctx, Some(ModelType::Text)).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Text", "all filtered rows should be Text type");
@@ -385,8 +409,8 @@ mod tests {
     #[test]
     fn catalog_vision_filter_returns_only_vision_models() {
         let ctx = empty_ctx();
-        ModelCommands::catalog(&ctx, Some(ModelType::Vision), &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::catalog(&ctx, Some(ModelType::Vision)).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Vision");
@@ -396,8 +420,8 @@ mod tests {
     #[test]
     fn catalog_speech_filter_returns_only_speech_models() {
         let ctx = empty_ctx();
-        ModelCommands::catalog(&ctx, Some(ModelType::Speech), &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::catalog(&ctx, Some(ModelType::Speech)).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         for row in rows {
             assert_eq!(row[4], "Speech");
@@ -409,8 +433,8 @@ mod tests {
     #[test]
     fn list_empty_config_renders_zero_rows() {
         let ctx = empty_ctx();
-        ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 0);
     }
@@ -418,8 +442,8 @@ mod tests {
     #[test]
     fn list_configured_model_shows_provider_id() {
         let ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
-        ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
         assert!(rows[0].iter().any(|c| c == "my-ollama"));
@@ -428,8 +452,8 @@ mod tests {
     #[test]
     fn list_configured_model_without_provider_shows_none() {
         let ctx = ctx_with_model("granite-3.1-8b-instruct", None);
-        ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows[0].iter().any(|c| c == "None"));
     }
@@ -437,8 +461,8 @@ mod tests {
     #[test]
     fn list_unknown_model_id_in_config_is_skipped() {
         let ctx = ctx_with_model("this-model-does-not-exist", Some("p1"));
-        ModelCommands::list(&ctx, None, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         // The unknown id is not in MODEL_REGISTRY, so it should be skipped
         assert_eq!(rows.len(), 0);
@@ -449,8 +473,8 @@ mod tests {
     #[test]
     fn info_known_model_renders_detail_with_key_fields() {
         let ctx = empty_ctx();
-        ModelCommands::info(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
-        let details = ctx.out.details.borrow();
+        ModelCommands::info(&ctx, "granite-3.1-8b-instruct").unwrap();
+        let details = details!(ctx);
         assert_eq!(details.len(), 1);
         let (title, fields) = &details[0];
         assert_eq!(title, "granite-3.1-8b-instruct");
@@ -462,9 +486,9 @@ mod tests {
     #[test]
     fn info_unknown_model_returns_err_and_emits_error() {
         let ctx = empty_ctx();
-        let result = ModelCommands::info(&ctx, "does-not-exist", &out);
+        let result = ModelCommands::info(&ctx, "does-not-exist");
         assert!(result.is_err());
-        assert!(!ctx.out.errors.borrow().is_empty());
+        assert!(!errors!(ctx).is_empty());
     }
 
 
@@ -517,8 +541,8 @@ mod tests {
     fn search_returns_matching_models_by_id() {
         let ctx = empty_ctx();
         // Use a query unique enough that it only appears in matching IDs, not in descriptions
-        ModelCommands::search(&ctx, "granite-3.1-8b-instruct", &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::search(&ctx, "granite-3.1-8b-instruct").unwrap();
+        let tables = tables!(ctx);
         assert_eq!(tables.len(), 1);
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
@@ -529,8 +553,8 @@ mod tests {
     #[test]
     fn search_is_case_insensitive() {
         let ctx = empty_ctx();
-        ModelCommands::search(&ctx, "GRANITE", &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::search(&ctx, "GRANITE").unwrap();
+        let tables = tables!(ctx);
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
@@ -539,17 +563,17 @@ mod tests {
     #[test]
     fn search_no_match_emits_info_not_table() {
         let ctx = empty_ctx();
-        ModelCommands::search(&ctx, "zzznomatch", &out).unwrap();
-        assert!(ctx.out.tables.borrow().is_empty());
-        assert!(!ctx.out.infos.borrow().is_empty());
+        ModelCommands::search(&ctx, "zzznomatch").unwrap();
+        assert!(tables!(ctx).is_empty());
+        assert!(!infos!(ctx).is_empty());
     }
 
     #[test]
     fn search_family_match_returns_rows() {
         let ctx = empty_ctx();
         // "Granite 3.3" is a family name
-        ModelCommands::search(&ctx, "3.3", &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        ModelCommands::search(&ctx, "3.3").unwrap();
+        let tables = tables!(ctx);
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());

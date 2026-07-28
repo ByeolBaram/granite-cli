@@ -275,7 +275,7 @@ mod tests {
     use crate::config::{CapabilityConfig, Config};
     use crate::utils::ui::CaptureOutput;
 
-    fn empty_ctx() -> crate::AppContext {
+    fn test_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
             out: Box::new(CaptureOutput::default()),
@@ -283,7 +283,7 @@ mod tests {
     }
 
     fn ctx_with_capability(id: &str, enabled: bool) -> crate::AppContext {
-        let mut ctx = empty_ctx();
+        let mut ctx = test_ctx();
         ctx.config.capabilities.insert(id.to_string(), CapabilityConfig {
             capability_id: id.to_string(),
             enabled,
@@ -292,13 +292,25 @@ mod tests {
         ctx
     }
 
+    macro_rules! tables {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+        };
+    }
+
+    macro_rules! details {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().details.borrow()
+        };
+    }
+
     // -- catalog --------------------------------------------------------------
 
     #[test]
     fn catalog_table_has_id_name_dependencies_columns() {
-        let ctx = empty_ctx();
-        CapabilityCommands::catalog(&ctx, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        let ctx = test_ctx();
+        CapabilityCommands::catalog(&ctx).unwrap();
+        let tables = tables!(ctx);
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
@@ -310,9 +322,9 @@ mod tests {
 
     #[test]
     fn list_empty_config_has_zero_rows() {
-        let ctx = empty_ctx();
-        CapabilityCommands::list(&ctx, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        let ctx = test_ctx();
+        CapabilityCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 0);
     }
@@ -320,8 +332,8 @@ mod tests {
     #[test]
     fn list_configured_capability_shows_enabled_state() {
         let ctx = ctx_with_capability("my-cap", true);
-        CapabilityCommands::list(&ctx, &out).unwrap();
-        let tables = ctx.out.tables.borrow();
+        CapabilityCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
         assert!(rows[0].iter().any(|c| c == "true"));
@@ -331,16 +343,16 @@ mod tests {
 
     #[test]
     fn info_unknown_capability_returns_err() {
-        let ctx = empty_ctx();
-        let result = CapabilityCommands::info(&ctx, "does-not-exist", &out);
+        let ctx = test_ctx();
+        let result = CapabilityCommands::info(&ctx, "does-not-exist");
         assert!(result.is_err());
     }
 
     #[test]
     fn info_configured_only_capability_renders_detail_not_err() {
         let ctx = ctx_with_capability("custom-cap", false);
-        let result = CapabilityCommands::info(&ctx, "custom-cap", &out);
+        let result = CapabilityCommands::info(&ctx, "custom-cap");
         assert!(result.is_ok());
-        assert!(!ctx.out.details.borrow().is_empty());
+        assert!(!details!(ctx).is_empty());
     }
 }
