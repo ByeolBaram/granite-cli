@@ -23,7 +23,7 @@ extern crate paste;
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
 struct Cli {
     /// Output format: terminal (default), plain, json, markdown
-    #[arg(long, global = true, default_value = "terminal")]
+    #[arg(short, long, global = true, default_value = "terminal")]
     output: String,
 
     #[command(subcommand)]
