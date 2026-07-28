@@ -118,8 +118,6 @@ impl HasOutputMetadata for JsonOutput {
 
 /*-- tests --*/
 
-/*-- tests --*/
-
 #[cfg(test)]
 mod tests {
     use super::*;
