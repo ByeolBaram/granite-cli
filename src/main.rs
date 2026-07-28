@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
-use utils::ui::{run_interactive_tui, Output, OUTPUT_REGISTRY};
+use utils::ui::{run_interactive_tui, Ui, UI_REGISTRY};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -201,14 +201,14 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
-    pub out: Box<dyn Output>,
+    pub ui: Box<dyn Ui>,
 }
 
 impl AppContext {
-    pub fn new(out: Box<dyn Output>) -> anyhow::Result<Self> {
+    pub fn new(ui: Box<dyn Ui>) -> anyhow::Result<Self> {
         Ok(Self {
             config: config::Config::new()?,
-            out,
+            ui,
         })
     }
 }
@@ -219,39 +219,39 @@ async fn main() {
 
     let result = match cli.command {
         Some(Commands::Model(wrapper)) => {
-            let out = OUTPUT_REGISTRY
+            let ui = UI_REGISTRY
                 .construct(&wrapper.output, &serde_json::json!({}))
                 .unwrap_or_else(|_| {
                     eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
                     std::process::exit(1);
                 });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(ui).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
             run_model_command(&mut ctx, wrapper.subcommand).await
         }
         Some(Commands::Capability(wrapper)) => {
-            let out = OUTPUT_REGISTRY
+            let ui = UI_REGISTRY
                 .construct(&wrapper.output, &serde_json::json!({}))
                 .unwrap_or_else(|_| {
                     eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
                     std::process::exit(1);
                 });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(ui).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
             run_capability_command(&mut ctx, wrapper.subcommand).await
         }
         Some(Commands::Provider(wrapper)) => {
-            let out = OUTPUT_REGISTRY
+            let ui = UI_REGISTRY
                 .construct(&wrapper.output, &serde_json::json!({}))
                 .unwrap_or_else(|_| {
                     eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
                     std::process::exit(1);
                 });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
+            let mut ctx = AppContext::new(ui).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
@@ -263,10 +263,10 @@ async fn main() {
             Ok(())
         }
         None => {
-            let out = OUTPUT_REGISTRY
+            let ui = UI_REGISTRY
                 .construct("terminal", &serde_json::json!({}))
                 .unwrap_or_else(|_| unreachable!());
-            let ctx = AppContext::new(out).unwrap_or_else(|e| {
+            let ctx = AppContext::new(ui).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
