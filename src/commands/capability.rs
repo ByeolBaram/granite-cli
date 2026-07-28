@@ -11,119 +11,75 @@ use crate::capabilities::CAPABILITY_REGISTRY;
 pub struct CapabilityCommands;
 
 impl CapabilityCommands {
-    pub fn catalog(_ctx: &crate::AppContext) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
         let capabilities = CAPABILITY_REGISTRY.entries();
 
-        let filtered = capabilities.len();
+        let mut rows: Vec<Vec<String>> = capabilities.iter().map(|(cap_id, cap)| {
+            let deps: Vec<_> = cap.dependencies.iter().map(|d| d.to_string()).collect();
+            let deps_str = if deps.is_empty() { "None".to_string() } else { deps.join(", ") };
+            vec![cap_id.to_string(), cap.name.clone(), deps_str]
+        }).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("{:<20} {:<30} {}", "ID", "NAME", "DEPENDENCIES");
-        println!("{:<20} {:<30} {}", "----", "----", "------------");
-
-        for (cap_id, cap) in &capabilities {
-            let deps: Vec<_> = cap.dependencies.iter().map(|d| format!("{}", d)).collect();
-            let deps_str = if deps.is_empty() {
-                "None".to_string()
-            } else {
-                deps.join(", ")
-            };
-            println!("{:<20} {:<30} {}", cap_id, cap.name, deps_str);
-        }
-
-        println!();
-        println!("Total: {} capabilities", filtered);
+        ctx.out.table(
+            &format!("Capability Catalog ({} capabilities)", capabilities.len()),
+            &["ID", "NAME", "DEPENDENCIES"],
+            &rows,
+        );
         Ok(())
     }
 
-    pub fn list(_ctx: &crate::AppContext) -> Result<()> {
-
-        println!();
-        println!("{:<20} {:<25} {:<10}", "ID", "NAME", "ENABLED");
-        println!("{:<20} {:<25} {:<10}", "----", "----", "-------");
-
-        let mut valid = 0;
-        for (capability_id, capability_config) in _ctx.config.capabilities.clone() {
-            valid += 1;
-            let name = CAPABILITY_REGISTRY.get(&capability_id)
+    pub fn list(ctx: &crate::AppContext) -> Result<()> {
+        let mut rows: Vec<Vec<String>> = ctx.config.capabilities.iter().map(|(id, cfg)| {
+            let name = CAPABILITY_REGISTRY.get(id)
                 .map(|c| c.name.clone())
-                .unwrap_or_else(|| capability_id.clone());
-            println!(
-                "{:<20} {:<25} {:<10}",
-                capability_id,
-                name,
-                capability_config.enabled,
-            );
-        }
+                .unwrap_or_else(|| id.clone());
+            vec![id.clone(), name, cfg.enabled.to_string()]
+        }).collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        println!();
-        println!("Total: {} capabilities", valid);
+        ctx.out.table(
+            &format!("Configured Capabilities ({} capabilities)", rows.len()),
+            &["ID", "NAME", "ENABLED"],
+            &rows,
+        );
         Ok(())
     }
 
     pub fn info(ctx: &crate::AppContext, capability_id: &str) -> Result<()> {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
-                println!();
-                println!("Capability: {}", capability_id);
-                println!("Name: {}", cap.name);
-                println!("Description: {}", cap.description);
+                let mut fields: Vec<(&str, String)> = vec![
+                    ("Name",        cap.name.clone()),
+                    ("Description", cap.description.clone()),
+                ];
 
                 if !cap.tags.is_empty() {
-                    println!("\nTags: {}", cap.tags.join(", "));
+                    fields.push(("Tags", cap.tags.join(", ")));
                 }
 
-                // TODO: Properly check dependency status
-                // if !cap.dependencies.is_empty() {
-                //     println!("\nDependencies:");
-                //     for dep in &cap.dependencies {
-                //         let status = Self::check_dep_status(ctx, dep);
-                //         println!("  - {} {}", dep, status);
-                //     }
-                // }
+                fields.push(("Execution Hooks", "on_setup, on_configure, on_pre_launch, on_post_launch, on_shutdown, runtime_bindings".to_string()));
 
-                // Note: Hooks are now implemented as trait methods, not metadata fields
-                println!("\nExecution Hooks:");
-                println!("  - on_setup: One-time initialization");
-                println!("  - on_configure: Runs during tool configuration");
-                println!("  - on_pre_launch: Runs before tool launches");
-                println!("  - on_post_launch: Runs after tool starts");
-                println!("  - on_shutdown: Cleanup when tool exits");
-                println!("  - runtime_bindings: Returns environment variables");
-
-                // Show configuration state
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    println!("\nConfiguration:");
-                    println!("  Enabled: {}", configured.enabled);
-                    if !configured.config.is_empty() {
-                        println!("  Settings:");
-                        for (k, v) in &configured.config {
-                            println!("    {} = {}", k, v);
-                        }
+                    fields.push(("Config: Enabled", configured.enabled.to_string()));
+                    for (k, v) in &configured.config {
+                        fields.push(("Config", format!("{} = {}", k, v)));
                     }
                 }
 
+                ctx.out.detail(capability_id, &fields);
                 Ok(())
             }
             None => {
-                // Check if it's a configured-only capability
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    println!();
-                    println!("Capability: {}", capability_id);
-                    println!("Enabled: {}", configured.enabled);
-                    if !configured.config.is_empty() {
-                        println!("\nSettings:");
-                        for (k, v) in &configured.config {
-                            println!("  {} = {}", k, v);
-                        }
-                    }
-                    println!("\nNote: This capability is configured but not found in the bundled registry.");
+                    let fields: Vec<(&str, String)> = vec![
+                        ("Enabled", configured.enabled.to_string()),
+                        ("Note", "Configured but not found in bundled registry.".to_string()),
+                    ];
+                    ctx.out.detail(capability_id, &fields);
                     Ok(())
                 } else {
-                    eprintln!("Error: Capability '{}' not found in registry.", capability_id);
-                    println!("\nAvailable capabilities:");
-                    for (reg_cap_id, _) in CAPABILITY_REGISTRY.entries() {
-                        println!("  - {}", reg_cap_id);
-                    }
+                    ctx.out.error(&format!("Capability '{}' not found in registry.", capability_id));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -309,4 +265,94 @@ impl CapabilityCommands {
     //         }
     //     }
     // }
+}
+
+/*-- tests --*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CapabilityConfig, Config};
+    use crate::utils::ui::output::tests::CaptureOutput;
+
+    fn test_ctx() -> crate::AppContext {
+        crate::AppContext {
+            config: Config::default(),
+            out: Box::new(CaptureOutput::default()),
+        }
+    }
+
+    fn ctx_with_capability(id: &str, enabled: bool) -> crate::AppContext {
+        let mut ctx = test_ctx();
+        ctx.config.capabilities.insert(id.to_string(), CapabilityConfig {
+            capability_id: id.to_string(),
+            enabled,
+            config: std::collections::HashMap::new(),
+        });
+        ctx
+    }
+
+    macro_rules! tables {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+        };
+    }
+
+    macro_rules! details {
+        ($ctx:expr) => {
+            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().details.borrow()
+        };
+    }
+
+    // -- catalog --------------------------------------------------------------
+
+    #[test]
+    fn catalog_table_has_id_name_dependencies_columns() {
+        let ctx = test_ctx();
+        CapabilityCommands::catalog(&ctx).unwrap();
+        let tables = tables!(ctx);
+        assert_eq!(tables.len(), 1);
+        let (_, headers, _) = &tables[0];
+        assert!(headers.contains(&"ID".to_string()));
+        assert!(headers.contains(&"NAME".to_string()));
+        assert!(headers.contains(&"DEPENDENCIES".to_string()));
+    }
+
+    // -- list -----------------------------------------------------------------
+
+    #[test]
+    fn list_empty_config_has_zero_rows() {
+        let ctx = test_ctx();
+        CapabilityCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[test]
+    fn list_configured_capability_shows_enabled_state() {
+        let ctx = ctx_with_capability("my-cap", true);
+        CapabilityCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].iter().any(|c| c == "true"));
+    }
+
+    // -- info -----------------------------------------------------------------
+
+    #[test]
+    fn info_unknown_capability_returns_err() {
+        let ctx = test_ctx();
+        let result = CapabilityCommands::info(&ctx, "does-not-exist");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn info_configured_only_capability_renders_detail_not_err() {
+        let ctx = ctx_with_capability("custom-cap", false);
+        let result = CapabilityCommands::info(&ctx, "custom-cap");
+        assert!(result.is_ok());
+        assert!(!details!(ctx).is_empty());
+    }
 }

@@ -13,6 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
+use utils::ui::{run_interactive_tui, Output, OUTPUT_REGISTRY};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -25,36 +26,80 @@ struct Cli {
     command: Option<Commands>,
 }
 
+#[derive(clap::Args, Debug)]
+struct ModelWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    #[command(subcommand)]
+    subcommand: ModelSubcommands,
+}
+
+#[derive(clap::Args, Debug)]
+struct CapabilityWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    #[command(subcommand)]
+    subcommand: CapabilitySubcommands,
+}
+
+#[derive(clap::Args, Debug)]
+struct ProviderWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    #[command(subcommand)]
+    subcommand: ProviderSubcommands,
+}
+
+#[derive(clap::Args, Debug)]
+struct ConfigureWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    #[command(flatten)]
+    args: ConfigureArgs,
+}
+
+#[derive(clap::Args, Debug)]
+struct LaunchWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    /// Tool ID to launch
+    tool_id: String,
+
+    /// Show overlay without launching
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Additional arguments to pass to the tool
+    #[arg(trailing_var_arg = true)]
+    args: Vec<String>,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Model management commands
-    #[command(subcommand)]
-    Model(ModelSubcommands),
+    Model(ModelWithOutput),
 
     /// Capability management commands
-    #[command(subcommand)]
-    Capability(CapabilitySubcommands),
+    Capability(CapabilityWithOutput),
 
     /// Provider management commands
-    #[command(subcommand)]
-    Provider(ProviderSubcommands),
+    Provider(ProviderWithOutput),
 
     /// Configure tools with Granite capabilities
-    Configure(ConfigureArgs),
+    Configure(ConfigureWithOutput),
 
     /// Launch a tool with Granite overlay
-    Launch {
-        /// Tool ID to launch
-        tool_id: String,
-
-        /// Show overlay without launching
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Additional arguments to pass to the tool
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-    },
+    Launch(LaunchWithOutput),
 }
 
 #[derive(Subcommand, Debug)]
@@ -71,6 +116,12 @@ enum ModelSubcommands {
         /// Filter by model type
         #[arg(short, long)]
         r#type: Option<String>,
+    },
+
+    /// Search the model catalog by ID or family
+    Search {
+        /// Case-insensitive substring to search for
+        query: String,
     },
 
     /// Show detailed model information
@@ -150,12 +201,14 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
+    pub out: Box<dyn Output>,
 }
 
 impl AppContext {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(out: Box<dyn Output>) -> anyhow::Result<Self> {
         Ok(Self {
             config: config::Config::new()?,
+            out,
         })
     }
 }
@@ -165,46 +218,59 @@ async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Some(Commands::Model(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+        Some(Commands::Model(wrapper)) => {
+            let out = OUTPUT_REGISTRY
+                .construct(&wrapper.output, &serde_json::json!({}))
+                .unwrap_or_else(|_| {
+                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
+                    std::process::exit(1);
+                });
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_model_command(&mut ctx, subcmd).await
+            run_model_command(&mut ctx, wrapper.subcommand).await
         }
-        Some(Commands::Capability(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+        Some(Commands::Capability(wrapper)) => {
+            let out = OUTPUT_REGISTRY
+                .construct(&wrapper.output, &serde_json::json!({}))
+                .unwrap_or_else(|_| {
+                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
+                    std::process::exit(1);
+                });
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_capability_command(&mut ctx, subcmd).await
+            run_capability_command(&mut ctx, wrapper.subcommand).await
         }
-        Some(Commands::Provider(subcmd)) => {
-            let mut ctx = AppContext::new().unwrap_or_else(|e| {
+        Some(Commands::Provider(wrapper)) => {
+            let out = OUTPUT_REGISTRY
+                .construct(&wrapper.output, &serde_json::json!({}))
+                .unwrap_or_else(|_| {
+                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
+                    std::process::exit(1);
+                });
+            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
                 eprintln!("Failed to load config: {}", e);
                 std::process::exit(1);
             });
-            run_provider_command(&mut ctx, subcmd).await
+            run_provider_command(&mut ctx, wrapper.subcommand).await
         }
-        Some(Commands::Configure(args)) => run_configure(args).await,
-        Some(Commands::Launch { .. }) => {
+        Some(Commands::Configure(wrapper)) => run_configure(wrapper.args).await,
+        Some(Commands::Launch(_wrapper)) => {
             println!("Tool launching will be available in Phase 3.");
             Ok(())
         }
         None => {
-            println!("granite-cli - Universal Model Adapter with Capabilities");
-            println!();
-            println!("Usage: granite-cli <command> [subcommand] [options]");
-            println!();
-            println!("Available commands:");
-            println!("  model        Model management (catalog, list, info, setup)");
-            println!("  capability   Capability management (catalog, list, info, setup)");
-            println!("  provider     Provider management (catalog, list, setup, health)");
-            println!("  configure    Configure tools (Phase 3)");
-            println!("  launch       Launch tool with overlay (Phase 3)");
-            println!();
-            println!("Try 'granite-cli provider catalog' to get started.");
-            Ok(())
+            let out = OUTPUT_REGISTRY
+                .construct("terminal", &serde_json::json!({}))
+                .unwrap_or_else(|_| unreachable!());
+            let ctx = AppContext::new(out).unwrap_or_else(|e| {
+                eprintln!("Failed to load config: {}", e);
+                std::process::exit(1);
+            });
+            run_interactive_tui(ctx).await
         }
     };
 
@@ -242,6 +308,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             };
             ModelCommands::list(ctx, filter)
         }
+        ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query),
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }

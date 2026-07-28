@@ -1,5 +1,9 @@
-use crate::registry::ConfigConstructable;
+// Third Party
 use serde::{Deserialize, Serialize};
+
+// Local
+use crate::registry::ConfigConstructable;
+use crate::utils::Searchable;
 
 /*-- ModelFunction Enum ------------------------------------------------------*/
 
@@ -119,6 +123,17 @@ impl std::fmt::Display for ModelMetadata {
             self.context_length,
             self.model_type
         )
+    }
+}
+
+impl Searchable for ModelMetadata {
+    fn search_fields(&self) -> Vec<&str> {
+        let mut fields: Vec<&str> = vec![self.family.as_str()];
+        if let Some(desc) = &self.description {
+            fields.push(desc.as_str());
+        }
+        fields.extend(self.tags.iter().map(String::as_str));
+        fields
     }
 }
 
