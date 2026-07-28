@@ -1,3 +1,8 @@
 /target
 tmp
+
+# Agent-specific outputs
 .opencode
+.bob
+.claude
+.codegraph
