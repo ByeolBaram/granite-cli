@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::sync::LazyLock;
 
@@ -81,7 +82,12 @@ macro_rules! output_contract_tests {
 /// All command methods receive `out: &dyn Output` as their final parameter.
 /// Command code never calls `println!` directly — it calls these methods and
 /// the registered backend decides how to render.
-pub trait Output: ConfigConstructable + Send + Sync {
+///
+/// `Any` is included as a supertrait so that `&dyn Output` can be downcast
+/// to concrete types at runtime via `downcast_ref::<T>()`. This enables
+/// test inspection of `CaptureOutput` fields and allows prod code to
+/// access type-specific methods when necessary.
+pub trait Output: ConfigConstructable + Send + Sync + Any {
     /// Render a tabular result (catalog, list, health).
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]);
 
@@ -99,6 +105,8 @@ pub trait Output: ConfigConstructable + Send + Sync {
 
     /// Error message. Implementations should route this to stderr.
     fn error(&self, msg: &str);
+
+
 }
 
 /// A test double that records every `Output` call into inspectable `Vec`s.
