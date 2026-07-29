@@ -1,5 +1,5 @@
 use crate::models::ModelFunction;
-use crate::registry::ConfigConstructable;
+use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -133,7 +133,6 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 
     // Model support
     fn supported_formats(&self) -> Vec<ModelFormat>;
-    fn supported_precisions(&self) -> Vec<String>;
     fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
         true
     }
@@ -172,7 +171,6 @@ pub struct ProviderMetadata {
     pub default_function_endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
 
     pub supported_formats: Vec<ModelFormat>,
-    pub supported_precisions: Vec<String>,
     pub authentication: Vec<AuthType>,
     pub tags: Vec<String>,
 }
@@ -187,6 +185,58 @@ impl std::fmt::Display for ProviderMetadata {
     }
 }
 
+/*-- Shared Helpers ----------------------------------------------------------*/
+
+/// Shared HTTP health check implementation for providers.
+pub async fn http_health_check(
+    client: &reqwest::Client,
+    base_url: &str,
+    health_endpoint: &str,
+    api_key: Option<&Secret>,
+) -> Result<HealthStatus, ProviderError> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let url = format!("{}{}", base_url, health_endpoint);
+
+    let mut request = client.get(&url);
+
+    if let Some(key) = api_key {
+        request = request.bearer_auth(&key.0);
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let latency = start.elapsed();
+
+            if response.status().is_success() {
+                Ok(HealthStatus {
+                    healthy: true,
+                    latency,
+                    error: None,
+                })
+            } else {
+                Ok(HealthStatus {
+                    healthy: false,
+                    latency,
+                    error: Some(format!("HTTP {}: {}",
+                        response.status(),
+                        response.text().await.unwrap_or_default()
+                    )),
+                })
+            }
+        }
+        Err(e) => {
+            let latency = start.elapsed();
+            Ok(HealthStatus {
+                healthy: false,
+                latency,
+                error: Some(format!("Connection failed: {}", e)),
+            })
+        }
+    }
+}
+
 /*-- Supporting Types --------------------------------------------------------*/
 
 /// Model formats that providers can serve.
@@ -194,16 +244,20 @@ impl std::fmt::Display for ProviderMetadata {
 #[allow(non_camel_case_types)]
 pub enum ModelFormat {
     Safetensors,
+    Ollama,
     GGUF,
     ONNX,
+    MLX,
 }
 
 impl std::fmt::Display for ModelFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ModelFormat::Safetensors => write!(f, "safetensors"),
+            ModelFormat::Ollama => write!(f, "ollama"),
             ModelFormat::GGUF => write!(f, "GGUF"),
             ModelFormat::ONNX => write!(f, "ONNX"),
+            ModelFormat::MLX => write!(f, "MLX"),
         }
     }
 }

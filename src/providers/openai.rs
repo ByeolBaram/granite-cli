@@ -119,15 +119,6 @@ impl Provider for OpenAIProvider {
         ]
     }
 
-    fn supported_precisions(&self) -> Vec<String> {
-        vec![
-            "fp16".to_string(),
-            "fp32".to_string(),
-            "int8".to_string(),
-            "int4".to_string(),
-        ]
-    }
-
     fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
         true
     }
@@ -193,12 +184,6 @@ impl HasProviderMetadata for OpenAIProvider {
             supported_formats: vec![
                 ModelFormat::Safetensors,
                 ModelFormat::GGUF,
-            ],
-            supported_precisions: vec![
-                "fp16".to_string(),
-                "fp32".to_string(),
-                "int8".to_string(),
-                "int4".to_string(),
             ],
             authentication: vec![
                 AuthType::BearerToken,
