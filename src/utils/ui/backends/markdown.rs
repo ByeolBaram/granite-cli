@@ -80,7 +80,7 @@ mod tests {
     use super::*;
     use crate::utils::ui::base::tests::CaptureUi;
 
-    crate::output_contract_tests!(Markdownbase::new(&serde_json::json!({})));
+    crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({})));
 
     #[test]
     fn markdown_table_contains_pipe_chars() {
@@ -94,19 +94,19 @@ mod tests {
     #[test]
     fn markdown_table_has_header_separator() {
         // Invoke the real MarkdownOutput (print-only) — just verifies no panic
-        let md = Markdownbase::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}));
         md.table("T", &["ID", "NAME"], &[vec!["a".to_string(), "b".to_string()]]);
     }
 
     #[test]
     fn markdown_detail_is_two_column_table() {
-        let md = Markdownbase::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}));
         md.detail("My Item", &[("Family", "Granite 3.1".to_string())]);
     }
 
     #[test]
     fn markdown_status_ok_contains_checkmark() {
-        let md = Markdownbase::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}));
         md.status("my-service", true, "");
         md.status("my-service", false, "timeout");
     }

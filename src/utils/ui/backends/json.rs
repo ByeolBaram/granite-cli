@@ -138,7 +138,7 @@ impl HasUiMetadata for JsonOutput {
 mod tests {
     use super::*;
 
-    fn make() -> JsonOutput { Jsonbase::with_capture() }
+    fn make() -> JsonOutput { JsonOutput::with_capture() }
 
     crate::output_contract_tests!(make());
 

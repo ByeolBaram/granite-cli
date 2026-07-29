@@ -78,5 +78,5 @@ impl HasUiMetadata for PlainOutput {
 mod tests {
     use super::*;
 
-    crate::output_contract_tests!(Plainbase::new(&serde_json::json!({})));
+    crate::output_contract_tests!(PlainOutput::new(&serde_json::json!({})));
 }

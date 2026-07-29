@@ -186,7 +186,7 @@ impl ProviderCommands {
 mod tests {
     use super::*;
     use crate::config::{Config, ProviderConfig};
-    use crate::utils::ui::output::tests::CaptureUi;
+    use crate::utils::ui::base::tests::CaptureUi;
 
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {

@@ -261,7 +261,7 @@ impl CapabilityCommands {
 mod tests {
     use super::*;
     use crate::config::{CapabilityConfig, Config};
-    use crate::utils::ui::output::tests::CaptureUi;
+    use crate::utils::ui::base::tests::CaptureUi;
 
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {
