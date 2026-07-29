@@ -194,16 +194,20 @@ impl std::fmt::Display for ProviderMetadata {
 #[allow(non_camel_case_types)]
 pub enum ModelFormat {
     Safetensors,
+    Ollama,
     GGUF,
     ONNX,
+    MLX,
 }
 
 impl std::fmt::Display for ModelFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ModelFormat::Safetensors => write!(f, "safetensors"),
+            ModelFormat::Ollama => write!(f, "ollama"),
             ModelFormat::GGUF => write!(f, "GGUF"),
             ModelFormat::ONNX => write!(f, "ONNX"),
+            ModelFormat::MLX => write!(f, "MLX"),
         }
     }
 }
