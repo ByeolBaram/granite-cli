@@ -1,0 +1,66 @@
+// Local
+use anyhow::Result;
+use crate::utils::hardware::detect_hardware;
+
+pub struct HardwareCommands;
+
+/*-- public --*/
+
+impl HardwareCommands {
+    /// Key-value fields for the hardware detail panel.
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn hardware_fields() -> Vec<(&'static str, String)> {
+        let profile = detect_hardware();
+        vec![
+            ("CPU Cores",             profile.cpu_cores.to_string()),
+            ("CPU Architecture",      profile.cpu_arch.clone()),
+            ("RAM",                   format!("{:.2} GB", profile.ram_gb)),
+            ("GPU Vendor",            profile.gpu_vendor.clone().unwrap_or_else(|| "None".to_string())),
+            ("VRAM",                  profile.vram_gb.map(|v| format!("{:.2} GB", v)).unwrap_or_else(|| "None".to_string())),
+            ("Recommended Precision", profile.recommend_precision().to_string()),
+        ]
+    }
+
+    pub fn show(ctx: &crate::AppContext) -> Result<()> {
+        ctx.ui.detail("Hardware Profile", &Self::hardware_fields());
+        Ok(())
+    }
+}
+
+/*-- tests --*/
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::ui::base::tests::CaptureUi;
+
+    fn ctx() -> crate::AppContext {
+        crate::AppContext {
+            config: crate::config::Config::default(),
+            ui: Box::new(CaptureUi::default()),
+        }
+    }
+
+    #[test]
+    fn hardware_show_renders_detail() {
+        let ctx = ctx();
+        HardwareCommands::show(&ctx).unwrap();
+        let details = (&*ctx.ui as &dyn std::any::Any)
+            .downcast_ref::<CaptureUi>().unwrap().details.borrow();
+        assert_eq!(details.len(), 1);
+    }
+
+    #[test]
+    fn hardware_detail_has_cpu_and_ram_fields() {
+        let fields = HardwareCommands::hardware_fields();
+        assert!(fields.iter().any(|(k, _)| *k == "CPU Cores"));
+        assert!(fields.iter().any(|(k, _)| *k == "RAM"));
+    }
+
+    #[test]
+    fn hardware_detail_has_recommended_precision() {
+        let fields = HardwareCommands::hardware_fields();
+        let precision = fields.iter().find(|(k, _)| *k == "Recommended Precision").unwrap();
+        assert!(matches!(precision.1.as_str(), "BF16" | "Q8_0" | "Q4_K_M" | "Q3_K_M"));
+    }
+}

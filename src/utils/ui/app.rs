@@ -278,7 +278,7 @@ impl App {
                     Row::new(vec![
                         Cell::from(id.to_string()),
                         Cell::from(m.family.clone()),
-                        Cell::from(format!("{}B", m.size / 1_000_000_000)),
+                        Cell::from(m.format_size()),
                         Cell::from(m.model_type.to_string()),
                     ]).style(style)
                 }).collect();
@@ -359,7 +359,7 @@ impl App {
                     format!(
                         "Model: {}\n\nFamily: {}\nVersion: {}\nSize: {}B\nContext: {} tokens\nType: {}\n\nFunctions: {}\n\nHugging Face: {}",
                         id, m.family, m.version,
-                        m.size / 1_000_000_000, m.context_length, m.model_type,
+                        m.format_size(), m.context_length, m.model_type,
                         funcs.join(", "), m.huggingface_repo
                     )
                 } else {

@@ -113,13 +113,25 @@ pub struct ModelMetadata {
     pub supported_functions: Vec<ModelFunction>,
 }
 
+impl ModelMetadata {
+    /// Format the parameter count as a human-readable string.
+    /// Uses `M` (millions) for sub-billion models, `B` (billions) otherwise.
+    pub fn format_size(&self) -> String {
+        if self.size >= 1_000_000_000 {
+            format!("{}B", self.size / 1_000_000_000)
+        } else {
+            format!("{}M", self.size / 1_000_000)
+        }
+    }
+}
+
 impl std::fmt::Display for ModelMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}) - {}B params, {} context, Type: {}",
+            "{}) - {} params, {} context, Type: {}",
             self.family,
-            self.size / 1_000_000_000,
+            self.format_size(),
             self.context_length,
             self.model_type
         )
@@ -171,3 +183,93 @@ pub struct ModelVariant {
 use crate::define_factory;
 
 define_factory!(Model, ModelMetadata, ModelFactory);
+
+/*-- tests -------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod format_size_tests {
+    use super::*;
+
+    fn metadata_with_size(size: u64) -> ModelMetadata {
+        ModelMetadata {
+            family: "Test".to_string(),
+            version: "1.0".to_string(),
+            size,
+            context_length: 4096,
+            model_type: ModelType::Text,
+            huggingface_repo: "test/test".to_string(),
+            variants: vec![],
+            description: None,
+            tags: vec![],
+            supported_functions: vec![],
+        }
+    }
+
+    #[test]
+    fn format_size_billions() {
+        assert_eq!(metadata_with_size(8_000_000_000).format_size(), "8B");
+    }
+
+    #[test]
+    fn format_size_millions() {
+        assert_eq!(metadata_with_size(258_000_000).format_size(), "258M");
+    }
+
+    #[test]
+    fn format_size_boundary_is_one_billion() {
+        assert_eq!(metadata_with_size(1_000_000_000).format_size(), "1B");
+        assert_eq!(metadata_with_size(999_999_999).format_size(), "999M");
+    }
+
+    #[test]
+    fn format_size_30m_model() {
+        assert_eq!(metadata_with_size(30_295_296).format_size(), "30M");
+    }
+}
+
+#[cfg(test)]
+mod searchable_tests {
+    use super::*;
+
+    fn metadata(family: &str, description: Option<&str>, tags: Vec<&str>) -> ModelMetadata {
+        ModelMetadata {
+            family: family.to_string(),
+            version: "1.0".to_string(),
+            size: 8_000_000_000,
+            context_length: 4096,
+            model_type: ModelType::Text,
+            huggingface_repo: "ibm-granite/test".to_string(),
+            variants: vec![],
+            description: description.map(String::from),
+            tags: tags.into_iter().map(String::from).collect(),
+            supported_functions: vec![],
+        }
+    }
+
+    #[test]
+    fn searchable_fields_includes_family() {
+        let m = metadata("Granite 3.1", None, vec![]);
+        assert!(m.search_fields().contains(&"Granite 3.1"));
+    }
+
+    #[test]
+    fn searchable_fields_includes_description_when_present() {
+        let m = metadata("Granite 3.1", Some("A text model"), vec![]);
+        assert!(m.search_fields().contains(&"A text model"));
+    }
+
+    #[test]
+    fn searchable_fields_omits_description_when_absent() {
+        let m = metadata("Granite 3.1", None, vec![]);
+        assert_eq!(m.search_fields().len(), 1);
+    }
+
+    #[test]
+    fn searchable_fields_includes_tags() {
+        let m = metadata("Granite 3.1", None, vec!["instruct", "chat"]);
+        let fields = m.search_fields();
+        assert!(fields.contains(&"instruct"));
+        assert!(fields.contains(&"chat"));
+    }
+}
+

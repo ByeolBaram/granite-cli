@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
 use crate::models::{MODEL_REGISTRY, ModelType};
+use crate::utils::hardware::detect_hardware;
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 use crate::utils::Searchable;
 
@@ -58,7 +59,7 @@ impl ModelCommands {
             .map(|(id, m)| vec![
                 id.to_string(),
                 m.family.clone(),
-                format!("{}B", m.size / 1_000_000_000),
+                m.format_size(),
                 m.context_length.to_string(),
                 m.model_type.to_string(),
             ])
@@ -74,6 +75,56 @@ impl ModelCommands {
             &format!("Search results for '{}' ({} models)", query, rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
+        );
+        Ok(())
+    }
+
+    pub fn recommend(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+        let profile = detect_hardware();
+        let recommended_precision = profile.recommend_precision().to_lowercase();
+        let models = MODEL_REGISTRY.entries();
+
+        let mut rows: Vec<(f64, Vec<String>)> = models
+            .iter()
+            .filter(|(_, m)| filter_type.as_ref().map_or(true, |t| m.model_type == *t))
+            .filter_map(|(id, m)| {
+                if m.variants.is_empty() {
+                    return None;
+                }
+                let preferred: Vec<_> = m.variants.iter()
+                    .filter(|v| v.precision.to_lowercase() == recommended_precision)
+                    .collect();
+                let best = if !preferred.is_empty() {
+                    preferred.into_iter().max_by(|a, b| a.size_gb.partial_cmp(&b.size_gb).unwrap())
+                } else {
+                    m.variants.iter().min_by(|a, b| a.size_gb.partial_cmp(&b.size_gb).unwrap())
+                }?;
+                if !profile.can_run_model(best.size_gb) {
+                    return None;
+                }
+                let variant_label = format!("{} / {} ({:.1} GB)", best.format, best.precision, best.size_gb);
+                Some((best.size_gb, vec![
+                    id.to_string(),
+                    m.family.clone(),
+                    m.format_size(),
+                    variant_label,
+                    m.model_type.to_string(),
+                ]))
+            })
+            .collect();
+
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+
+        if rows.is_empty() {
+            ctx.ui.info("No models fit the current hardware profile.");
+            return Ok(());
+        }
+
+        let table_rows: Vec<Vec<String>> = rows.into_iter().map(|(_, row)| row).collect();
+        ctx.ui.table(
+            &format!("Recommended Models for this hardware ({} models)", table_rows.len()),
+            &["ID", "FAMILY", "SIZE", "VARIANT", "TYPE"],
+            &table_rows,
         );
         Ok(())
     }
@@ -98,7 +149,7 @@ impl ModelCommands {
             vec![
                 model_id.to_string(),
                 model.family.clone(),
-                format!("{}B", model.size / 1_000_000_000),
+                model.format_size(),
                 model.context_length.to_string(),
                 model.model_type.to_string(),
             ]
@@ -126,7 +177,7 @@ impl ModelCommands {
                 rows.push(vec![
                     model_id.clone(),
                     model_md.family.clone(),
-                    format!("{}B", model_md.size / 1_000_000_000),
+                    model_md.format_size(),
                     model_md.context_length.to_string(),
                     model_md.model_type.to_string(),
                     model_config.provider_id.clone().unwrap_or_else(|| "None".to_string()),
@@ -149,7 +200,7 @@ impl ModelCommands {
                 let mut fields: Vec<(&str, String)> = vec![
                     ("Family",        model.family.clone()),
                     ("Version",       model.version.clone()),
-                    ("Size",          format!("{}B parameters ({:.2}B)", model.size, model.size as f64 / 1_000_000_000.0)),
+                    ("Size",          format!("{} parameters", model.format_size())),
                     ("Context Length", format!("{} tokens", model.context_length)),
                     ("Type",          model.model_type.to_string()),
                     ("Hugging Face",  model.huggingface_repo.clone()),
@@ -196,9 +247,9 @@ impl ModelCommands {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 ctx.ui.info(&format!("\nSetting up model: {}", model_id));
-                ctx.ui.info(&format!("{}", model.description.as_deref().unwrap_or("No description available.")));
+                ctx.ui.info(model.description.as_deref().unwrap_or("No description available."));
                 ctx.ui.info("");
-                ctx.ui.info(&format!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length));
+                ctx.ui.info(&format!("Size: {} params, {} context", model.format_size(), model.context_length));
                 ctx.ui.info(&format!("Type: {}", model.model_type));
                 ctx.ui.info("");
 
@@ -560,5 +611,56 @@ mod tests {
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
+    }
+
+    // ── recommend ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn recommend_returns_table_or_info() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None).unwrap();
+        let has_table = !tables!(ctx).is_empty();
+        let has_info  = !infos!(ctx).is_empty();
+        assert!(has_table ^ has_info, "expected exactly a table or an info message");
+    }
+
+    #[test]
+    fn recommend_all_rows_have_five_columns() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row.len(), 5, "each row must have 5 columns");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_type_filter_limits_results() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, Some(ModelType::Text)).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row[4], "Text", "filtered rows must all be Text type");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_rows_sorted_descending_by_variant_size() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            // Extract the GB value from the VARIANT column "format / precision (N.N GB)"
+            let sizes: Vec<f64> = rows.iter().map(|r| {
+                let v = &r[3];
+                let start = v.rfind('(').unwrap() + 1;
+                let end   = v.rfind(" GB)").unwrap();
+                v[start..end].parse::<f64>().expect("parseable GB value")
+            }).collect();
+            for window in sizes.windows(2) {
+                assert!(window[0] >= window[1], "rows must be sorted descending by variant size");
+            }
+        }
     }
 }
