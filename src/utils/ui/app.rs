@@ -7,7 +7,6 @@ use ratatui::{
     Frame,
 };
 
-use crate::capabilities::CAPABILITY_REGISTRY;
 use crate::commands::{HardwareCommands, ModelCommands};
 use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
@@ -20,22 +19,28 @@ pub enum Section {
     Models,
     Providers,
     Capabilities,
+    Recommend,
+    Hardware,
 }
 
 impl Section {
     fn next(&self) -> Self {
         match self {
-            Section::Models => Section::Providers,
-            Section::Providers => Section::Capabilities,
-            Section::Capabilities => Section::Models,
+            Section::Models       => Section::Providers,
+            Section::Providers    => Section::Capabilities,
+            Section::Capabilities => Section::Recommend,
+            Section::Recommend    => Section::Hardware,
+            Section::Hardware     => Section::Models,
         }
     }
 
     fn label(&self) -> &'static str {
         match self {
-            Section::Models => "Models",
-            Section::Providers => "Providers",
+            Section::Models       => "Models",
+            Section::Providers    => "Providers",
             Section::Capabilities => "Capabilities",
+            Section::Recommend    => "Recommend",
+            Section::Hardware     => "Hardware",
         }
     }
 }
@@ -194,10 +199,13 @@ impl App {
 
     fn filtered_ids(&self, query: &str) -> Vec<String> {
         let q = query.to_lowercase();
+        // Hardware has no selectable rows; Recommend uses its own row source
         let mut ids: Vec<String> = match self.section {
-            Section::Models => MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Providers => PROVIDER_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Capabilities => CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
+            Section::Models       => MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
+            Section::Providers    => PROVIDER_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
+            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
+            Section::Recommend    => ModelCommands::recommend_rows(None).into_iter().map(|r| r[0].clone()).collect(),
+            Section::Hardware     => vec![],
         };
         ids.sort();
         if q.is_empty() {
@@ -216,12 +224,17 @@ impl App {
     }
 
     fn render_nav(&self, frame: &mut Frame, area: Rect) {
-        let sections = [Section::Models, Section::Providers, Section::Capabilities];
+        let sections = [
+            Section::Models, Section::Providers, Section::Capabilities,
+            Section::Recommend, Section::Hardware,
+        ];
         let items: Vec<ListItem> = sections.iter().map(|s| {
             let count = match s {
-                Section::Models => MODEL_REGISTRY.entries().len(),
-                Section::Providers => PROVIDER_REGISTRY.entries().len(),
-                Section::Capabilities => CAPABILITY_REGISTRY.entries().len(),
+                Section::Models       => MODEL_REGISTRY.entries().len(),
+                Section::Providers    => PROVIDER_REGISTRY.entries().len(),
+                Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().len(),
+                Section::Recommend    => ModelCommands::recommend_rows(None).len(),
+                Section::Hardware     => 0,
             };
             let style = if *s == self.section {
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
@@ -335,6 +348,53 @@ impl App {
                     .block(Block::default().borders(Borders::ALL).title(" Capabilities "));
                 frame.render_widget(text, table_area);
             }
+            Section::Recommend => {
+                let all_rows = ModelCommands::recommend_rows(None);
+
+                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "VARIANT", "TYPE"])
+                    .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+
+                let rows: Vec<Row> = all_rows.iter().enumerate().map(|(i, r)| {
+                    let style = if i == self.row {
+                        Style::default().bg(Color::DarkGray)
+                    } else if i % 2 == 0 {
+                        Style::default()
+                    } else {
+                        Style::default().bg(Color::Rgb(20, 20, 20))
+                    };
+                    Row::new(vec![
+                        Cell::from(r[0].clone()),
+                        Cell::from(r[1].clone()),
+                        Cell::from(r[2].clone()),
+                        Cell::from(r[3].clone()),
+                        Cell::from(r[4].clone()),
+                    ]).style(style)
+                }).collect();
+
+                let table = Table::new(rows, [
+                    Constraint::Percentage(30),
+                    Constraint::Percentage(20),
+                    Constraint::Percentage(8),
+                    Constraint::Percentage(27),
+                    Constraint::Percentage(15),
+                ])
+                .header(header)
+                .block(Block::default().borders(Borders::ALL).title(" Recommend "));
+
+                frame.render_stateful_widget(table, table_area, &mut self.table_state);
+            }
+            Section::Hardware => {
+                // Hardware is a single static detail pane — no rows to browse
+                let content = HardwareCommands::hardware_fields().iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let para = Paragraph::new(content)
+                    .block(Block::default().borders(Borders::ALL).title(" Hardware Profile "))
+                    .wrap(ratatui::widgets::Wrap { trim: false })
+                    .scroll((self.detail_scroll as u16, 0));
+                frame.render_widget(para, table_area);
+            }
         }
 
         // Render the search bar when in search mode
@@ -370,6 +430,19 @@ impl App {
                 }
             }
             Section::Capabilities => format!("Capability: {}", id),
+            // Recommend detail reuses the Model info_fields
+            Section::Recommend => match ModelCommands::info_fields(id) {
+                Some(fields) => fields.iter()
+                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                None => format!("Model '{}' not found.", id),
+            },
+            // Hardware has no per-row detail — render the full profile
+            Section::Hardware => HardwareCommands::hardware_fields().iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n"),
         };
 
         let para = Paragraph::new(content)
@@ -381,7 +454,10 @@ impl App {
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let hints = match &self.mode {
-            AppMode::Browse => "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit",
+            AppMode::Browse if self.section == Section::Hardware =>
+                "[↑↓/jk] Scroll  [Tab] Section  [q] Quit",
+            AppMode::Browse =>
+                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit",
             AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
             AppMode::Detail(_) => "[↑↓/jk] Scroll  [Backspace/Esc/q] Back",
         };
@@ -448,9 +524,18 @@ mod tests {
     #[test]
     fn app_tab_cycles_through_all_three_sections() {
         let mut a = app();
-        a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-        a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        for _ in 0..3 {
+            a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        }
+        assert_eq!(a.section, Section::Recommend);
+    }
+
+    #[test]
+    fn app_tab_cycles_through_all_five_sections() {
+        let mut a = app();
+        for _ in 0..5 {
+            a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        }
         assert_eq!(a.section, Section::Models);
     }
 
@@ -665,5 +750,39 @@ mod tests {
         a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(a.row, 2);
+    }
+
+    // ── recommend + hardware sections ────────────────────────────────────────
+
+    #[test]
+    fn recommend_section_row_count_is_non_negative() {
+        let mut a = app();
+        a.section = Section::Recommend;
+        // row_count must not panic and must return a valid usize
+        let _ = a.row_count();
+    }
+
+    #[test]
+    fn hardware_section_row_count_is_zero() {
+        let mut a = app();
+        a.section = Section::Hardware;
+        assert_eq!(a.row_count(), 0);
+    }
+
+    #[test]
+    fn recommend_rows_all_have_five_columns() {
+        for row in ModelCommands::recommend_rows(None) {
+            assert_eq!(row.len(), 5, "each recommend row must have 5 columns");
+        }
+    }
+
+    #[test]
+    fn hardware_fields_has_all_expected_keys() {
+        use crate::commands::HardwareCommands;
+        let fields = HardwareCommands::hardware_fields();
+        let keys: Vec<&str> = fields.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"CPU Cores"));
+        assert!(keys.contains(&"RAM"));
+        assert!(keys.contains(&"Recommended Precision"));
     }
 }

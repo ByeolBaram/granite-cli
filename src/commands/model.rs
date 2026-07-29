@@ -83,14 +83,16 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn recommend(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    /// Rows for the recommend table: [id, family, size, variant, type].
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn recommend_rows(filter_type: Option<&ModelType>) -> Vec<Vec<String>> {
         let profile = detect_hardware();
         let recommended_precision = profile.recommend_precision().to_lowercase();
         let models = MODEL_REGISTRY.entries();
 
         let mut rows: Vec<(f64, Vec<String>)> = models
             .iter()
-            .filter(|(_, m)| filter_type.as_ref().map_or(true, |t| m.model_type == *t))
+            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
             .filter_map(|(id, m)| {
                 if m.variants.is_empty() {
                     return None;
@@ -118,13 +120,15 @@ impl ModelCommands {
             .collect();
 
         rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        rows.into_iter().map(|(_, row)| row).collect()
+    }
 
-        if rows.is_empty() {
+    pub fn recommend(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+        let table_rows = Self::recommend_rows(filter_type.as_ref());
+        if table_rows.is_empty() {
             ctx.ui.info("No models fit the current hardware profile.");
             return Ok(());
         }
-
-        let table_rows: Vec<Vec<String>> = rows.into_iter().map(|(_, row)| row).collect();
         ctx.ui.table(
             &format!("Recommended Models for this hardware ({} models)", table_rows.len()),
             &["ID", "FAMILY", "SIZE", "VARIANT", "TYPE"],
