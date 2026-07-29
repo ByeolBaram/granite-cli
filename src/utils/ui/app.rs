@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::capabilities::CAPABILITY_REGISTRY;
+use crate::commands::{HardwareCommands, ModelCommands};
 use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
 use crate::utils::ui::tui::{restore_terminal, setup_terminal};
@@ -253,21 +254,17 @@ impl App {
 
         match self.section {
             Section::Models => {
-                let all_entries: Vec<_> = {
-                    let mut v: Vec<_> = MODEL_REGISTRY.entries().into_iter().collect();
-                    v.sort_by(|a, b| a.0.cmp(b.0));
-                    v
-                };
-
                 let filtered_ids = self.filtered_ids(query);
-                let entries: Vec<_> = all_entries.into_iter()
-                    .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
+                // Use the shared data layer — catalog_rows returns [id, family, size, context, type]
+                let all_rows = ModelCommands::catalog_rows(None);
+                let entries: Vec<Vec<String>> = all_rows.into_iter()
+                    .filter(|r| filtered_ids.contains(&r[0]))
                     .collect();
 
                 let header = Row::new(vec!["ID", "FAMILY", "SIZE", "TYPE"])
                     .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
-                let rows: Vec<Row> = entries.iter().enumerate().map(|(i, (id, m))| {
+                let rows: Vec<Row> = entries.iter().enumerate().map(|(i, r)| {
                     let style = if i == self.row {
                         Style::default().bg(Color::DarkGray)
                     } else if i % 2 == 0 {
@@ -275,11 +272,12 @@ impl App {
                     } else {
                         Style::default().bg(Color::Rgb(20, 20, 20))
                     };
+                    // columns: [0]=id [1]=family [2]=size [3]=context [4]=type
                     Row::new(vec![
-                        Cell::from(id.to_string()),
-                        Cell::from(m.family.clone()),
-                        Cell::from(m.format_size()),
-                        Cell::from(m.model_type.to_string()),
+                        Cell::from(r[0].clone()),
+                        Cell::from(r[1].clone()),
+                        Cell::from(r[2].clone()),
+                        Cell::from(r[4].clone()),
                     ]).style(style)
                 }).collect();
 
@@ -354,16 +352,13 @@ impl App {
     fn render_detail(&self, frame: &mut Frame, area: Rect, id: &str) {
         let content = match self.section {
             Section::Models => {
-                if let Some(m) = MODEL_REGISTRY.get(id) {
-                    let funcs: Vec<String> = m.supported_functions.iter().map(|f| f.to_string()).collect();
-                    format!(
-                        "Model: {}\n\nFamily: {}\nVersion: {}\nSize: {}B\nContext: {} tokens\nType: {}\n\nFunctions: {}\n\nHugging Face: {}",
-                        id, m.family, m.version,
-                        m.format_size(), m.context_length, m.model_type,
-                        funcs.join(", "), m.huggingface_repo
-                    )
-                } else {
-                    format!("Model '{}' not found.", id)
+                // Use the shared data layer — no registry access here
+                match ModelCommands::info_fields(id) {
+                    Some(fields) => fields.iter()
+                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    None => format!("Model '{}' not found.", id),
                 }
             }
             Section::Providers => {

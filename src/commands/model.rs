@@ -46,10 +46,11 @@ impl DependsOn<dyn Provider> for VariantRequirement {
 }
 
 impl ModelCommands {
-    pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
+    /// Rows for the model search table: [id, family, size, context, type].
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn search_rows(query: &str) -> Vec<Vec<String>> {
         let q = query.to_lowercase();
         let models = MODEL_REGISTRY.entries();
-
         let mut rows: Vec<Vec<String>> = models
             .iter()
             .filter(|(id, m)| {
@@ -65,12 +66,15 @@ impl ModelCommands {
             ])
             .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        rows
+    }
 
+    pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
+        let rows = Self::search_rows(query);
         if rows.is_empty() {
             ctx.ui.info(&format!("No models found matching '{}'.", query));
             return Ok(());
         }
-
         ctx.ui.table(
             &format!("Search results for '{}' ({} models)", query, rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
@@ -129,35 +133,36 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    /// Rows for the model catalog table: [id, family, size, context, type].
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn catalog_rows(filter_type: Option<&ModelType>) -> Vec<Vec<String>> {
         let models = MODEL_REGISTRY.entries();
+        let mut rows: Vec<Vec<String>> = models
+            .iter()
+            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
+            .map(|(id, m)| vec![
+                id.to_string(),
+                m.family.clone(),
+                m.format_size(),
+                m.context_length.to_string(),
+                m.model_type.to_string(),
+            ])
+            .collect();
+        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        rows
+    }
 
-        let filtered: std::collections::HashMap<_, _> = match filter_type {
-            Some(ref t) => models.into_iter().filter(|(_, m)| m.model_type == *t).collect(),
-            None => models.into_iter().collect(),
-        };
-
-        if filtered.is_empty() {
+    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+        let rows = Self::catalog_rows(filter_type.as_ref());
+        if rows.is_empty() {
             ctx.ui.info(&format!(
                 "No models found{}.",
                 filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default()
             ));
             return Ok(());
         }
-
-        let mut rows: Vec<Vec<String>> = filtered.iter().map(|(model_id, model)| {
-            vec![
-                model_id.to_string(),
-                model.family.clone(),
-                model.format_size(),
-                model.context_length.to_string(),
-                model.model_type.to_string(),
-            ]
-        }).collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
-
         ctx.ui.table(
-            &format!("Model Catalog ({} models)", filtered.len()),
+            &format!("Model Catalog ({} models)", rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
         );
@@ -194,37 +199,40 @@ impl ModelCommands {
         Ok(())
     }
 
+    /// Key-value fields for model detail. Returns `None` if the ID is not in the registry.
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn info_fields(model_id: &str) -> Option<Vec<(&'static str, String)>> {
+        let model = MODEL_REGISTRY.get(model_id)?;
+        let mut fields: Vec<(&'static str, String)> = vec![
+            ("Family",         model.family.clone()),
+            ("Version",        model.version.clone()),
+            ("Size",           format!("{} parameters", model.format_size())),
+            ("Context Length", format!("{} tokens", model.context_length)),
+            ("Type",           model.model_type.to_string()),
+            ("Hugging Face",   model.huggingface_repo.clone()),
+        ];
+        if let Some(desc) = &model.description {
+            fields.push(("Description", desc.clone()));
+        }
+        if !model.tags.is_empty() {
+            fields.push(("Tags", model.tags.join(", ")));
+        }
+        let variants_str = model.variants.iter()
+            .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push(("Variants", variants_str));
+        let funcs_str = model.supported_functions.iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push(("Supported Functions", funcs_str));
+        Some(fields)
+    }
+
     pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
-        match MODEL_REGISTRY.get(model_id) {
-            Some(model) => {
-                let mut fields: Vec<(&str, String)> = vec![
-                    ("Family",        model.family.clone()),
-                    ("Version",       model.version.clone()),
-                    ("Size",          format!("{} parameters", model.format_size())),
-                    ("Context Length", format!("{} tokens", model.context_length)),
-                    ("Type",          model.model_type.to_string()),
-                    ("Hugging Face",  model.huggingface_repo.clone()),
-                ];
-
-                if let Some(desc) = &model.description {
-                    fields.push(("Description", desc.clone()));
-                }
-                if !model.tags.is_empty() {
-                    fields.push(("Tags", model.tags.join(", ")));
-                }
-
-                let variants_str = model.variants.iter()
-                    .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                fields.push(("Variants", variants_str));
-
-                let funcs_str = model.supported_functions.iter()
-                    .map(|f| f.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                fields.push(("Supported Functions", funcs_str));
-
+        match Self::info_fields(model_id) {
+            Some(mut fields) => {
                 if let Some(configured) = ctx.config.get_model(model_id) {
                     fields.push(("Config: Provider", format!("{:?}", configured.provider_id)));
                     fields.push(("Config: Variant",  format!("{:?}", configured.variant)));
