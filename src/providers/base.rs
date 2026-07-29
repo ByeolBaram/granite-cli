@@ -1,5 +1,5 @@
 use crate::models::ModelFunction;
-use crate::registry::ConfigConstructable;
+use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -182,6 +182,58 @@ impl std::fmt::Display for ProviderMetadata {
             "{}: {} - {}",
             self.provider_type, self.name, self.description
         )
+    }
+}
+
+/*-- Shared Helpers ----------------------------------------------------------*/
+
+/// Shared HTTP health check implementation for providers.
+pub async fn http_health_check(
+    client: &reqwest::Client,
+    base_url: &str,
+    health_endpoint: &str,
+    api_key: Option<&Secret>,
+) -> Result<HealthStatus, ProviderError> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let url = format!("{}{}", base_url, health_endpoint);
+
+    let mut request = client.get(&url);
+
+    if let Some(key) = api_key {
+        request = request.bearer_auth(&key.0);
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let latency = start.elapsed();
+
+            if response.status().is_success() {
+                Ok(HealthStatus {
+                    healthy: true,
+                    latency,
+                    error: None,
+                })
+            } else {
+                Ok(HealthStatus {
+                    healthy: false,
+                    latency,
+                    error: Some(format!("HTTP {}: {}",
+                        response.status(),
+                        response.text().await.unwrap_or_default()
+                    )),
+                })
+            }
+        }
+        Err(e) => {
+            let latency = start.elapsed();
+            Ok(HealthStatus {
+                healthy: false,
+                latency,
+                error: Some(format!("Connection failed: {}", e)),
+            })
+        }
     }
 }
 
