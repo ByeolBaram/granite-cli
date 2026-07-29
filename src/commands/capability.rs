@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 // Third Party
 use anyhow::Result;
-use dialoguer::Confirm;
 
 // Local
 use crate::capabilities::CAPABILITY_REGISTRY;
@@ -21,7 +20,7 @@ impl CapabilityCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Capability Catalog ({} capabilities)", capabilities.len()),
             &["ID", "NAME", "DEPENDENCIES"],
             &rows,
@@ -38,7 +37,7 @@ impl CapabilityCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Configured Capabilities ({} capabilities)", rows.len()),
             &["ID", "NAME", "ENABLED"],
             &rows,
@@ -67,7 +66,7 @@ impl CapabilityCommands {
                     }
                 }
 
-                ctx.out.detail(capability_id, &fields);
+                ctx.ui.detail(capability_id, &fields);
                 Ok(())
             }
             None => {
@@ -76,10 +75,10 @@ impl CapabilityCommands {
                         ("Enabled", configured.enabled.to_string()),
                         ("Note", "Configured but not found in bundled registry.".to_string()),
                     ];
-                    ctx.out.detail(capability_id, &fields);
+                    ctx.ui.detail(capability_id, &fields);
                     Ok(())
                 } else {
-                    ctx.out.error(&format!("Capability '{}' not found in registry.", capability_id));
+                    ctx.ui.error(&format!("Capability '{}' not found in registry.", capability_id));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -89,13 +88,13 @@ impl CapabilityCommands {
     pub async fn setup(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
-                println!("\nSetting up capability: {}", capability_id);
-                println!("Name: {}", cap.name);
-                println!("Description: {}", cap.description);
-                println!();
+                ctx.ui.info(&format!("\nSetting up capability: {}", capability_id));
+                ctx.ui.info(&format!("Name: {}", cap.name));
+                ctx.ui.info(&format!("Description: {}", cap.description));
+                ctx.ui.info("");
 
                 // Check dependencies
-                println!("Checking dependencies:");
+                ctx.ui.info("Checking dependencies:");
                 let mut all_satisfied = true;
 
                 // for dep in &cap.dependencies {
@@ -110,19 +109,16 @@ impl CapabilityCommands {
                 // TODO: Recursively resolve dependencies
 
                 if !all_satisfied {
-                    println!("\nSome dependencies are missing. You may want to:");
-                    println!("  - Configure required models: granite-cli model setup <model-id>");
-                    println!("  - Configure required providers: granite-cli provider setup <provider-id>");
-                    println!("  - Install required external tools");
-                    println!();
+                    ctx.ui.info("\nSome dependencies are missing. You may want to:");
+                    ctx.ui.info("  - Configure required models: granite-cli model setup <model-id>");
+                    ctx.ui.info("  - Configure required providers: granite-cli provider setup <provider-id>");
+                    ctx.ui.info("  - Install required external tools");
+                    ctx.ui.info("");
 
-                    let continue_anyway = Confirm::new()
-                        .with_prompt("Continue with setup anyway?")
-                        .default(false)
-                        .interact()?;
+                    let continue_anyway = ctx.ui.confirm("Continue with setup anyway?", false)?;
 
                     if !continue_anyway {
-                        println!("Capability setup cancelled.");
+                        ctx.ui.info("Capability setup cancelled.");
                         return Ok(());
                     }
                 }
@@ -140,13 +136,10 @@ impl CapabilityCommands {
                 // Prompt for capability-specific configuration
                 let mut config_map = HashMap::new();
 
-                let enabled = Confirm::new()
-                    .with_prompt(&format!("Enable '{}' capability?", cap.name))
-                    .default(true)
-                    .interact()?;
+                let enabled = ctx.ui.confirm(&format!("Enable '{}' capability?", cap.name), true)?;
 
                 if enabled {
-                    println!("\nCapability {} will be available at tool launch time.", cap.name);
+                    ctx.ui.info(&format!("\nCapability {} will be available at tool launch time.", cap.name));
                     config_map.insert("enabled".to_string(), "true".to_string());
 
                     // Get runtime bindings to show what will be injected
@@ -161,7 +154,7 @@ impl CapabilityCommands {
                     //     }
                     // }
                 } else {
-                    println!("\nCapability {} is disabled.", cap.name);
+                    ctx.ui.info(&format!("\nCapability {} is disabled.", cap.name));
                     config_map.insert("enabled".to_string(), "false".to_string());
                 }
 
@@ -171,43 +164,40 @@ impl CapabilityCommands {
                     config: config_map,
                 };
 
-                ctx.config.insert_capability(capability_id, capability_config);
+                if let Err(e) = ctx.config.insert_capability(capability_id, capability_config) {
+                    ctx.ui.warn(&format!("failed to save capability config: {}", e));
+                }
 
-                println!("\nCapability '{}' configured successfully!", capability_id);
+                ctx.ui.info(&format!("\nCapability '{}' configured successfully!", capability_id));
 
                 Ok(())
             }
             None => {
                 // Check if it's a configured-only capability
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    println!("\nCapability: {}", capability_id);
-                    println!("Enabled: {}", configured.enabled);
+                    ctx.ui.info(&format!("\nCapability: {}", capability_id));
+                    ctx.ui.info(&format!("Enabled: {}", configured.enabled));
                     if !configured.config.is_empty() {
-                        println!("\nCurrent Settings:");
+                        ctx.ui.info("\nCurrent Settings:");
                         for (k, v) in &configured.config {
-                            println!("  {} = {}", k, v);
+                            ctx.ui.info(&format!("  {} = {}", k, v));
                         }
                     }
-                    println!("\nNote: This capability is configured but not found in the bundled registry.");
+                    ctx.ui.info("\nNote: This capability is configured but not found in the bundled registry.");
 
-                    let overwrite = Confirm::new()
-                        .with_prompt("Reconfigure this capability?")
-                        .default(false)
-                        .interact()?;
+                    let overwrite = ctx.ui.confirm("Reconfigure this capability?", false)?;
 
                     if overwrite {
-                        println!("\nPlease remove the existing config first:");
-                        println!("  granite-cli capability remove {}", capability_id);
-                        println!("Then run setup again.");
+                        ctx.ui.info("\nPlease remove the existing config first:");
+                        ctx.ui.info(&format!("  granite-cli capability remove {}", capability_id));
+                        ctx.ui.info("Then run setup again.");
                     }
 
                     Ok(())
                 } else {
-                    eprintln!("Error: Capability '{}' not found in registry.", capability_id);
-                    println!("\nAvailable capabilities:");
-                    for (reg_cap_id, _) in CAPABILITY_REGISTRY.entries() {
-                        println!("  - {}", reg_cap_id);
-                    }
+                    ctx.ui.error(&format!("Capability '{}' not found in registry.", capability_id));
+                    let available: Vec<_> = CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
+                    ctx.ui.info(&format!("Available capabilities: {}", available.join(", ")));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -273,12 +263,12 @@ impl CapabilityCommands {
 mod tests {
     use super::*;
     use crate::config::{CapabilityConfig, Config};
-    use crate::utils::ui::output::tests::CaptureOutput;
+    use crate::utils::ui::base::tests::CaptureUi;
 
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            out: Box::new(CaptureOutput::default()),
+            ui: Box::new(CaptureUi::default()),
         }
     }
 
@@ -294,13 +284,13 @@ mod tests {
 
     macro_rules! tables {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().tables.borrow()
         };
     }
 
     macro_rules! details {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().details.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().details.borrow()
         };
     }
 

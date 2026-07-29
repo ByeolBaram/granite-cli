@@ -2,14 +2,14 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use crate::registry::ConfigConstructable;
-use crate::utils::ui::output::{HasOutputMetadata, Output, OutputMetadata};
+use crate::utils::ui::base::{self, HasUiMetadata, Ui, UiMetadata};
 
 /*-- public --*/
 
 /// JSON backend: emits one JSON object per `Output` call, newline-delimited.
 ///
 /// The `buf` field is only `Some` in test builds (constructed via
-/// `JsonOutput::with_capture()`). In production the backend writes
+/// `Jsonbase::with_capture()`). In production the backend writes
 /// directly to stdout.
 pub struct JsonOutput {
     writer: Mutex<Box<dyn Write + Send>>,
@@ -64,7 +64,7 @@ impl ConfigConstructable for JsonOutput {
     }
 }
 
-impl Output for JsonOutput {
+impl Ui for JsonOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
         self.emit(serde_json::json!({
             "type": "table",
@@ -105,11 +105,27 @@ impl Output for JsonOutput {
     fn error(&self, msg: &str) {
         self.emit(serde_json::json!({ "type": "error", "message": msg }));
     }
+
+    fn select(&self, _prompt: &str, _items: &[String], _default: usize) -> anyhow::Result<usize> {
+        base::non_interactive()
+    }
+
+    fn confirm(&self, _prompt: &str, _default: bool) -> anyhow::Result<bool> {
+        base::non_interactive()
+    }
+
+    fn text(&self, _prompt: &str, _default: &str) -> anyhow::Result<String> {
+        base::non_interactive()
+    }
+
+    fn password(&self, _prompt: &str) -> anyhow::Result<String> {
+        base::non_interactive()
+    }
 }
 
-impl HasOutputMetadata for JsonOutput {
-    fn metadata() -> OutputMetadata {
-        OutputMetadata {
+impl HasUiMetadata for JsonOutput {
+    fn metadata() -> UiMetadata {
+        UiMetadata {
             name: "json".to_string(),
             description: "Newline-delimited JSON output for scripting".to_string(),
         }

@@ -1,6 +1,5 @@
 // Third Party
 use anyhow::Result;
-use dialoguer::{Confirm, Input};
 
 // Local
 use crate::commands::ProviderCommands;
@@ -69,11 +68,11 @@ impl ModelCommands {
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         if rows.is_empty() {
-            ctx.out.info(&format!("No models found matching '{}'.", query));
+            ctx.ui.info(&format!("No models found matching '{}'.", query));
             return Ok(());
         }
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Search results for '{}' ({} models)", query, rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
@@ -90,7 +89,7 @@ impl ModelCommands {
         };
 
         if filtered.is_empty() {
-            ctx.out.info(&format!(
+            ctx.ui.info(&format!(
                 "No models found{}.",
                 filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default()
             ));
@@ -108,7 +107,7 @@ impl ModelCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Model Catalog ({} models)", filtered.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
@@ -138,7 +137,7 @@ impl ModelCommands {
         }
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Configured Models ({} models)", rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE", "PROVIDER"],
             &rows,
@@ -183,13 +182,13 @@ impl ModelCommands {
                     fields.push(("Config: Enabled",  configured.enabled.to_string()));
                 }
 
-                ctx.out.detail(model_id, &fields);
+                ctx.ui.detail(model_id, &fields);
                 Ok(())
             }
             None => {
-                ctx.out.error(&format!("Model '{}' not found in registry.", model_id));
+                ctx.ui.error(&format!("Model '{}' not found in registry.", model_id));
                 let available: Vec<_> = MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
-                ctx.out.info(&format!("Available models: {}", available.join(", ")));
+                ctx.ui.info(&format!("Available models: {}", available.join(", ")));
                 anyhow::bail!("Model not found");
             }
         }
@@ -198,34 +197,30 @@ impl ModelCommands {
     pub async fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
-                println!("\nSetting up model: {}", model_id);
-                println!("{}", model.description.as_deref().unwrap_or("No description available."));
-                println!();
-                println!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length);
-                println!("Type: {}", model.model_type);
-                println!();
+                ctx.ui.info(&format!("\nSetting up model: {}", model_id));
+                ctx.ui.info(&format!("{}", model.description.as_deref().unwrap_or("No description available.")));
+                ctx.ui.info("");
+                ctx.ui.info(&format!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length));
+                ctx.ui.info(&format!("Type: {}", model.model_type));
+                ctx.ui.info("");
 
                 let variant_options: Vec<_> = model.variants.iter()
                     .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
                     .collect();
 
-                let variant_index = dialoguer::Select::new()
-                    .with_prompt("Select model variant:")
-                    .items(&variant_options)
-                    .default(0)
-                    .interact()?;
+                let variant_index = ctx.ui.select("Select model variant:", &variant_options, 0)?;
 
                 let selected_variant = &model.variants[variant_index];
-                println!("\nSelected: {} / {}", selected_variant.format, selected_variant.precision);
+                ctx.ui.info(&format!("\nSelected: {} / {}", selected_variant.format, selected_variant.precision));
 
                 if let Some(existing) = ctx.config.get_model(model_id) {
                     if existing.enabled {
-                        let overwrite = Confirm::new()
-                            .with_prompt(&format!("Model '{}' is already configured. Overwrite?", model_id))
-                            .default(false)
-                            .interact()?;
+                        let overwrite = ctx.ui.confirm(
+                            &format!("Model '{}' is already configured. Overwrite?", model_id),
+                            false,
+                        )?;
                         if !overwrite {
-                            println!("Model setup skipped.");
+                            ctx.ui.info("Model setup skipped.");
                             return Ok(());
                         }
                     }
@@ -247,18 +242,18 @@ impl ModelCommands {
                     enabled: true,
                 };
 
-                ctx.config.insert_model(model_id, model_config);
+                if let Err(e) = ctx.config.insert_model(model_id, model_config) {
+                    ctx.ui.warn(&format!("failed to save model config: {}", e));
+                }
 
-                println!("\nModel '{}' configured successfully!", model_id);
+                ctx.ui.info(&format!("\nModel '{}' configured successfully!", model_id));
 
                 Ok(())
             }
             None => {
-                eprintln!("Error: Model '{}' not found in registry.", model_id);
-                println!("\nAvailable models:");
-                for (model_reg_id, _) in MODEL_REGISTRY.entries() {
-                    println!("  - {}", model_reg_id);
-                }
+                ctx.ui.error(&format!("Model '{}' not found in registry.", model_id));
+                let available: Vec<_> = MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
+                ctx.ui.info(&format!("Available models: {}", available.join(", ")));
                 anyhow::bail!("Model not found");
             }
         }
@@ -272,8 +267,8 @@ impl ModelCommands {
         resolution: &dependency::Resolution,
     ) -> Result<Option<String>> {
         if resolution.is_unsatisfiable() {
-            println!("\nNo provider supports this variant's format/precision yet.");
-            println!("Configure a provider later, then set its id on this model.");
+            ctx.ui.info("\nNo provider supports this variant's format/precision yet.");
+            ctx.ui.info("Configure a provider later, then set its id on this model.");
             return Ok(None);
         }
 
@@ -286,11 +281,7 @@ impl ModelCommands {
         let choice = if options.len() == 1 {
             0
         } else {
-            dialoguer::Select::new()
-                .with_prompt("Select a provider for this model")
-                .items(&options)
-                .default(0)
-                .interact()?
+            ctx.ui.select("Select a provider for this model", &options, 0)?
         };
 
         if options[choice] != CONFIGURE_NEW {
@@ -300,18 +291,12 @@ impl ModelCommands {
         let provider_type = if resolution.configurable_types.len() == 1 {
             resolution.configurable_types[0]
         } else {
-            let type_index = dialoguer::Select::new()
-                .with_prompt("Select a provider type to configure")
-                .items(&resolution.configurable_types)
-                .default(0)
-                .interact()?;
+            let type_options: Vec<String> = resolution.configurable_types.iter().map(|s| s.to_string()).collect();
+            let type_index = ctx.ui.select("Select a provider type to configure", &type_options, 0)?;
             resolution.configurable_types[type_index]
         };
 
-        let nickname: String = Input::new()
-            .with_prompt("Name this provider instance")
-            .with_initial_text(provider_type)
-            .interact_text()?;
+        let nickname = ctx.ui.text("Name this provider instance", provider_type)?;
 
         ProviderCommands::setup(ctx, provider_type, Some(&nickname)).await?;
 
@@ -327,36 +312,36 @@ mod tests {
     use crate::config::{Config, ModelConfig};
     use crate::providers::{ModelFormat, ProviderType};
     use crate::registry::ConfigConstructable;
-    use crate::utils::ui::output::tests::CaptureOutput;
+    use crate::utils::ui::base::tests::CaptureUi;
 
     fn empty_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            out: Box::new(CaptureOutput::default()),
+            ui: Box::new(CaptureUi::default()),
         }
     }
 
     macro_rules! tables {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().tables.borrow()
         };
     }
 
     macro_rules! details {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().details.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().details.borrow()
         };
     }
 
     macro_rules! errors {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().errors.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().errors.borrow()
         };
     }
 
     macro_rules! infos {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().infos.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().infos.borrow()
         };
     }
 

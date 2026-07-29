@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 
+use crate::utils::ui::Ui;
+
 const EXPORT_MARKER_START: &str = "# === granite-cli exports start ===";
 const EXPORT_MARKER_END: &str = "# === granite-cli exports end ===";
 
@@ -26,7 +28,7 @@ impl Exporter {
             .replace("{VALUE}", value)
     }
 
-    pub fn add_exports(&self, vars: &[(&str, &str)]) -> Result<()> {
+    pub fn add_exports(&self, ui: &dyn Ui, vars: &[(&str, &str)]) -> Result<()> {
         let path = Path::new(&self.export_file);
         let existing = if path.exists() {
             fs::read_to_string(path)
@@ -69,10 +71,7 @@ impl Exporter {
         if path.exists() {
             let backup = format!("{}.granite-cli-backup", self.export_file);
             if let Err(e) = fs::write(&backup, &existing) {
-                eprintln!(
-                    "Warning: Could not create backup at {}: {}",
-                    backup, e
-                );
+                ui.warn(&format!("Could not create backup at {}: {}", backup, e));
             }
         }
 
@@ -134,25 +133,26 @@ pub fn detect_shell_profile() -> (String, String) {
     (name, path.to_string_lossy().to_string())
 }
 
-pub fn print_export_instructions(vars: &[(&str, &str)], _shell_name: &str, export_file: &str) {
-    println!("\nTo persist these settings, you can export them to your shell profile:");
-    println!("  Granite CLI will add the following to {}:", export_file);
-    println!();
+pub fn print_export_instructions(ui: &dyn Ui, vars: &[(&str, &str)], _shell_name: &str, export_file: &str) {
+    ui.info(&format!(
+        "\nTo persist these settings, you can export them to your shell profile:\n  Granite CLI will add the following to {}:\n",
+        export_file
+    ));
     for (var, value) in vars {
-           let masked = if value.len() > 8 {
-                format!("{}****{}", &value[..4], &value[value.len() - 4..])
-            } else {
-                "****".to_string()
-            };
-        println!("  export {}=\"{}\"", var, masked);
+        let masked = if value.len() > 8 {
+            format!("{}****{}", &value[..4], &value[value.len() - 4..])
+        } else {
+            "****".to_string()
+        };
+        ui.info(&format!("  export {}=\"{}\"", var, masked));
     }
-    println!();
-    println!("Run: granite-cli configure --export to write these to your shell profile.");
+    ui.info("\nRun: granite-cli configure --export to write these to your shell profile.");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::ui::base::tests::CaptureUi;
     use tempfile::TempDir;
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
             ("BASE_URL", "http://localhost:8080"),
         ];
 
-        exporter.add_exports(&vars).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vars).unwrap();
 
         assert!(export_file.exists());
         let content = fs::read_to_string(&export_file).unwrap();
@@ -230,7 +230,7 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&vec![("API_KEY", "secret123")]).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();
         assert!(content.contains("# Existing content"));
@@ -250,7 +250,7 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&vec![("API_KEY", "secret123")]).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
 
         let content_after_add = fs::read_to_string(&export_file).unwrap();
         assert!(content_after_add.contains("API_KEY"));
@@ -277,7 +277,7 @@ mod tests {
 
         assert!(!exporter.check_shell_profile_updated());
 
-        exporter.add_exports(&vec![("API_KEY", "secret123")]).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
 
         assert!(exporter.check_shell_profile_updated());
     }
@@ -294,8 +294,8 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&vec![("API_KEY", "old_secret")]).unwrap();
-        exporter.add_exports(&vec![("API_KEY", "new_secret")]).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "old_secret")]).unwrap();
+        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "new_secret")]).unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();
         assert!(content.contains("new_secret"));

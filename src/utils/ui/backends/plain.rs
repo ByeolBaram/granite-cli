@@ -1,5 +1,5 @@
 use crate::registry::ConfigConstructable;
-use crate::utils::ui::output::{HasOutputMetadata, Output, OutputMetadata};
+use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
 
 /*-- public --*/
 
@@ -13,7 +13,7 @@ impl ConfigConstructable for PlainOutput {
     }
 }
 
-impl Output for PlainOutput {
+impl Ui for PlainOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
         println!("\n{}", title);
         let col_count = headers.len();
@@ -63,9 +63,9 @@ impl Output for PlainOutput {
     fn error(&self, msg: &str) { eprintln!("Error: {}", msg); }
 }
 
-impl HasOutputMetadata for PlainOutput {
-    fn metadata() -> OutputMetadata {
-        OutputMetadata {
+impl HasUiMetadata for PlainOutput {
+    fn metadata() -> UiMetadata {
+        UiMetadata {
             name: "plain".to_string(),
             description: "Plain text output without ANSI codes".to_string(),
         }

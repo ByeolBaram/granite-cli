@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use crate::utils::ui::Ui;
+
 /*-- Public entry point --------------------------------------------------------*/
 
 /// Interactively prompt for a config value matching `schema`, pre-filled with
@@ -7,28 +9,28 @@ use serde_json::Value;
 /// arrays (indented), and masks input for fields whose schema is marked
 /// `"format": "password"` (see `registry::Secret`) rather than guessing from
 /// field names.
-pub fn prompt_from_schema(schema: &schemars::Schema, defaults: &Value) -> anyhow::Result<Value> {
+pub fn prompt_from_schema(ui: &dyn Ui, schema: &schemars::Schema, defaults: &Value) -> anyhow::Result<Value> {
     let root = serde_json::to_value(schema)?;
-    prompt_value(&root, &root, defaults, "", "")
+    prompt_value(ui, &root, &root, defaults, "", "")
 }
 
 /*-- Recursive dispatch ---------------------------------------------------------*/
 
-fn prompt_value(root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_value(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     let node = resolve_ref(root, node);
     match node.get("type").and_then(Value::as_str) {
-        Some("object") => prompt_object(root, node, default, indent, label),
-        Some("array") => prompt_array(root, node, default, indent, label),
-        Some("string") => Ok(prompt_string(node, default, indent, label)?),
-        Some("integer") | Some("number") => Ok(prompt_number(node, default, indent, label)?),
-        Some("boolean") => Ok(prompt_bool(default, indent, label)?),
+        Some("object") => prompt_object(ui, root, node, default, indent, label),
+        Some("array") => prompt_array(ui, root, node, default, indent, label),
+        Some("string") => Ok(prompt_string(ui, node, default, indent, label)?),
+        Some("integer") | Some("number") => Ok(prompt_number(ui, node, default, indent, label)?),
+        Some("boolean") => Ok(prompt_bool(ui, default, indent, label)?),
         _ => Ok(default.clone()),
     }
 }
 
-fn prompt_object(root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_object(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     if !indent.is_empty() && !label.is_empty() {
-        println!("{indent}{label}:");
+        ui.info(&format!("{indent}{label}:"));
     }
 
     let mut result = serde_json::Map::new();
@@ -43,14 +45,14 @@ fn prompt_object(root: &Value, node: &Value, default: &Value, indent: &str, labe
                 continue;
             }
             let prop_default = default.get(name).cloned().unwrap_or(Value::Null);
-            let value = prompt_value(root, prop_schema, &prop_default, &child_indent, name)?;
+            let value = prompt_value(ui, root, prop_schema, &prop_default, &child_indent, name)?;
             result.insert(name.clone(), value);
         }
     }
     Ok(Value::Object(result))
 }
 
-fn prompt_array(root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_array(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     let Some(items_schema) = node.get("items").map(|v| resolve_ref(root, v)) else {
         return Ok(Value::Array(vec![]));
     };
@@ -62,15 +64,12 @@ fn prompt_array(root: &Value, node: &Value, default: &Value, indent: &str, label
 
     loop {
         let next_default = defaults_iter.next();
-        let add = dialoguer::Confirm::new()
-            .with_prompt(format!("{indent}Add {label}?"))
-            .default(next_default.is_some())
-            .interact()?;
+        let add = ui.confirm(&format!("{indent}Add {label}?"), next_default.is_some())?;
         if !add {
             break;
         }
         let item_default = next_default.unwrap_or_else(|| zero_value_for(items_schema));
-        let item = prompt_value(root, items_schema, &item_default, &child_indent, label)?;
+        let item = prompt_value(ui, root, items_schema, &item_default, &child_indent, label)?;
         items.push(item);
     }
 
@@ -79,37 +78,28 @@ fn prompt_array(root: &Value, node: &Value, default: &Value, indent: &str, label
 
 /*-- Leaf prompts ---------------------------------------------------------------*/
 
-fn prompt_string(node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_string(ui: &dyn Ui, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     let default_str = default.as_str().unwrap_or("").to_string();
     let prompt = format!("{indent}{label}");
 
     if is_secret_schema(node) {
-        let entered: String = dialoguer::Password::new()
-            .with_prompt(format!("{prompt} (leave blank to keep current)"))
-            .allow_empty_password(true)
-            .interact()?;
+        let entered = ui.password(&format!("{prompt} (leave blank to keep current)"))?;
         let value = if entered.is_empty() { default_str } else { entered };
         Ok(Value::String(value))
     } else {
-        let entered: String = dialoguer::Input::new()
-            .with_prompt(prompt)
-            .with_initial_text(default_str)
-            .interact_text()?;
+        let entered = ui.text(&prompt, &default_str)?;
         Ok(Value::String(entered))
     }
 }
 
-fn prompt_number(node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_number(ui: &dyn Ui, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     let is_integer = node.get("type").and_then(Value::as_str) == Some("integer");
     let default_str = default
         .as_number()
         .map(|n| n.to_string())
         .unwrap_or_else(|| "0".to_string());
 
-    let entered: String = dialoguer::Input::new()
-        .with_prompt(format!("{indent}{label}"))
-        .with_initial_text(default_str)
-        .interact_text()?;
+    let entered = ui.text(&format!("{indent}{label}"), &default_str)?;
 
     let number = if is_integer {
         entered
@@ -129,12 +119,9 @@ fn prompt_number(node: &Value, default: &Value, indent: &str, label: &str) -> an
     Ok(Value::Number(number))
 }
 
-fn prompt_bool(default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_bool(ui: &dyn Ui, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
     let default_bool = default.as_bool().unwrap_or(false);
-    let value = dialoguer::Confirm::new()
-        .with_prompt(format!("{indent}{label}"))
-        .default(default_bool)
-        .interact()?;
+    let value = ui.confirm(&format!("{indent}{label}"), default_bool)?;
     Ok(Value::Bool(value))
 }
 

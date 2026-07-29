@@ -1,6 +1,5 @@
 // Third Party
 use anyhow::Result;
-use dialoguer::Confirm;
 
 // Local
 use crate::providers::{PROVIDER_REGISTRY, HealthStatus};
@@ -17,7 +16,7 @@ impl ProviderCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Provider Catalog ({} providers)", providers.len()),
             &["ID", "TYPE", "ENDPOINT"],
             &rows,
@@ -35,7 +34,7 @@ impl ProviderCommands {
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
-        ctx.out.table(
+        ctx.ui.table(
             &format!("Configured Providers ({} providers)", rows.len()),
             &["ID", "TYPE", "ENABLED", "BASE URL"],
             &rows,
@@ -58,41 +57,35 @@ impl ProviderCommands {
         let provider_def = match PROVIDER_REGISTRY.get(provider_type) {
             Some(def) => def,
             None => {
-                eprintln!("Error: Provider type '{}' not found in registry.", provider_type);
-                println!("\nAvailable provider types:");
-                for (p_id, p) in PROVIDER_REGISTRY.entries() {
-                    println!("  - {} ({})", p_id, p.name);
-                }
+                ctx.ui.error(&format!("Provider type '{}' not found in registry.", provider_type));
+                let available: Vec<_> = PROVIDER_REGISTRY.entries().iter().map(|(p_id, p)| format!("{} ({})", p_id, p.name)).collect();
+                ctx.ui.info(&format!("Available provider types: {}", available.join(", ")));
                 anyhow::bail!("Provider type not found");
             }
         };
 
         let instance_id = instance_id.unwrap_or(provider_type).to_string();
 
-        println!("\nSetting up provider instance: {}", instance_id);
-        println!("{}", provider_def.name);
-        println!("{}", provider_def.description);
-        println!();
-        println!("Type: {}", provider_def.provider_type);
+        ctx.ui.info(&format!("\nSetting up provider instance: {}", instance_id));
+        ctx.ui.info(&provider_def.name);
+        ctx.ui.info(&provider_def.description);
+        ctx.ui.info("");
+        ctx.ui.info(&format!("Type: {}", provider_def.provider_type));
 
         if !provider_def.authentication.is_empty() {
-            print!("Authentication: ");
-            for (i, auth) in provider_def.authentication.iter().enumerate() {
-                if i > 0 { print!(", "); }
-                print!("{}", auth);
-            }
-            println!();
+            let auths = provider_def.authentication.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
+            ctx.ui.info(&format!("Authentication: {}", auths));
         }
 
         // Check if this instance is already configured
         let existing_config = ctx.config.get_provider(&instance_id);
         if existing_config.is_some() {
-            let overwrite = Confirm::new()
-                .with_prompt(&format!("Provider instance '{}' is already configured. Overwrite?", instance_id))
-                .default(false)
-                .interact()?;
+            let overwrite = ctx.ui.confirm(
+                &format!("Provider instance '{}' is already configured. Overwrite?", instance_id),
+                false,
+            )?;
             if !overwrite {
-                println!("Provider setup skipped.");
+                ctx.ui.info("Provider setup skipped.");
                 return Ok(());
             }
         }
@@ -104,8 +97,7 @@ impl ProviderCommands {
             .or_else(|| PROVIDER_REGISTRY.default_config(provider_type))
             .unwrap_or_else(|| serde_json::json!({}));
 
-        println!();
-        let config = prompt_from_schema(&schema, &defaults)?;
+        let config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
         let provider_config = crate::config::ProviderConfig {
             provider_id: instance_id.clone(),
@@ -114,30 +106,32 @@ impl ProviderCommands {
             enabled: true,
         };
 
-        ctx.config.insert_provider(&instance_id, provider_config);
+        if let Err(e) = ctx.config.insert_provider(&instance_id, provider_config) {
+            ctx.ui.warn(&format!("failed to save provider config: {}", e));
+        }
 
         // Health check
-        println!("\nRunning health check...");
+        ctx.ui.info("\nRunning health check...");
         match Self::check_provider_health(ctx, &instance_id).await {
             Ok(status) => {
                 if status.healthy {
-                    println!("Provider '{}' is healthy!", instance_id);
+                    ctx.ui.info(&format!("Provider '{}' is healthy!", instance_id));
                 } else {
-                    println!("Warning: Provider '{}' health check failed. It may need to be started or configured differently.", instance_id);
+                    ctx.ui.warn(&format!("Provider '{}' health check failed. It may need to be started or configured differently.", instance_id));
                 }
             }
             Err(e) => {
-                println!("Warning: Could not run health check: {}", e);
+                ctx.ui.warn(&format!("Could not run health check: {}", e));
             }
         }
 
-        println!("\nProvider instance '{}' configured successfully!", instance_id);
-        println!("Supported APIs:");
+        ctx.ui.info(&format!("\nProvider instance '{}' configured successfully!", instance_id));
+        ctx.ui.info("Supported APIs:");
         for (func, endpoints) in &provider_def.default_function_endpoints {
             let endpoint_strs: Vec<String> = endpoints.iter()
                 .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
                 .collect();
-            println!("  - {} -> {}", func, endpoint_strs.join(", "));
+            ctx.ui.info(&format!("  - {} -> {}", func, endpoint_strs.join(", ")));
         }
 
         Ok(())
@@ -151,7 +145,7 @@ impl ProviderCommands {
         };
 
         if providers_to_check.is_empty() {
-            ctx.out.info("No configured providers to check.");
+            ctx.ui.info("No configured providers to check.");
             return Ok(());
         }
 
@@ -163,10 +157,10 @@ impl ProviderCommands {
                     } else {
                         format!("{}ms", status.latency.as_millis())
                     };
-                    ctx.out.status(id, status.healthy, &detail);
+                    ctx.ui.status(id, status.healthy, &detail);
                 }
                 Err(e) => {
-                    ctx.out.status(id, false, &e.to_string());
+                    ctx.ui.status(id, false, &e.to_string());
                 }
             }
         }
@@ -194,12 +188,12 @@ impl ProviderCommands {
 mod tests {
     use super::*;
     use crate::config::{Config, ProviderConfig};
-    use crate::utils::ui::output::tests::CaptureOutput;
+    use crate::utils::ui::base::tests::CaptureUi;
 
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            out: Box::new(CaptureOutput::default()),
+            ui: Box::new(CaptureUi::default()),
         }
     }
 
@@ -216,19 +210,19 @@ mod tests {
 
     macro_rules! tables {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().tables.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().tables.borrow()
         };
     }
 
     macro_rules! infos {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().infos.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().infos.borrow()
         };
     }
 
     macro_rules! statuses {
         ($ctx:expr) => {
-            (&*($ctx.out) as &dyn std::any::Any).downcast_ref::<CaptureOutput>().unwrap().statuses.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().statuses.borrow()
         };
     }
 

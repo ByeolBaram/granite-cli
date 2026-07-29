@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 // Local
 use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
-use utils::ui::{run_interactive_tui, Output, OUTPUT_REGISTRY};
+use utils::ui::{run_interactive_tui, Ui, UI_REGISTRY};
 
 // Hoist paste macro for use in our own macros
 extern crate paste;
@@ -201,81 +201,70 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
-    pub out: Box<dyn Output>,
+    pub ui: Box<dyn Ui>,
 }
 
-impl AppContext {
-    pub fn new(out: Box<dyn Output>) -> anyhow::Result<Self> {
-        Ok(Self {
-            config: config::Config::new()?,
-            out,
+/// Construct the `Ui` backend for `--output`, exiting on an unrecognized
+/// format. No `Ui` exists yet at this point, so this is the one place in
+/// `main` that still reports via `eprintln!` rather than `ctx.ui`.
+fn construct_ui(output: &str) -> Box<dyn Ui> {
+    UI_REGISTRY
+        .construct(output, &serde_json::json!({}))
+        .unwrap_or_else(|_| {
+            eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", output);
+            std::process::exit(1);
         })
-    }
+}
+
+fn construct_context(output: &str) -> AppContext {
+    let ui = construct_ui(output);
+    let config = config::Config::new().unwrap_or_else(|e| {
+        ui.error(&format!("Failed to load config: {}", e));
+        std::process::exit(1);
+    });
+    AppContext { config, ui }
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    let result = match cli.command {
+    let result: Result<(), ()> = match cli.command {
         Some(Commands::Model(wrapper)) => {
-            let out = OUTPUT_REGISTRY
-                .construct(&wrapper.output, &serde_json::json!({}))
-                .unwrap_or_else(|_| {
-                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
-                    std::process::exit(1);
-                });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
-                eprintln!("Failed to load config: {}", e);
-                std::process::exit(1);
-            });
+            let mut ctx = construct_context(&wrapper.output);
             run_model_command(&mut ctx, wrapper.subcommand).await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Capability(wrapper)) => {
-            let out = OUTPUT_REGISTRY
-                .construct(&wrapper.output, &serde_json::json!({}))
-                .unwrap_or_else(|_| {
-                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
-                    std::process::exit(1);
-                });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
-                eprintln!("Failed to load config: {}", e);
-                std::process::exit(1);
-            });
+            let mut ctx = construct_context(&wrapper.output);
             run_capability_command(&mut ctx, wrapper.subcommand).await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Provider(wrapper)) => {
-            let out = OUTPUT_REGISTRY
-                .construct(&wrapper.output, &serde_json::json!({}))
-                .unwrap_or_else(|_| {
-                    eprintln!("Unknown output format '{}'. Valid: terminal, plain, json, markdown", wrapper.output);
-                    std::process::exit(1);
-                });
-            let mut ctx = AppContext::new(out).unwrap_or_else(|e| {
-                eprintln!("Failed to load config: {}", e);
-                std::process::exit(1);
-            });
+            let mut ctx = construct_context(&wrapper.output);
             run_provider_command(&mut ctx, wrapper.subcommand).await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
         }
-        Some(Commands::Configure(wrapper)) => run_configure(wrapper.args).await,
-        Some(Commands::Launch(_wrapper)) => {
-            println!("Tool launching will be available in Phase 3.");
+        Some(Commands::Configure(wrapper)) => {
+            let ui = construct_ui(&wrapper.output);
+            run_configure(&*ui, wrapper.args).await
+                .map_err(|e| ui.error(&e.to_string()))
+        }
+        Some(Commands::Launch(wrapper)) => {
+            let ui = construct_ui(&wrapper.output);
+            ui.info("Tool launching will be available in Phase 3.");
             Ok(())
         }
         None => {
-            let out = OUTPUT_REGISTRY
-                .construct("terminal", &serde_json::json!({}))
-                .unwrap_or_else(|_| unreachable!());
-            let ctx = AppContext::new(out).unwrap_or_else(|e| {
-                eprintln!("Failed to load config: {}", e);
-                std::process::exit(1);
-            });
+            // `ctx` (and its `ui`) is consumed by value into the TUI `App`
+            // before any error can occur, so it can't be used to report one.
+            let ctx = construct_context("terminal");
             run_interactive_tui(ctx).await
+                .map_err(|e| eprintln!("Error: {}", e))
         }
     };
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
+    if result.is_err() {
         std::process::exit(1);
     }
 }
@@ -334,7 +323,7 @@ async fn run_provider_command(ctx: &mut AppContext, subcmd: ProviderSubcommands)
     }
 }
 
-async fn run_configure(_args: ConfigureArgs) -> anyhow::Result<()> {
-    println!("Tool configuration wizard will be available in Phase 3.");
+async fn run_configure(ui: &dyn Ui, _args: ConfigureArgs) -> anyhow::Result<()> {
+    ui.info("Tool configuration wizard will be available in Phase 3.");
     Ok(())
 }

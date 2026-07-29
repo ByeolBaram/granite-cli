@@ -2,7 +2,7 @@ use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForeground
 
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::backends::plain::PlainOutput;
-use crate::utils::ui::output::{HasOutputMetadata, Output, OutputMetadata};
+use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
 
 /*-- public --*/
 
@@ -26,7 +26,7 @@ impl ConfigConstructable for TerminalOutput {
     }
 }
 
-impl Output for TerminalOutput {
+impl Ui for TerminalOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
         if !self.is_tty {
             return PlainOutput.table(title, headers, rows);
@@ -166,9 +166,9 @@ impl Output for TerminalOutput {
     }
 }
 
-impl HasOutputMetadata for TerminalOutput {
-    fn metadata() -> OutputMetadata {
-        OutputMetadata {
+impl HasUiMetadata for TerminalOutput {
+    fn metadata() -> UiMetadata {
+        UiMetadata {
             name: "terminal".to_string(),
             description: "Coloured ANSI terminal output; falls back to plain when not a tty"
                 .to_string(),
