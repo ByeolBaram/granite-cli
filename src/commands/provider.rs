@@ -106,7 +106,9 @@ impl ProviderCommands {
             enabled: true,
         };
 
-        ctx.config.insert_provider(&instance_id, provider_config);
+        if let Err(e) = ctx.config.insert_provider(&instance_id, provider_config) {
+            ctx.ui.warn(&format!("failed to save provider config: {}", e));
+        }
 
         // Health check
         ctx.ui.info("\nRunning health check...");

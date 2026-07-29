@@ -164,7 +164,9 @@ impl CapabilityCommands {
                     config: config_map,
                 };
 
-                ctx.config.insert_capability(capability_id, capability_config);
+                if let Err(e) = ctx.config.insert_capability(capability_id, capability_config) {
+                    ctx.ui.warn(&format!("failed to save capability config: {}", e));
+                }
 
                 ctx.ui.info(&format!("\nCapability '{}' configured successfully!", capability_id));
 

@@ -335,14 +335,12 @@ impl Config {
         self.models.get(id)
     }
 
-    pub fn insert_model(&mut self, id: &str, config: ModelConfig) {
+    pub fn insert_model(&mut self, id: &str, config: ModelConfig) -> Result<()> {
         self.models.insert(id.to_string(), config);
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save model config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn remove_model(&mut self, id: &str) {
+    pub fn remove_model(&mut self, id: &str) -> Result<()> {
         self.models.remove(id);
         let path = Self::models_dir().ok().and_then(|d| {
             let p = d.join(format!("{}.yaml", id));
@@ -351,17 +349,15 @@ impl Config {
         if let Some(p) = path {
             let _ = fs::remove_file(&p);
         }
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save model config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn update_model(&mut self, id: &str, f: impl FnOnce(&mut ModelConfig)) {
+    pub fn update_model(&mut self, id: &str, f: impl FnOnce(&mut ModelConfig)) -> Result<()> {
         if let Some(model) = self.models.get_mut(id) {
             f(model);
-            if let Err(e) = self.save() {
-                eprintln!("Warning: failed to save model config: {}", e);
-            }
+            self.save()
+        } else {
+            Ok(())
         }
     }
 
@@ -371,14 +367,12 @@ impl Config {
         self.providers.get(id)
     }
 
-    pub fn insert_provider(&mut self, id: &str, config: ProviderConfig) {
+    pub fn insert_provider(&mut self, id: &str, config: ProviderConfig) -> Result<()> {
         self.providers.insert(id.to_string(), config);
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save provider config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn remove_provider(&mut self, id: &str) {
+    pub fn remove_provider(&mut self, id: &str) -> Result<()> {
         self.providers.remove(id);
         let path = Self::providers_dir().ok().and_then(|d| {
             let p = d.join(format!("{}.yaml", id));
@@ -387,17 +381,15 @@ impl Config {
         if let Some(p) = path {
             let _ = fs::remove_file(&p);
         }
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save provider config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn update_provider(&mut self, id: &str, f: impl FnOnce(&mut ProviderConfig)) {
+    pub fn update_provider(&mut self, id: &str, f: impl FnOnce(&mut ProviderConfig)) -> Result<()> {
         if let Some(provider) = self.providers.get_mut(id) {
             f(provider);
-            if let Err(e) = self.save() {
-                eprintln!("Warning: failed to save provider config: {}", e);
-            }
+            self.save()
+        } else {
+            Ok(())
         }
     }
 
@@ -407,14 +399,12 @@ impl Config {
         self.capabilities.get(id)
     }
 
-    pub fn insert_capability(&mut self, id: &str, config: CapabilityConfig) {
+    pub fn insert_capability(&mut self, id: &str, config: CapabilityConfig) -> Result<()> {
         self.capabilities.insert(id.to_string(), config);
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save capability config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn remove_capability(&mut self, id: &str) {
+    pub fn remove_capability(&mut self, id: &str) -> Result<()> {
         self.capabilities.remove(id);
         let path = Self::capabilities_dir().ok().and_then(|d| {
             let p = d.join(format!("{}.yaml", id));
@@ -423,17 +413,15 @@ impl Config {
         if let Some(p) = path {
             let _ = fs::remove_file(&p);
         }
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save capability config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn update_capability(&mut self, id: &str, f: impl FnOnce(&mut CapabilityConfig)) {
+    pub fn update_capability(&mut self, id: &str, f: impl FnOnce(&mut CapabilityConfig)) -> Result<()> {
         if let Some(capability) = self.capabilities.get_mut(id) {
             f(capability);
-            if let Err(e) = self.save() {
-                eprintln!("Warning: failed to save capability config: {}", e);
-            }
+            self.save()
+        } else {
+            Ok(())
         }
     }
 
@@ -443,14 +431,12 @@ impl Config {
         self.tools.get(id)
     }
 
-    pub fn insert_tool(&mut self, id: &str, config: ToolConfig) {
+    pub fn insert_tool(&mut self, id: &str, config: ToolConfig) -> Result<()> {
         self.tools.insert(id.to_string(), config);
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save tool config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn remove_tool(&mut self, id: &str) {
+    pub fn remove_tool(&mut self, id: &str) -> Result<()> {
         self.tools.remove(id);
         let path = Self::tools_dir().ok().and_then(|d| {
             let p = d.join(format!("{}.yaml", id));
@@ -459,17 +445,15 @@ impl Config {
         if let Some(p) = path {
             let _ = fs::remove_file(&p);
         }
-        if let Err(e) = self.save() {
-            eprintln!("Warning: failed to save tool config: {}", e);
-        }
+        self.save()
     }
 
-    pub fn update_tool(&mut self, id: &str, f: impl FnOnce(&mut ToolConfig)) {
+    pub fn update_tool(&mut self, id: &str, f: impl FnOnce(&mut ToolConfig)) -> Result<()> {
         if let Some(tool) = self.tools.get_mut(id) {
             f(tool);
-            if let Err(e) = self.save() {
-                eprintln!("Warning: failed to save tool config: {}", e);
-            }
+            self.save()
+        } else {
+            Ok(())
         }
     }
 }

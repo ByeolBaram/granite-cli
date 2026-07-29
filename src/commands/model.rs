@@ -242,7 +242,9 @@ impl ModelCommands {
                     enabled: true,
                 };
 
-                ctx.config.insert_model(model_id, model_config);
+                if let Err(e) = ctx.config.insert_model(model_id, model_config) {
+                    ctx.ui.warn(&format!("failed to save model config: {}", e));
+                }
 
                 ctx.ui.info(&format!("\nModel '{}' configured successfully!", model_id));
 
