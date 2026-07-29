@@ -7,6 +7,9 @@ use std::sync::LazyLock;
 pub static PROVIDER_REGISTRY: LazyLock<base::ProviderFactory> = LazyLock::new(|| {
     let mut factory = base::ProviderFactory::new();
     factory.register::<openai::OpenAIProvider>("openai-compatible");
+    factory.register::<ollama::OllamaProvider>("ollama");
+    factory.register::<llamacpp::LlamaCppProvider>("llama-cpp");
+    factory.register::<lmstudio::LMStudioProvider>("lm-studio");
     factory
 });
 
@@ -65,6 +68,15 @@ pub use base::{
 
 mod openai;
 pub use openai::{OpenAIProvider, OpenAIProviderConfig};
+
+mod ollama;
+pub use ollama::{OllamaProvider, OllamaProviderConfig};
+
+mod llamacpp;
+pub use llamacpp::{LlamaCppProvider, LlamaCppProviderConfig};
+
+mod lmstudio;
+pub use lmstudio::{LMStudioProvider, LMStudioProviderConfig};
 
 /*-- tests ---------------------------------------------------------------------*/
 
