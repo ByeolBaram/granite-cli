@@ -64,13 +64,16 @@ impl ProviderCommands {
             }
         };
 
-        let instance_id = instance_id.unwrap_or(provider_type).to_string();
-
-        ctx.ui.info(&format!("\nSetting up provider instance: {}", instance_id));
-        ctx.ui.info(&provider_def.name);
+        ctx.ui.info(&format!("\nSetting up provider instance: {}", provider_type));
         ctx.ui.info(&provider_def.description);
         ctx.ui.info("");
         ctx.ui.info(&format!("Type: {}", provider_def.provider_type));
+
+        // Get a name for this instance
+        let instance_id = match instance_id {
+            Some(instance_id_arg) => instance_id_arg.to_string(),
+            _ => ctx.ui.text("Instance name: ", provider_type)?,
+        };
 
         if !provider_def.authentication.is_empty() {
             let auths = provider_def.authentication.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
