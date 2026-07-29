@@ -17,7 +17,6 @@ impl HardwareCommands {
             ("RAM",                   format!("{:.2} GB", profile.ram_gb)),
             ("GPU Vendor",            profile.gpu_vendor.clone().unwrap_or_else(|| "None".to_string())),
             ("VRAM",                  profile.vram_gb.map(|v| format!("{:.2} GB", v)).unwrap_or_else(|| "None".to_string())),
-            ("Recommended Precision", profile.recommend_precision().to_string()),
         ]
     }
 
@@ -55,12 +54,5 @@ mod tests {
         let fields = HardwareCommands::hardware_fields();
         assert!(fields.iter().any(|(k, _)| *k == "CPU Cores"));
         assert!(fields.iter().any(|(k, _)| *k == "RAM"));
-    }
-
-    #[test]
-    fn hardware_detail_has_recommended_precision() {
-        let fields = HardwareCommands::hardware_fields();
-        let precision = fields.iter().find(|(k, _)| *k == "Recommended Precision").unwrap();
-        assert!(matches!(precision.1.as_str(), "BF16" | "Q8_0" | "Q4_K_M" | "Q3_K_M"));
     }
 }

@@ -783,6 +783,5 @@ mod tests {
         let keys: Vec<&str> = fields.iter().map(|(k, _)| *k).collect();
         assert!(keys.contains(&"CPU Cores"));
         assert!(keys.contains(&"RAM"));
-        assert!(keys.contains(&"Recommended Precision"));
     }
 }

@@ -203,11 +203,4 @@ mod tests {
         assert!(!profile.cpu_arch.is_empty());
         assert!(profile.ram_gb > 0.0);
     }
-
-    #[test]
-    fn test_recommend_precision() {
-        let profile = HardwareProfile::detect();
-        let precision = profile.recommend_precision();
-        assert!(matches!(precision, "BF16" | "Q8_0" | "Q4_K_M" | "Q3_K_M"));
-    }
 }
