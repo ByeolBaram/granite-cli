@@ -133,7 +133,6 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 
     // Model support
     fn supported_formats(&self) -> Vec<ModelFormat>;
-    fn supported_precisions(&self) -> Vec<String>;
     fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
         true
     }
@@ -172,7 +171,6 @@ pub struct ProviderMetadata {
     pub default_function_endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
 
     pub supported_formats: Vec<ModelFormat>,
-    pub supported_precisions: Vec<String>,
     pub authentication: Vec<AuthType>,
     pub tags: Vec<String>,
 }

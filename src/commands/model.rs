@@ -23,17 +23,15 @@ struct VariantRequirement {
 
 impl Requirement<dyn Provider> for VariantRequirement {
     fn admits_type(&self, metadata: &ProviderMetadata) -> bool {
+        // Only gate on format - precision is checked by can_run_model
         metadata
             .supported_formats
             .iter()
             .any(|f| f.to_string().eq_ignore_ascii_case(&self.format))
-            && metadata
-                .supported_precisions
-                .iter()
-                .any(|p| p.eq_ignore_ascii_case(&self.precision))
     }
 
     fn admits_instance(&self, instance: &dyn Provider) -> bool {
+        // This is where precision compatibility is actually determined
         instance.can_run_model(&self.format, &self.precision)
     }
 }
@@ -487,16 +485,15 @@ mod tests {
             supported_api_types: vec![],
             default_function_endpoints: std::collections::HashMap::new(),
             supported_formats: formats,
-            supported_precisions: precisions.into_iter().map(String::from).collect(),
             authentication: vec![],
             tags: vec![],
         }
     }
 
     #[test]
-    fn admits_type_matches_format_and_precision_case_insensitively() {
-        let requirement = VariantRequirement { format: "GGUF".to_string(), precision: "FP16".to_string() };
-        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16", "fp32"]);
+    fn admits_type_only_checks_format_not_precision() {
+        let requirement = VariantRequirement { format: "gguf".to_string(), precision: "some-exotic-precision".to_string() };
+        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16"]);
         assert!(requirement.admits_type(&metadata));
     }
 
@@ -508,10 +505,10 @@ mod tests {
     }
 
     #[test]
-    fn admits_type_rejects_unsupported_precision() {
-        let requirement = VariantRequirement { format: "gguf".to_string(), precision: "bfloat16".to_string() };
+    fn admits_type_matches_format_case_insensitively() {
+        let requirement = VariantRequirement { format: "GGUF".to_string(), precision: "FP16".to_string() };
         let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16", "fp32"]);
-        assert!(!requirement.admits_type(&metadata));
+        assert!(requirement.admits_type(&metadata));
     }
 
     #[test]

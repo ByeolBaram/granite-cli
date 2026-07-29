@@ -213,7 +213,6 @@ mod tests {
         }
         fn supported_api_types(&self) -> Vec<ApiType> { vec![] }
         fn supported_formats(&self) -> Vec<ModelFormat> { vec![] }
-        fn supported_precisions(&self) -> Vec<String> { vec![] }
         async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
             Ok(HealthStatus {
                 healthy: true,
