@@ -12,13 +12,13 @@ impl ProviderCommands {
         let providers = PROVIDER_REGISTRY.entries();
 
         let mut rows: Vec<Vec<String>> = providers.iter().map(|(id, p)| {
-            vec![id.to_string(), p.provider_type.to_string(), p.default_endpoint.clone()]
+            vec![id.to_string(), p.default_endpoint.clone()]
         }).collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         ctx.ui.table(
             &format!("Provider Catalog ({} providers)", providers.len()),
-            &["ID", "TYPE", "ENDPOINT"],
+            &["ID", "DEFAULT ENDPOINT"],
             &rows,
         );
         Ok(())
@@ -32,7 +32,13 @@ impl ProviderCommands {
                 .to_string();
             vec![id.clone(), cfg.provider_type.clone(), cfg.enabled.to_string(), base_url]
         }).collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        rows.sort_by(|a, b| {
+            let type_cmp = a[1].cmp(&b[1]);
+            if type_cmp != std::cmp::Ordering::Equal {
+                return type_cmp;
+            }
+            a[0].cmp(&b[0])
+        });
 
         ctx.ui.table(
             &format!("Configured Providers ({} providers)", rows.len()),
@@ -232,15 +238,15 @@ mod tests {
     // -- catalog --------------------------------------------------------------
 
     #[test]
-    fn catalog_table_has_id_type_endpoint_columns() {
+    fn catalog_table_has_id_endpoint_columns() {
         let ctx = test_ctx();
         ProviderCommands::catalog(&ctx).unwrap();
         let tables = tables!(ctx);
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
-        assert!(headers.contains(&"TYPE".to_string()));
-        assert!(headers.contains(&"ENDPOINT".to_string()));
+        assert!(headers.contains(&"DEFAULT ENDPOINT".to_string()));
+        assert!(!headers.contains(&"TYPE".to_string()));
     }
 
     #[test]
@@ -282,6 +288,38 @@ mod tests {
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
         assert!(rows[0].iter().any(|c| c == "false"));
+    }
+
+    #[test]
+    fn list_sorted_by_type_then_id() {
+        let mut ctx = test_ctx();
+        ctx.config.providers.insert("prod-openai".to_string(), ProviderConfig {
+            provider_id: "prod-openai".to_string(),
+            provider_type: "openai-compatible".to_string(),
+            config: serde_json::json!({ "base_url": "http://prod" }),
+            enabled: true,
+        });
+        ctx.config.providers.insert("local-ollama".to_string(), ProviderConfig {
+            provider_id: "local-ollama".to_string(),
+            provider_type: "ollama".to_string(),
+            config: serde_json::json!({ "base_url": "http://localhost:11434" }),
+            enabled: true,
+        });
+        ctx.config.providers.insert("dev-openai".to_string(), ProviderConfig {
+            provider_id: "dev-openai".to_string(),
+            provider_type: "openai-compatible".to_string(),
+            config: serde_json::json!({ "base_url": "http://dev" }),
+            enabled: true,
+        });
+        ProviderCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0][1], "ollama");
+        assert_eq!(rows[1][1], "openai-compatible");
+        assert_eq!(rows[2][1], "openai-compatible");
+        assert_eq!(rows[1][0], "dev-openai");
+        assert_eq!(rows[2][0], "prod-openai");
     }
 
     // -- health ----------------------------------------------------------------

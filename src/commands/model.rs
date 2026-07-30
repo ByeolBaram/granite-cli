@@ -4,10 +4,42 @@ use anyhow::Result;
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, Configured, DependsOn, Requirement};
-use crate::models::{ContextFit, MODEL_REGISTRY, ModelType};
+use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType};
 use crate::utils::hardware::detect_hardware;
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 use crate::utils::Searchable;
+
+/// Compare semantic versions in descending order (higher versions first).
+/// Handles versions like "3.1", "4.0", "3.0.1".
+fn compare_versions_desc(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse_version = |v: &str| -> Vec<u32> {
+        v.split('.')
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect()
+    };
+
+    let va = parse_version(a);
+    let vb = parse_version(b);
+
+    for (a_part, b_part) in va.iter().zip(vb.iter()) {
+        match b_part.cmp(a_part) {
+            std::cmp::Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+
+    vb.len().cmp(&va.len())
+}
+
+/// Sort enriched rows by family (asc), version (desc), size (desc), id (asc).
+fn sort_enriched_rows(rows: &mut Vec<(Vec<String>, ModelMetadata)>) {
+    rows.sort_by(|(row_a, meta_a), (row_b, meta_b)| {
+        meta_a.family.cmp(&meta_b.family)
+            .then_with(|| compare_versions_desc(&meta_a.version, &meta_b.version))
+            .then_with(|| meta_b.size.cmp(&meta_a.size))
+            .then_with(|| row_a[0].cmp(&row_b[0]))
+    });
+}
 
 pub struct ModelCommands;
 
@@ -51,22 +83,25 @@ impl ModelCommands {
     pub(crate) fn search_rows(query: &str) -> Vec<Vec<String>> {
         let q = query.to_lowercase();
         let models = MODEL_REGISTRY.entries();
-        let mut rows: Vec<Vec<String>> = models
+        let mut rows: Vec<(Vec<String>, ModelMetadata)> = models
             .iter()
             .filter(|(id, m)| {
                 id.to_lowercase().contains(&q)
                     || m.search_fields().iter().any(|f| f.to_lowercase().contains(&q))
             })
-            .map(|(id, m)| vec![
-                id.to_string(),
-                m.family.clone(),
-                m.format_size(),
-                m.context_length.to_string(),
-                m.model_type.to_string(),
-            ])
+            .map(|(id, m)| {
+                let row = vec![
+                    id.to_string(),
+                    m.family.clone(),
+                    m.format_size(),
+                    m.context_length.to_string(),
+                    m.model_type.to_string(),
+                ];
+                (row, m.clone())
+            })
             .collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
-        rows
+        sort_enriched_rows(&mut rows);
+        rows.into_iter().map(|(row, _)| row).collect()
     }
 
     pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
@@ -242,19 +277,22 @@ impl ModelCommands {
     /// Shared by the CLI command and the TUI.
     pub(crate) fn catalog_rows(filter_type: Option<&ModelType>) -> Vec<Vec<String>> {
         let models = MODEL_REGISTRY.entries();
-        let mut rows: Vec<Vec<String>> = models
+        let mut rows: Vec<(Vec<String>, ModelMetadata)> = models
             .iter()
             .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
-            .map(|(id, m)| vec![
-                id.to_string(),
-                m.family.clone(),
-                m.format_size(),
-                m.context_length.to_string(),
-                m.model_type.to_string(),
-            ])
+            .map(|(id, m)| {
+                let row = vec![
+                    id.to_string(),
+                    m.family.clone(),
+                    m.format_size(),
+                    m.context_length.to_string(),
+                    m.model_type.to_string(),
+                ];
+                (row, m.clone())
+            })
             .collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
-        rows
+        sort_enriched_rows(&mut rows);
+        rows.into_iter().map(|(row, _)| row).collect()
     }
 
     pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
@@ -275,7 +313,7 @@ impl ModelCommands {
     }
 
     pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
-        let mut rows: Vec<Vec<String>> = Vec::new();
+        let mut enriched: Vec<(Vec<String>, ModelMetadata)> = Vec::new();
 
         for (model_id, model_config) in &ctx.config.models {
             if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
@@ -284,17 +322,20 @@ impl ModelCommands {
                         continue;
                     }
                 }
-                rows.push(vec![
+                let row = vec![
                     model_id.clone(),
                     model_md.family.clone(),
                     model_md.format_size(),
                     model_md.context_length.to_string(),
                     model_md.model_type.to_string(),
                     model_config.provider_id.clone().unwrap_or_else(|| "None".to_string()),
-                ]);
+                ];
+                enriched.push((row, model_md.clone()));
             }
         }
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        sort_enriched_rows(&mut enriched);
+
+        let rows: Vec<Vec<String>> = enriched.into_iter().map(|(row, _)| row).collect();
 
         ctx.ui.table(
             &format!("Configured Models ({} models)", rows.len()),
@@ -516,6 +557,50 @@ mod tests {
             enabled: true,
         });
         ctx
+    }
+
+    // -- version comparison ---------------------------------------------------
+
+    #[test]
+    fn compare_versions_desc_simple() {
+        assert_eq!(compare_versions_desc("3.1", "3.0"), std::cmp::Ordering::Less);
+        assert_eq!(compare_versions_desc("3.0", "3.1"), std::cmp::Ordering::Greater);
+        assert_eq!(compare_versions_desc("3.1", "3.1"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_versions_desc_multi_part() {
+        assert_eq!(compare_versions_desc("3.1.1", "3.1.0"), std::cmp::Ordering::Less);
+        assert_eq!(compare_versions_desc("3.1", "3.1.0"), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn compare_versions_desc_major_difference() {
+        assert_eq!(compare_versions_desc("4.0", "3.1"), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn sort_model_rows_by_family_version_size() {
+        let rows = vec![
+            vec!["granite-3.0-8b-instruct".to_string(), "Granite 3.0".to_string(), "8B".to_string()],
+            vec!["granite-3.1-2b-instruct".to_string(), "Granite 3.1".to_string(), "2B".to_string()],
+            vec!["granite-3.1-8b-instruct".to_string(), "Granite 3.1".to_string(), "8B".to_string()],
+            vec!["granite-3.0-2b-instruct".to_string(), "Granite 3.0".to_string(), "2B".to_string()],
+        ];
+        let mut enriched: Vec<(Vec<String>, ModelMetadata)> = rows
+            .into_iter()
+            .filter_map(|row| {
+                MODEL_REGISTRY.get(&row[0]).map(|m| (row, m.clone()))
+            })
+            .collect();
+        sort_enriched_rows(&mut enriched);
+        let sorted: Vec<String> = enriched.into_iter().map(|(row, _)| row[0].clone()).collect();
+        assert_eq!(sorted, vec![
+            "granite-3.0-8b-instruct",
+            "granite-3.0-2b-instruct",
+            "granite-3.1-8b-instruct",
+            "granite-3.1-2b-instruct",
+        ]);
     }
 
     // -- catalog --------------------------------------------------------------

@@ -358,7 +358,7 @@ impl App {
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "TYPE", "ENDPOINT"])
+                let header = Row::new(vec!["ID", "ENDPOINT"])
                     .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                 let rows: Vec<Row> = entries.iter().enumerate().map(|(i, (id, p))| {
@@ -369,15 +369,13 @@ impl App {
                     };
                     Row::new(vec![
                         Cell::from(id.to_string()),
-                        Cell::from(p.provider_type.to_string()),
                         Cell::from(p.default_endpoint.clone()),
                     ]).style(style)
                 }).collect();
 
                 let table = Table::new(rows, [
                     Constraint::Percentage(30),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(50),
+                    Constraint::Percentage(70),
                 ])
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Providers "));
