@@ -33,6 +33,8 @@ generate_model_entry() {
     local size=$(echo "$model" | jq -r '.size')
     local context_length=$(echo "$model" | jq -r '.context_length')
     local model_type=$(echo "$model" | jq -r '.model_type')
+    local native_dtype=$(echo "$model" | jq -r '.native_dtype // "unknown"')
+    local architecture=$(echo "$model" | jq -c '.architecture')
     local variants=$(echo "$model" | jq -c '
         .variants + (
             if .ollama_info and (.ollama_info | length > 0) then
@@ -65,6 +67,21 @@ generate_model_entry() {
   context_length: ${context_length}
   model_type: "${model_type}"
   huggingface_repo: "${repo}"
+  native_dtype: "${native_dtype}"
+  architecture:
+EOF
+    echo "$architecture" | jq -r '
+        "    num_hidden_layers: \(.num_hidden_layers)",
+        "    hidden_size: \(.hidden_size)",
+        "    num_attention_heads: \(.num_attention_heads)",
+        "    num_key_value_heads: \(.num_key_value_heads)",
+        "    head_dim: \(.head_dim)",
+        "    layer_types:"'
+    echo "$architecture" | jq -r '.layer_types[] |
+        "      - kind: \(.kind)\n        count: \(.count)"
+        + (if .window then "\n        window: \(.window)" else "" end)
+        + (if .mamba then "\n        mamba: { d_conv: \(.mamba.d_conv), d_state: \(.mamba.d_state), d_inner: \(.mamba.d_inner), n_groups: \(.mamba.n_groups) }" else "" end)'
+    cat <<EOF
   supported_functions:
 EOF
     echo "$functions" | jq -r '.[] | "    - \(.)"'

@@ -60,6 +60,15 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str(&format!("    fn context_length(&self) -> u64 {{ {} }}\n", model.context_length));
     s.push_str(&format!("    fn model_type(&self) -> &crate::models::base::ModelType {{ &crate::models::base::ModelType::{} }}\n", model.model_type));
     s.push_str(&format!("    fn huggingface_repo(&self) -> &str {{ {:?} }}\n", model.huggingface_repo));
+    s.push_str(&format!("    fn native_dtype(&self) -> &str {{ {:?} }}\n", model.native_dtype));
+
+    // Architecture - use static slice (contains a Vec, so not const-constructible)
+    s.push_str("    fn architecture(&self) -> &crate::models::base::ModelArchitecture {\n");
+    s.push_str("        static ARCHITECTURE: std::sync::LazyLock<crate::models::base::ModelArchitecture> = std::sync::LazyLock::new(|| ");
+    s.push_str(&generate_architecture_literal(&model.architecture));
+    s.push_str(");\n");
+    s.push_str("        &ARCHITECTURE\n");
+    s.push_str("    }\n");
 
     // Variants - use static slice
     s.push_str("    fn variants(&self) -> &[crate::models::base::ModelVariant] {\n");
@@ -125,6 +134,10 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     s.push_str(&format!("            context_length: {},\n", model.context_length));
     s.push_str(&format!("            model_type: crate::models::base::ModelType::{},\n", model.model_type));
     s.push_str(&format!("            huggingface_repo: {:?}.to_string(),\n", model.huggingface_repo));
+    s.push_str(&format!("            native_dtype: {:?}.to_string(),\n", model.native_dtype));
+    s.push_str("            architecture: ");
+    s.push_str(&generate_architecture_literal(&model.architecture));
+    s.push_str(",\n");
 
     // Variants
     s.push_str("            variants: vec![\n");
@@ -161,6 +174,49 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
 
     s.push_str("        }\n");
     s
+}
+
+fn generate_architecture_literal(arch: &YamlArchitecture) -> String {
+    let mut s = String::new();
+    s.push_str("crate::models::base::ModelArchitecture {\n");
+    s.push_str(&format!("            num_hidden_layers: {},\n", arch.num_hidden_layers));
+    s.push_str(&format!("            hidden_size: {},\n", arch.hidden_size));
+    s.push_str(&format!("            num_attention_heads: {},\n", arch.num_attention_heads));
+    s.push_str(&format!("            num_key_value_heads: {},\n", arch.num_key_value_heads));
+    s.push_str(&format!("            head_dim: {},\n", arch.head_dim));
+    s.push_str("            layer_types: vec![\n");
+    for ltc in &arch.layer_types {
+        s.push_str("                crate::models::base::LayerTypeCount {\n");
+        s.push_str(&format!("                    kind: {},\n", generate_layer_kind_literal(ltc)));
+        s.push_str(&format!("                    count: {},\n", ltc.count));
+        s.push_str("                },\n");
+    }
+    s.push_str("            ],\n");
+    s.push_str("        }");
+    s
+}
+
+fn generate_layer_kind_literal(ltc: &YamlLayerTypeCount) -> String {
+    match ltc.kind.as_str() {
+        "full_attention" => "crate::models::base::LayerKind::FullAttention".to_string(),
+        "sliding_attention" => {
+            let window = ltc
+                .window
+                .unwrap_or_else(|| panic!("sliding_attention layer_type missing `window` field"));
+            format!("crate::models::base::LayerKind::SlidingAttention {{ window: {} }}", window)
+        }
+        "recurrent" => {
+            let mamba = ltc
+                .mamba
+                .as_ref()
+                .unwrap_or_else(|| panic!("recurrent layer_type missing `mamba` shape"));
+            format!(
+                "crate::models::base::LayerKind::Recurrent(crate::models::base::MambaShape {{ d_conv: {}, d_state: {}, d_inner: {}, n_groups: {} }})",
+                mamba.d_conv, mamba.d_state, mamba.d_inner, mamba.n_groups
+            )
+        }
+        other => panic!("Unknown layer_types kind: {:?}", other),
+    }
 }
 
 fn format_float(value: f64) -> String {
@@ -201,6 +257,8 @@ struct YamlModel {
     context_length: u64,
     model_type: String,
     huggingface_repo: String,
+    native_dtype: String,
+    architecture: YamlArchitecture,
     variants: Vec<YamlModelVariant>,
     description: Option<String>,
     tags: Vec<String>,
@@ -213,4 +271,30 @@ struct YamlModelVariant {
     precision: String,
     size_gb: f64,
     url: String,
+}
+
+#[derive(serde::Deserialize)]
+struct YamlArchitecture {
+    num_hidden_layers: u64,
+    hidden_size: u64,
+    num_attention_heads: u64,
+    num_key_value_heads: u64,
+    head_dim: u64,
+    layer_types: Vec<YamlLayerTypeCount>,
+}
+
+#[derive(serde::Deserialize)]
+struct YamlLayerTypeCount {
+    kind: String,
+    count: u64,
+    window: Option<u64>,
+    mamba: Option<YamlMambaShape>,
+}
+
+#[derive(serde::Deserialize)]
+struct YamlMambaShape {
+    d_conv: u64,
+    d_state: u64,
+    d_inner: u64,
+    n_groups: u64,
 }

@@ -31,7 +31,7 @@ fi
 
 # Check for required fields
 echo "Checking required fields..."
-required_fields=("id" "family" "version" "size" "context_length" "model_type" "huggingface_repo")
+required_fields=("id" "family" "version" "size" "context_length" "model_type" "huggingface_repo" "native_dtype" "architecture")
 
 model_count=$(grep -c "^- id:" "$YAML_FILE" || echo "0")
 
@@ -50,6 +50,55 @@ if [ $field_errors -eq 0 ]; then
     echo "  ✓ All required fields present"
 else
     ((errors++))
+fi
+
+# Check architecture blocks (layer_types counts sum correctly, shape fields present)
+echo "Checking architecture blocks..."
+if command -v python3 &> /dev/null; then
+    arch_check_output=$(python3 - "$YAML_FILE" <<'PYEOF'
+import sys
+import yaml
+
+with open(sys.argv[1]) as f:
+    models = yaml.safe_load(f)
+
+for m in models:
+    mid = m.get("id", "<unknown>")
+    if not m.get("native_dtype"):
+        print(f"{mid}: missing native_dtype")
+
+    arch = m.get("architecture")
+    if not arch:
+        print(f"{mid}: missing architecture block")
+        continue
+
+    layer_types = arch.get("layer_types") or []
+    if not layer_types:
+        print(f"{mid}: architecture.layer_types is empty")
+
+    total = sum(lt.get("count", 0) for lt in layer_types)
+    expected = arch.get("num_hidden_layers", 0)
+    if total != expected:
+        print(f"{mid}: layer_types counts sum to {total}, expected num_hidden_layers={expected}")
+
+    for lt in layer_types:
+        kind = lt.get("kind")
+        if kind == "sliding_attention" and not lt.get("window"):
+            print(f"{mid}: sliding_attention layer_type missing window")
+        if kind == "recurrent" and not lt.get("mamba"):
+            print(f"{mid}: recurrent layer_type missing mamba shape")
+PYEOF
+) || true
+
+    if [ -n "$arch_check_output" ]; then
+        echo "$arch_check_output" | sed 's/^/ERROR: /'
+        ((errors++))
+    else
+        echo "  ✓ Architecture blocks valid"
+    fi
+else
+    echo "WARNING: python3 not available, skipping deep architecture validation"
+    ((warnings++))
 fi
 
 # Check for review flags
