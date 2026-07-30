@@ -19,6 +19,9 @@ pub use base::{
     ModelType, ModelVariant,
 };
 
+pub(crate) mod context_fit;
+pub use context_fit::ContextFit;
+
 /*-- tests -------------------------------------------------------------------*/
 
 #[cfg(test)]

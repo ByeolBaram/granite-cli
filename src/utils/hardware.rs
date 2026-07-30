@@ -48,26 +48,12 @@ impl HardwareProfile {
         (None, None)
     }
 
-    pub fn can_run_model(&self, model_size_gb: f64) -> bool {
+    /// Memory budget available for model weights + KV cache, after backing
+    /// off the safety headroom (1.5x for VRAM, 2.0x for system RAM).
+    pub fn usable_memory_gb(&self) -> f64 {
         match self.vram_gb {
-            Some(vram) => vram >= model_size_gb * 1.5,
-            None => self.ram_gb >= model_size_gb * 2.0,
-        }
-    }
-
-    pub fn recommend_precision(&self) -> &str {
-        if let Some(vram) = self.vram_gb {
-            if vram >= 24.0 {
-                return "BF16";
-            }
-            if vram >= 12.0 {
-                return "Q8_0";
-            }
-        }
-        if self.ram_gb >= 16.0 {
-            "Q4_K_M"
-        } else {
-            "Q3_K_M"
+            Some(vram) => vram / 1.5,
+            None => self.ram_gb / 2.0,
         }
     }
 }
