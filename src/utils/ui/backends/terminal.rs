@@ -168,6 +168,46 @@ impl Ui for TerminalOutput {
             msg
         );
     }
+
+    fn ok(&self, msg: &str) -> String {
+        if !self.is_tty {
+            return PlainOutput.ok(msg);
+        }
+        format!("{}{}{}", SetForegroundColor(Color::Green), msg, ResetColor)
+    }
+
+    fn warn_mark(&self, msg: &str) -> String {
+        if !self.is_tty {
+            return PlainOutput.warn_mark(msg);
+        }
+        format!(
+            "{}{}{}{}",
+            SetForegroundColor(Color::Yellow),
+            SetAttribute(Attribute::Bold),
+            msg,
+            ResetColor
+        )
+    }
+
+    fn error_mark(&self, msg: &str) -> String {
+        if !self.is_tty {
+            return PlainOutput.error_mark(msg);
+        }
+        format!(
+            "{}{}{}{}",
+            SetForegroundColor(Color::Red),
+            SetAttribute(Attribute::Bold),
+            msg,
+            ResetColor
+        )
+    }
+
+    fn detail_mark(&self, msg: &str) -> String {
+        if !self.is_tty {
+            return PlainOutput.detail_mark(msg);
+        }
+        format!("{}{}{}", SetForegroundColor(Color::DarkGrey), msg, ResetColor)
+    }
 }
 
 impl HasUiMetadata for TerminalOutput {

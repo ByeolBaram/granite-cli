@@ -79,6 +79,13 @@ macro_rules! output_contract_tests {
             $make.warn("");
             $make.error("");
         }
+        #[test]
+        fn contract_mark_does_not_panic() {
+            $make.ok("");
+            $make.warn_mark("");
+            $make.error_mark("");
+            $make.detail_mark("");
+        }
     };
 }
 
@@ -111,6 +118,26 @@ pub trait Ui: ConfigConstructable + Send + Sync + Any {
 
     /// Error message. Implementations should route this to stderr.
     fn error(&self, msg: &str);
+
+    /// Apply severity-based markings (e.g. green) to `msg`.
+    fn ok(&self, msg: &str) -> String {
+        msg.to_string()
+    }
+
+    /// Apply severity-based markings (e.g. yellow) to `msg`.
+    fn warn_mark(&self, msg: &str) -> String {
+        msg.to_string()
+    }
+
+    /// Apply severity-based markings (e.g. red) to `msg`.
+    fn error_mark(&self, msg: &str) -> String {
+        msg.to_string()
+    }
+
+    /// Apply severity-based markings (e.g. gray) to `msg`.
+    fn detail_mark(&self, msg: &str) -> String {
+        msg.to_string()
+    }
 
     /// Ask the user to pick one of `items`, returning the chosen index.
     fn select(&self, prompt: &str, items: &[String], default: usize) -> anyhow::Result<usize> {
@@ -181,6 +208,10 @@ pub(crate) mod tests {
         pub infos: RefCell<Vec<String>>,
         pub warns: RefCell<Vec<String>>,
         pub errors: RefCell<Vec<String>>,
+        pub oks: RefCell<Vec<String>>,
+        pub warn_marks: RefCell<Vec<String>>,
+        pub error_marks: RefCell<Vec<String>>,
+        pub detail_marks: RefCell<Vec<String>>,
 
         /// (prompt, items, default) for each select() call
         pub select_prompts: RefCell<Vec<(String, Vec<String>, usize)>>,
@@ -239,6 +270,26 @@ pub(crate) mod tests {
 
         fn error(&self, msg: &str) {
             self.errors.borrow_mut().push(msg.to_string());
+        }
+
+        fn ok(&self, msg: &str) -> String {
+            self.oks.borrow_mut().push(msg.to_string());
+            msg.to_string()
+        }
+
+        fn warn_mark(&self, msg: &str) -> String {
+            self.warn_marks.borrow_mut().push(msg.to_string());
+            msg.to_string()
+        }
+
+        fn error_mark(&self, msg: &str) -> String {
+            self.error_marks.borrow_mut().push(msg.to_string());
+            msg.to_string()
+        }
+
+        fn detail_mark(&self, msg: &str) -> String {
+            self.detail_marks.borrow_mut().push(msg.to_string());
+            msg.to_string()
         }
 
         fn select(&self, prompt: &str, items: &[String], default: usize) -> anyhow::Result<usize> {
@@ -315,6 +366,10 @@ pub(crate) mod tests {
         assert!(out.infos.borrow().is_empty());
         assert!(out.warns.borrow().is_empty());
         assert!(out.errors.borrow().is_empty());
+        assert!(out.oks.borrow().is_empty());
+        assert!(out.warn_marks.borrow().is_empty());
+        assert!(out.error_marks.borrow().is_empty());
+        assert!(out.detail_marks.borrow().is_empty());
     }
 
     #[test]
@@ -365,6 +420,19 @@ pub(crate) mod tests {
         assert_eq!(*out.infos.borrow(), vec!["hello"]);
         assert_eq!(*out.warns.borrow(), vec!["careful"]);
         assert_eq!(*out.errors.borrow(), vec!["boom"]);
+    }
+
+    #[test]
+    fn capture_records_mark_methods_to_separate_vecs() {
+        let out = make();
+        out.ok("okmsg");
+        out.warn_mark("warnmsg");
+        out.error_mark("errormsg");
+        out.detail_mark("detailmsg");
+        assert_eq!(*out.oks.borrow(), vec!["okmsg"]);
+        assert_eq!(*out.warn_marks.borrow(), vec!["warnmsg"]);
+        assert_eq!(*out.error_marks.borrow(), vec!["errormsg"]);
+        assert_eq!(*out.detail_marks.borrow(), vec!["detailmsg"]);
     }
 
     #[test]
