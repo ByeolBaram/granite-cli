@@ -209,7 +209,7 @@ impl App {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
                 let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                ModelCommands::recommend_rows(None, Some(&providers)).into_iter().map(|r| r[0].clone()).collect()
+                ModelCommands::recommend_rows(None, Some(&providers), &instances, false).into_iter().map(|r| r[0].clone()).collect()
             }
             Section::Hardware     => vec![],
         };
@@ -243,7 +243,7 @@ impl App {
                     let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                     let instances = source.instances();
                     let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                    ModelCommands::recommend_rows(None, Some(&providers)).len()
+                    ModelCommands::recommend_rows(None, Some(&providers), &instances, false).len()
                 }
                 Section::Hardware     => 0,
             };
@@ -363,9 +363,10 @@ impl App {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
                 let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                let all_rows = ModelCommands::recommend_rows(None, Some(&providers));
+                let all_rows = ModelCommands::recommend_rows(None, Some(&providers), &instances, false);
 
-                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "VARIANT", "TYPE", "FIT"])
+                // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
+                let header = Row::new(vec!["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
                     .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                 let rows: Vec<Row> = all_rows.iter().enumerate().map(|(i, r)| {
@@ -387,12 +388,12 @@ impl App {
                 }).collect();
 
                 let table = Table::new(rows, [
-                    Constraint::Percentage(27),
-                    Constraint::Percentage(18),
-                    Constraint::Percentage(8),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(12),
+                    Constraint::Percentage(22),
                     Constraint::Percentage(10),
+                    Constraint::Percentage(25),
+                    Constraint::Percentage(10),
+                    Constraint::Percentage(13),
+                    Constraint::Percentage(20),
                 ])
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Recommend "));
@@ -787,7 +788,7 @@ mod tests {
 
     #[test]
     fn recommend_rows_all_have_six_columns() {
-        for row in ModelCommands::recommend_rows(None, None) {
+        for row in ModelCommands::recommend_rows(None, None, &[], false) {
             assert_eq!(row.len(), 6, "each recommend row must have 6 columns");
         }
     }

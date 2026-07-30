@@ -138,6 +138,10 @@ enum ModelSubcommands {
         /// model that fits the hardware regardless of configured providers
         #[arg(short = 'p', long = "providers", value_delimiter = ',')]
         providers: Vec<String>,
+
+        /// Show all columns, including family and full context length
+        #[arg(long)]
+        wide: bool,
     },
 
     /// Show detailed model information
@@ -318,7 +322,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             ModelCommands::list(ctx, filter)
         }
         ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query),
-        ModelSubcommands::Recommend { r#type, providers } => {
+        ModelSubcommands::Recommend { r#type, providers, wide } => {
             let filter = match r#type.as_deref() {
                 Some("text") => Some(models::ModelType::Text),
                 Some("vision") => Some(models::ModelType::Vision),
@@ -329,7 +333,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 }
                 None => None,
             };
-            ModelCommands::recommend(ctx, filter, &providers)
+            ModelCommands::recommend(ctx, filter, &providers, wide)
         }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,

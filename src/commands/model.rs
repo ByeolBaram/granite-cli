@@ -83,15 +83,21 @@ impl ModelCommands {
         Ok(())
     }
 
-    /// Rows for the recommend table: [id, family, size, variant, type, fit].
+    /// Rows for the recommend table: [id, size, variant, type, fit, providers]
+    /// (or, when `wide`, [id, family, size, context, variant, type, fit, providers]).
     /// Shared by the CLI command and the TUI.
     ///
-    /// `providers`, when `Some`, restricts recommendations to variants that
-    /// at least one provider in the slice can run (`None` disables the
-    /// check entirely, e.g. for `--providers all`).
+    /// `filter_providers`, when `Some`, restricts recommendations to variants
+    /// that at least one provider in the slice can run (`None` disables the
+    /// check entirely, e.g. for `--providers all`). `display_providers`
+    /// always populates the PROVIDERS column with the ids of configured
+    /// providers that can run the chosen variant, independent of any
+    /// `--providers` narrowing applied via `filter_providers`.
     pub(crate) fn recommend_rows(
         filter_type: Option<&ModelType>,
-        providers: Option<&[&dyn Provider]>,
+        filter_providers: Option<&[&dyn Provider]>,
+        display_providers: &[(String, &dyn Provider)],
+        wide: bool,
     ) -> Vec<Vec<String>> {
         let profile = detect_hardware();
         let models = MODEL_REGISTRY.entries();
@@ -113,7 +119,7 @@ impl ModelCommands {
                         (fit, v)
                     })
                     .filter(|(fit, _)| *fit != ContextFit::None)
-                    .filter(|(_, v)| providers.map_or(true, |ps| {
+                    .filter(|(_, v)| filter_providers.map_or(true, |ps| {
                         ps.iter().any(|p| p.can_run_model(&v.format, &v.precision))
                     }))
                     .max_by(|(fit_a, a), (fit_b, b)| {
@@ -121,14 +127,36 @@ impl ModelCommands {
                     })?;
                 let (fit, variant) = best;
                 let variant_label = format!("{} / {} ({:.1} GB)", variant.format, variant.precision, variant.size_gb);
-                Some((variant.size_gb, vec![
-                    id.to_string(),
-                    m.family.clone(),
-                    m.format_size(),
-                    variant_label,
-                    m.model_type.to_string(),
-                    fit.to_string(),
-                ]))
+                let providers_str = {
+                    let matching: Vec<&str> = display_providers.iter()
+                        .filter(|(_, p)| p.can_run_model(&variant.format, &variant.precision))
+                        .map(|(pid, _)| pid.as_str())
+                        .collect();
+                    if matching.is_empty() { "None".to_string() } else { matching.join(", ") }
+                };
+
+                let row = if wide {
+                    vec![
+                        id.to_string(),
+                        m.family.clone(),
+                        m.format_size(),
+                        m.context_length.to_string(),
+                        variant_label,
+                        m.model_type.to_string(),
+                        fit.to_string(),
+                        providers_str,
+                    ]
+                } else {
+                    vec![
+                        id.to_string(),
+                        m.format_size(),
+                        variant_label,
+                        m.model_type.to_string(),
+                        fit.to_string(),
+                        providers_str,
+                    ]
+                };
+                Some((variant.size_gb, row))
             })
             .collect();
 
@@ -143,7 +171,12 @@ impl ModelCommands {
     ///   check entirely (`None`).
     /// - otherwise: restrict to the named provider ids, erroring if any is
     ///   not a configured+enabled provider.
-    pub fn recommend(ctx: &crate::AppContext, filter_type: Option<ModelType>, providers_arg: &[String]) -> Result<()> {
+    pub fn recommend(
+        ctx: &crate::AppContext,
+        filter_type: Option<ModelType>,
+        providers_arg: &[String],
+        wide: bool,
+    ) -> Result<()> {
         let source = ProviderSource::from_config(&ctx.config);
         let instances = source.instances();
 
@@ -173,7 +206,7 @@ impl ModelCommands {
             Some(instances.iter().filter(|(iid, _)| providers_arg.contains(iid)).map(|(_, p)| *p).collect())
         };
 
-        let table_rows = Self::recommend_rows(filter_type.as_ref(), providers.as_deref());
+        let table_rows = Self::recommend_rows(filter_type.as_ref(), providers.as_deref(), &instances, wide);
         if table_rows.is_empty() {
             let msg = if matches!(&providers, Some(list) if list.is_empty()) {
                 "No models fit: no providers are configured. Use --providers all to ignore \
@@ -184,9 +217,14 @@ impl ModelCommands {
             ctx.ui.info(msg);
             return Ok(());
         }
+        let headers: &[&str] = if wide {
+            &["ID", "FAMILY", "SIZE", "CONTEXT", "VARIANT", "TYPE", "FIT", "PROVIDERS"]
+        } else {
+            &["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"]
+        };
         ctx.ui.table(
             &format!("Recommended Models for this hardware ({} models)", table_rows.len()),
-            &["ID", "FAMILY", "SIZE", "VARIANT", "TYPE", "FIT"],
+            headers,
             &table_rows,
         );
         Ok(())
@@ -706,7 +744,7 @@ mod tests {
     #[test]
     fn recommend_returns_table_or_info() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, None, &all_providers()).unwrap();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
         let has_table = !tables!(ctx).is_empty();
         let has_info  = !infos!(ctx).is_empty();
         assert!(has_table ^ has_info, "expected exactly a table or an info message");
@@ -715,7 +753,7 @@ mod tests {
     #[test]
     fn recommend_all_rows_have_six_columns() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, None, &all_providers()).unwrap();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
         for (_, _, rows) in tables!(ctx).iter() {
             for row in rows {
                 assert_eq!(row.len(), 6, "each row must have 6 columns");
@@ -724,15 +762,26 @@ mod tests {
     }
 
     #[test]
+    fn recommend_wide_rows_have_eight_columns() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), true).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row.len(), 8, "each wide row must have 8 columns");
+            }
+        }
+    }
+
+    #[test]
     fn recommend_fit_column_is_full_or_partial() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, None, &all_providers()).unwrap();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
         for (_, _, rows) in tables!(ctx).iter() {
             for row in rows {
                 assert!(
-                    row[5] == "Full" || row[5].starts_with("Partial"),
+                    row[4] == "Full" || row[4].starts_with("Partial"),
                     "fit column must be Full or Partial, got {}",
-                    row[5]
+                    row[4]
                 );
             }
         }
@@ -741,10 +790,10 @@ mod tests {
     #[test]
     fn recommend_type_filter_limits_results() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, Some(ModelType::Text), &all_providers()).unwrap();
+        ModelCommands::recommend(&ctx, Some(ModelType::Text), &all_providers(), false).unwrap();
         for (_, _, rows) in tables!(ctx).iter() {
             for row in rows {
-                assert_eq!(row[4], "Text", "filtered rows must all be Text type");
+                assert_eq!(row[3], "Text", "filtered rows must all be Text type");
             }
         }
     }
@@ -752,11 +801,11 @@ mod tests {
     #[test]
     fn recommend_rows_sorted_descending_by_variant_size() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, None, &all_providers()).unwrap();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
         for (_, _, rows) in tables!(ctx).iter() {
             // Extract the GB value from the VARIANT column "format / precision (N.N GB)"
             let sizes: Vec<f64> = rows.iter().map(|r| {
-                let v = &r[3];
+                let v = &r[2];
                 let start = v.rfind('(').unwrap() + 1;
                 let end   = v.rfind(" GB)").unwrap();
                 v[start..end].parse::<f64>().expect("parseable GB value")
@@ -770,7 +819,7 @@ mod tests {
     #[test]
     fn recommend_default_with_no_configured_providers_shows_no_providers_info() {
         let ctx = empty_ctx();
-        ModelCommands::recommend(&ctx, None, &[]).unwrap();
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
         assert!(tables!(ctx).is_empty());
         let infos = infos!(ctx);
         assert!(infos.iter().any(|m| m.contains("no providers are configured")));
@@ -781,20 +830,20 @@ mod tests {
         let ctx = ctx_with_config(config_with_provider(
             "openai", "openai-compatible", serde_json::json!({ "base_url": "http://localhost:8080" }),
         ));
-        ModelCommands::recommend(&ctx, None, &[]).unwrap();
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
         assert!(!tables!(ctx).is_empty(), "a permissive configured provider should surface recommendations");
     }
 
     #[test]
     fn recommend_default_with_gguf_only_provider_excludes_non_gguf_models() {
         let with_all = ctx_with_config(Config::default());
-        ModelCommands::recommend(&with_all, None, &all_providers()).unwrap();
+        ModelCommands::recommend(&with_all, None, &all_providers(), false).unwrap();
         let all_count: usize = tables!(with_all).iter().map(|(_, _, rows)| rows.len()).sum();
 
         let gguf_only = ctx_with_config(config_with_provider(
             "llama-cpp", "llama-cpp", serde_json::json!({}),
         ));
-        ModelCommands::recommend(&gguf_only, None, &[]).unwrap();
+        ModelCommands::recommend(&gguf_only, None, &[], false).unwrap();
         let gguf_rows: Vec<Vec<String>> = tables!(gguf_only).iter()
             .flat_map(|(_, _, rows)| rows.clone()).collect();
 
@@ -803,7 +852,7 @@ mod tests {
             "gguf-only provider should not recommend more models than the unfiltered set",
         );
         for row in &gguf_rows {
-            assert!(row[3].to_lowercase().starts_with("gguf"), "variant column must be gguf, got {}", row[3]);
+            assert!(row[2].to_lowercase().starts_with("gguf"), "variant column must be gguf, got {}", row[2]);
         }
     }
 
@@ -818,24 +867,45 @@ mod tests {
         });
         let ctx = ctx_with_config(config);
 
-        ModelCommands::recommend(&ctx, None, &["llama-cpp".to_string()]).unwrap();
+        ModelCommands::recommend(&ctx, None, &["llama-cpp".to_string()], false).unwrap();
         let narrowed_rows: Vec<Vec<String>> = tables!(ctx).iter().flat_map(|(_, _, rows)| rows.clone()).collect();
         for row in &narrowed_rows {
-            assert!(row[3].to_lowercase().starts_with("gguf"), "narrowed to llama-cpp should only show gguf, got {}", row[3]);
+            assert!(row[2].to_lowercase().starts_with("gguf"), "narrowed to llama-cpp should only show gguf, got {}", row[2]);
         }
     }
 
     #[test]
     fn recommend_unknown_provider_id_errors() {
         let ctx = empty_ctx();
-        let result = ModelCommands::recommend(&ctx, None, &["does-not-exist".to_string()]);
+        let result = ModelCommands::recommend(&ctx, None, &["does-not-exist".to_string()], false);
         assert!(result.is_err());
     }
 
     #[test]
     fn recommend_all_combined_with_named_provider_errors() {
         let ctx = empty_ctx();
-        let result = ModelCommands::recommend(&ctx, None, &["all".to_string(), "llama-cpp".to_string()]);
+        let result = ModelCommands::recommend(&ctx, None, &["all".to_string(), "llama-cpp".to_string()], false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn recommend_providers_column_lists_matching_configured_providers() {
+        let ctx = ctx_with_config(config_with_provider(
+            "llama-cpp", "llama-cpp", serde_json::json!({}),
+        ));
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row[5], "llama-cpp", "providers column should name the matching configured provider, got {}", row[5]);
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_providers_column_is_none_with_no_display_providers() {
+        let rows = ModelCommands::recommend_rows(None, None, &[], false);
+        for row in &rows {
+            assert_eq!(row[5], "None", "with no display providers, PROVIDERS column must be None, got {}", row[5]);
+        }
     }
 }
