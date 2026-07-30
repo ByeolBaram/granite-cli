@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::commands::{HardwareCommands, ModelCommands};
+use crate::dependency::Configured;
 use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
 use crate::utils::ui::tui::{restore_terminal, setup_terminal};
@@ -204,7 +205,12 @@ impl App {
             Section::Models       => MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
             Section::Providers    => PROVIDER_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
             Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Recommend    => ModelCommands::recommend_rows(None).into_iter().map(|r| r[0].clone()).collect(),
+            Section::Recommend    => {
+                let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
+                let instances = source.instances();
+                let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
+                ModelCommands::recommend_rows(None, Some(&providers)).into_iter().map(|r| r[0].clone()).collect()
+            }
             Section::Hardware     => vec![],
         };
         ids.sort();
@@ -233,7 +239,12 @@ impl App {
                 Section::Models       => MODEL_REGISTRY.entries().len(),
                 Section::Providers    => PROVIDER_REGISTRY.entries().len(),
                 Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().len(),
-                Section::Recommend    => ModelCommands::recommend_rows(None).len(),
+                Section::Recommend    => {
+                    let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
+                    let instances = source.instances();
+                    let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
+                    ModelCommands::recommend_rows(None, Some(&providers)).len()
+                }
                 Section::Hardware     => 0,
             };
             let style = if *s == self.section {
@@ -349,7 +360,10 @@ impl App {
                 frame.render_widget(text, table_area);
             }
             Section::Recommend => {
-                let all_rows = ModelCommands::recommend_rows(None);
+                let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
+                let instances = source.instances();
+                let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
+                let all_rows = ModelCommands::recommend_rows(None, Some(&providers));
 
                 let header = Row::new(vec!["ID", "FAMILY", "SIZE", "VARIANT", "TYPE", "FIT"])
                     .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
@@ -773,7 +787,7 @@ mod tests {
 
     #[test]
     fn recommend_rows_all_have_six_columns() {
-        for row in ModelCommands::recommend_rows(None) {
+        for row in ModelCommands::recommend_rows(None, None) {
             assert_eq!(row.len(), 6, "each recommend row must have 6 columns");
         }
     }
