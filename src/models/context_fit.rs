@@ -6,11 +6,13 @@ use crate::utils::hardware::HardwareProfile;
 
 /// Whether a model variant fits on a given hardware profile: at its full
 /// configured context length, at some reduced (but still useful) context
-/// length, or not at all.
+/// length, or not at all. `Partial` carries the max context length that
+/// fits, floored to the nearest power of two (the estimate is approximate,
+/// so a round number avoids implying false precision).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextFit {
     Full,
-    Partial,
+    Partial(u64),
     None,
 }
 
@@ -18,10 +20,27 @@ impl std::fmt::Display for ContextFit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ContextFit::Full => write!(f, "Full"),
-            ContextFit::Partial => write!(f, "Partial"),
+            ContextFit::Partial(max_context) => write!(f, "Partial ({})", format_token_count(*max_context)),
             ContextFit::None => write!(f, "None"),
         }
     }
+}
+
+/// Human-readable token count using binary K/M suffixes. Callers only ever
+/// pass powers of two (post-`floor_pow2`), so division is always exact.
+fn format_token_count(tokens: u64) -> String {
+    if tokens >= 1024 * 1024 {
+        format!("{}M", tokens / (1024 * 1024))
+    } else if tokens >= 1024 {
+        format!("{}K", tokens / 1024)
+    } else {
+        tokens.to_string()
+    }
+}
+
+/// Largest power of two `<= n` (with `n` treated as at least 1).
+fn floor_pow2(n: u64) -> u64 {
+    1u64 << (63 - n.max(1).leading_zeros())
 }
 
 /*-- estimation ----------------------------------------------------------------*/
@@ -67,7 +86,7 @@ pub(crate) fn estimate(
         .min(context_length);
 
     if max_context_tokens >= min_useful_context {
-        ContextFit::Partial
+        ContextFit::Partial(floor_pow2(max_context_tokens))
     } else {
         ContextFit::None
     }
@@ -339,7 +358,29 @@ mod tests {
         // not the full 131072-token context.
         let hardware = hardware_with_vram(22.5);
         let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
-        assert_eq!(fit, ContextFit::Partial);
+        assert!(matches!(fit, ContextFit::Partial(_)));
+    }
+
+    #[test]
+    fn partial_fit_carries_max_context_as_power_of_two() {
+        let hardware = hardware_with_vram(22.5);
+        let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        match fit {
+            ContextFit::Partial(max_context) => {
+                assert!(max_context.is_power_of_two());
+                assert!(max_context <= 131_072);
+            }
+            other => panic!("expected Partial, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn floor_pow2_rounds_down_to_nearest_power_of_two() {
+        assert_eq!(floor_pow2(17_249), 16_384);
+        assert_eq!(floor_pow2(1), 1);
+        assert_eq!(floor_pow2(2), 2);
+        assert_eq!(floor_pow2(4096), 4096);
+        assert_eq!(floor_pow2(4097), 4096);
     }
 
     #[test]

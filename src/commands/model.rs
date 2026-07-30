@@ -95,7 +95,7 @@ impl ModelCommands {
             .filter_map(|(id, m)| {
                 let fit_rank = |fit: &ContextFit| match fit {
                     ContextFit::Full => 1,
-                    ContextFit::Partial => 0,
+                    ContextFit::Partial(_) => 0,
                     ContextFit::None => -1,
                 };
                 let best = m.variants.iter()
@@ -657,7 +657,7 @@ mod tests {
         for (_, _, rows) in tables!(ctx).iter() {
             for row in rows {
                 assert!(
-                    row[5] == "Full" || row[5] == "Partial",
+                    row[5] == "Full" || row[5].starts_with("Partial"),
                     "fit column must be Full or Partial, got {}",
                     row[5]
                 );
