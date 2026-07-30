@@ -58,6 +58,49 @@ impl std::fmt::Display for ModelFunction {
     }
 }
 
+/*-- Architecture Types -------------------------------------------------------*/
+
+/// The per-layer memory-shape category a transformer layer falls into. Each
+/// variant carries whatever shape data its calculation needs; models hold
+/// counts per kind rather than one entry per layer, since no known
+/// architecture mixes different shapes within the same kind.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LayerKind {
+    FullAttention,
+    SlidingAttention { window: u64 },
+    Recurrent(MambaShape),
+}
+
+/// Shape parameters for a Mamba/SSM recurrent layer's fixed-size state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MambaShape {
+    pub d_conv: u64,
+    pub d_state: u64,
+    pub d_inner: u64,
+    pub n_groups: u64,
+}
+
+/// A count of layers sharing one `LayerKind`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerTypeCount {
+    pub kind: LayerKind,
+    pub count: u64,
+}
+
+/// The architectural shape of a model, as derived from its config.json.
+/// Sized purely for KV-cache/recurrent-state memory estimation -- MoE
+/// routing fields are intentionally not represented here, since they affect
+/// compute, not memory footprint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelArchitecture {
+    pub num_hidden_layers: u64,
+    pub hidden_size: u64,
+    pub num_attention_heads: u64,
+    pub num_key_value_heads: u64,
+    pub head_dim: u64,
+    pub layer_types: Vec<LayerTypeCount>,
+}
+
 /*-- Model Trait -------------------------------------------------------------*/
 
 /// Core trait for model implementations.
@@ -81,6 +124,15 @@ pub trait Model: ConfigConstructable {
 
     /// Get the HuggingFace repository
     fn huggingface_repo(&self) -> &str;
+
+    /// Get the model's native (training/checkpoint) numerical dtype, e.g.
+    /// "bfloat16". Used only for KV-cache precision heuristics, never for
+    /// weight-size estimation.
+    fn native_dtype(&self) -> &str;
+
+    /// Get the model's architectural shape (layer counts per `LayerKind`,
+    /// head/hidden dims), used for context-fit memory estimation.
+    fn architecture(&self) -> &ModelArchitecture;
 
     /// Get available variants
     fn variants(&self) -> &[ModelVariant];
@@ -107,6 +159,8 @@ pub struct ModelMetadata {
     pub context_length: u64,
     pub model_type: ModelType,
     pub huggingface_repo: String,
+    pub native_dtype: String,
+    pub architecture: ModelArchitecture,
     pub variants: Vec<ModelVariant>,
     pub description: Option<String>,
     pub tags: Vec<String>,
@@ -190,6 +244,17 @@ define_factory!(Model, ModelMetadata, ModelFactory);
 mod format_size_tests {
     use super::*;
 
+    fn test_architecture() -> ModelArchitecture {
+        ModelArchitecture {
+            num_hidden_layers: 32,
+            hidden_size: 4096,
+            num_attention_heads: 32,
+            num_key_value_heads: 8,
+            head_dim: 128,
+            layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 32 }],
+        }
+    }
+
     fn metadata_with_size(size: u64) -> ModelMetadata {
         ModelMetadata {
             family: "Test".to_string(),
@@ -198,6 +263,8 @@ mod format_size_tests {
             context_length: 4096,
             model_type: ModelType::Text,
             huggingface_repo: "test/test".to_string(),
+            native_dtype: "bfloat16".to_string(),
+            architecture: test_architecture(),
             variants: vec![],
             description: None,
             tags: vec![],
@@ -239,6 +306,15 @@ mod searchable_tests {
             context_length: 4096,
             model_type: ModelType::Text,
             huggingface_repo: "ibm-granite/test".to_string(),
+            native_dtype: "bfloat16".to_string(),
+            architecture: ModelArchitecture {
+                num_hidden_layers: 32,
+                hidden_size: 4096,
+                num_attention_heads: 32,
+                num_key_value_heads: 8,
+                head_dim: 128,
+                layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 32 }],
+            },
             variants: vec![],
             description: description.map(String::from),
             tags: tags.into_iter().map(String::from).collect(),

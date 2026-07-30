@@ -239,6 +239,22 @@ mod tests {
         fn context_length(&self) -> u64 { 4096 }
         fn model_type(&self) -> &ModelType { &ModelType::Text }
         fn huggingface_repo(&self) -> &str { "test/repo" }
+        fn native_dtype(&self) -> &str { "bfloat16" }
+        fn architecture(&self) -> &crate::models::ModelArchitecture {
+            static ARCHITECTURE: std::sync::LazyLock<crate::models::ModelArchitecture> =
+                std::sync::LazyLock::new(|| crate::models::ModelArchitecture {
+                    num_hidden_layers: 1,
+                    hidden_size: 1,
+                    num_attention_heads: 1,
+                    num_key_value_heads: 1,
+                    head_dim: 1,
+                    layer_types: vec![crate::models::LayerTypeCount {
+                        kind: crate::models::LayerKind::FullAttention,
+                        count: 1,
+                    }],
+                });
+            &ARCHITECTURE
+        }
         fn variants(&self) -> &[ModelVariant] { &[] }
         fn description(&self) -> Option<&str> { None }
         fn tags(&self) -> &[String] { &[] }
