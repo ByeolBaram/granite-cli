@@ -40,12 +40,12 @@ impl Ui for TerminalOutput {
 
         let col_count = headers.len();
 
-        // 1. Calculate natural column widths
-        let mut natural_widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
+        // 1. Calculate natural column widths (visible characters only)
+        let mut natural_widths: Vec<usize> = headers.iter().map(|h| visible_len(h)).collect();
         for row in rows {
             for (i, cell) in row.iter().enumerate() {
                 if i < col_count {
-                    natural_widths[i] = natural_widths[i].max(cell.len());
+                    natural_widths[i] = natural_widths[i].max(visible_len(cell));
                 }
             }
         }
@@ -222,6 +222,98 @@ impl HasUiMetadata for TerminalOutput {
 
 /*-- private --*/
 
+/// Count visible characters in a string, skipping ANSI escape sequences.
+fn visible_len(s: &str) -> usize {
+    let mut count = 0;
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b {
+            // Skip the entire escape sequence: ESC + introducer (e.g. '[') + args + final byte
+            i += 1; // skip ESC
+            if i < bytes.len() {
+                i += 1; // skip introducer
+            }
+            while i < bytes.len() {
+                let b = bytes[i];
+                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+        } else {
+            count += 1;
+            i += 1;
+        }
+    }
+    count
+}
+
+/// Split a cell string into (prefix_ansi, content, suffix_ansi).
+/// Example: "\x1b[33m\x1b[1mPartial\x1b[0m" → ("\x1b[33m\x1b[1m", "Partial", "\x1b[0m")
+/// Plain text: "hello" → ("", "hello", "")
+fn split_cell_ansi(s: &str) -> (&str, &str, &str) {
+    let bytes = s.as_bytes();
+    let mut prefix_end = 0;
+
+    // Collect CSI sequences at the start
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b {
+            i += 1; // skip ESC
+            if i < bytes.len() {
+                i += 1; // skip introducer
+            }
+            while i < bytes.len() {
+                let b = bytes[i];
+                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            prefix_end = i;
+        } else {
+            break;
+        }
+    }
+
+    // Check for trailing reset sequence
+    let mut suffix_start = s.len();
+    if suffix_start > prefix_end && s[prefix_end..].ends_with("\x1b[0m") {
+        suffix_start = prefix_end + s[prefix_end..].len() - 4;
+    }
+
+    (&s[..prefix_end], &s[prefix_end..suffix_start], &s[suffix_start..])
+}
+
+/// Wrap a cell string with ANSI awareness, optionally applying grey row styling.
+fn wrap_ansi_cell(s: &str, max_width: usize, is_grey_row: bool) -> Vec<String> {
+    let (prefix, content, suffix) = split_cell_ansi(s);
+    let lines = wrap_text(content, max_width);
+
+    lines
+        .into_iter()
+        .map(|line| {
+            let padding = max_width.saturating_sub(line.len());
+            let padded = format!("{}{}", line, " ".repeat(padding));
+            if is_grey_row {
+                format!(
+                    "{}{}{}{}{}",
+                    SetForegroundColor(Color::Grey),
+                    prefix,
+                    padded,
+                    suffix,
+                    ResetColor
+                )
+            } else {
+                format!("{}{}{}", prefix, padded, suffix)
+            }
+        })
+        .collect()
+}
+
 /// Minimum readable column width.
 const MIN_WIDTH: usize = 8;
 
@@ -367,24 +459,22 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 
 /// Render data rows with word-wrapping support.
 ///
-/// Each cell is wrapped independently to its column width. All lines of a
-/// row share the same alternating background colour (odd rows → Grey).
+/// Each cell is wrapped independently to its column width. Grey row styling
+/// is applied at the cell level so that ANSI-coloured cells (e.g. from
+/// `warn_mark`) are not overridden by the grey background.
 fn render_rows_with_wrapping(rows: &[Vec<String>], widths: &[usize]) {
     for (row_idx, row) in rows.iter().enumerate() {
-        // Wrap each cell
+        let is_grey = row_idx % 2 == 1;
+
+        // Wrap each cell with ANSI awareness
         let wrapped_cells: Vec<Vec<String>> = row
             .iter()
             .zip(widths.iter())
-            .map(|(cell, width)| wrap_text(cell, *width))
+            .map(|(cell, width)| wrap_ansi_cell(cell, *width, is_grey))
             .collect();
 
-        // Find max lines in this row
         let max_lines = wrapped_cells.iter().map(|l| l.len()).max().unwrap_or(1);
 
-        // Determine if this row should be grey (alternating)
-        let use_grey = row_idx % 2 == 1;
-
-        // Print each line of the row
         for line_idx in 0..max_lines {
             let line_parts: Vec<String> = wrapped_cells
                 .iter()
@@ -392,23 +482,15 @@ fn render_rows_with_wrapping(rows: &[Vec<String>], widths: &[usize]) {
                 .map(|(cell_lines, width)| {
                     cell_lines
                         .get(line_idx)
-                        .map(|s| format!("{:<width$}", s, width = width))
+                        .cloned()
                         .unwrap_or_else(|| " ".repeat(*width))
                 })
                 .collect();
-
             let line = line_parts.join("  ");
-
-            // Apply colour to ALL lines of the row
-            if use_grey {
-                println!("{}{}{}", SetForegroundColor(Color::Grey), line, ResetColor);
-            } else {
-                println!("{}", line);
-            }
+            println!("{}", line);
         }
     }
 }
-
 /*-- tests --*/
 
 #[cfg(test)]

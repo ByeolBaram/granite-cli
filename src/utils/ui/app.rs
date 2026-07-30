@@ -13,6 +13,36 @@ use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
 use crate::utils::ui::tui::{restore_terminal, setup_terminal};
 
+/*-- private --*/
+
+/// Strip ANSI escape sequences from a string.
+fn strip_ansi(input: &str) -> String {
+    let mut result = String::new();
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b {
+            // Skip the entire escape sequence
+            i += 1;
+            if i < bytes.len() {
+                i += 1; // skip introducer (e.g. '[')
+            }
+            while i < bytes.len() {
+                let b = bytes[i];
+                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
 /*-- public --*/
 
 #[derive(Debug, Clone, PartialEq)]
@@ -209,7 +239,7 @@ impl App {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
                 let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                ModelCommands::recommend_rows(None, Some(&providers), &instances, false).into_iter().map(|r| r[0].clone()).collect()
+                ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref()).into_iter().map(|r| r[0].clone()).collect()
             }
             Section::Hardware     => vec![],
         };
@@ -243,7 +273,7 @@ impl App {
                     let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                     let instances = source.instances();
                     let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                    ModelCommands::recommend_rows(None, Some(&providers), &instances, false).len()
+                    ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref()).len()
                 }
                 Section::Hardware     => 0,
             };
@@ -363,7 +393,7 @@ impl App {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
                 let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                let all_rows = ModelCommands::recommend_rows(None, Some(&providers), &instances, false);
+                let all_rows = ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref());
 
                 // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
                 let header = Row::new(vec!["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
@@ -377,12 +407,18 @@ impl App {
                     } else {
                         Style::default().bg(Color::Rgb(20, 20, 20))
                     };
+                    let fit_display = strip_ansi(&r[4]);
+                    let fit_style = if fit_display.starts_with("Partial") {
+                        Style::default().fg(Color::Yellow)
+                    } else {
+                        Style::default()
+                    };
                     Row::new(vec![
                         Cell::from(r[0].clone()),
                         Cell::from(r[1].clone()),
                         Cell::from(r[2].clone()),
                         Cell::from(r[3].clone()),
-                        Cell::from(r[4].clone()),
+                        Cell::from(fit_display).style(fit_style),
                         Cell::from(r[5].clone()),
                     ]).style(style)
                 }).collect();
@@ -788,7 +824,8 @@ mod tests {
 
     #[test]
     fn recommend_rows_all_have_six_columns() {
-        for row in ModelCommands::recommend_rows(None, None, &[], false) {
+        let ui: Box<dyn crate::utils::ui::base::Ui + Send + Sync> = Box::new(crate::utils::ui::base::tests::CaptureUi::default());
+        for row in ModelCommands::recommend_rows(None, None, &[], false, &*ui) {
             assert_eq!(row.len(), 6, "each recommend row must have 6 columns");
         }
     }
