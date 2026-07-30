@@ -4,7 +4,7 @@ use anyhow::Result;
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, DependsOn, Requirement};
-use crate::models::{MODEL_REGISTRY, ModelType};
+use crate::models::{ContextFit, MODEL_REGISTRY, ModelType};
 use crate::utils::hardware::detect_hardware;
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 use crate::utils::Searchable;
@@ -83,38 +83,41 @@ impl ModelCommands {
         Ok(())
     }
 
-    /// Rows for the recommend table: [id, family, size, variant, type].
+    /// Rows for the recommend table: [id, family, size, variant, type, fit].
     /// Shared by the CLI command and the TUI.
     pub(crate) fn recommend_rows(filter_type: Option<&ModelType>) -> Vec<Vec<String>> {
         let profile = detect_hardware();
-        let recommended_precision = profile.recommend_precision().to_lowercase();
         let models = MODEL_REGISTRY.entries();
 
         let mut rows: Vec<(f64, Vec<String>)> = models
             .iter()
             .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
             .filter_map(|(id, m)| {
-                if m.variants.is_empty() {
-                    return None;
-                }
-                let preferred: Vec<_> = m.variants.iter()
-                    .filter(|v| v.precision.to_lowercase() == recommended_precision)
-                    .collect();
-                let best = if !preferred.is_empty() {
-                    preferred.into_iter().max_by(|a, b| a.size_gb.partial_cmp(&b.size_gb).unwrap())
-                } else {
-                    m.variants.iter().min_by(|a, b| a.size_gb.partial_cmp(&b.size_gb).unwrap())
-                }?;
-                if !profile.can_run_model(best.size_gb) {
-                    return None;
-                }
-                let variant_label = format!("{} / {} ({:.1} GB)", best.format, best.precision, best.size_gb);
-                Some((best.size_gb, vec![
+                let fit_rank = |fit: &ContextFit| match fit {
+                    ContextFit::Full => 1,
+                    ContextFit::Partial => 0,
+                    ContextFit::None => -1,
+                };
+                let best = m.variants.iter()
+                    .map(|v| {
+                        let fit = crate::models::context_fit::estimate(
+                            m.context_length, &m.architecture, &m.native_dtype, v, &profile,
+                        );
+                        (fit, v)
+                    })
+                    .filter(|(fit, _)| *fit != ContextFit::None)
+                    .max_by(|(fit_a, a), (fit_b, b)| {
+                        fit_rank(fit_a).cmp(&fit_rank(fit_b)).then_with(|| a.size_gb.partial_cmp(&b.size_gb).unwrap())
+                    })?;
+                let (fit, variant) = best;
+                let variant_label = format!("{} / {} ({:.1} GB)", variant.format, variant.precision, variant.size_gb);
+                Some((variant.size_gb, vec![
                     id.to_string(),
                     m.family.clone(),
                     m.format_size(),
                     variant_label,
                     m.model_type.to_string(),
+                    fit.to_string(),
                 ]))
             })
             .collect();
@@ -131,7 +134,7 @@ impl ModelCommands {
         }
         ctx.ui.table(
             &format!("Recommended Models for this hardware ({} models)", table_rows.len()),
-            &["ID", "FAMILY", "SIZE", "VARIANT", "TYPE"],
+            &["ID", "FAMILY", "SIZE", "VARIANT", "TYPE", "FIT"],
             &table_rows,
         );
         Ok(())
@@ -637,12 +640,27 @@ mod tests {
     }
 
     #[test]
-    fn recommend_all_rows_have_five_columns() {
+    fn recommend_all_rows_have_six_columns() {
         let ctx = empty_ctx();
         ModelCommands::recommend(&ctx, None).unwrap();
         for (_, _, rows) in tables!(ctx).iter() {
             for row in rows {
-                assert_eq!(row.len(), 5, "each row must have 5 columns");
+                assert_eq!(row.len(), 6, "each row must have 6 columns");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_fit_column_is_full_or_partial() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert!(
+                    row[5] == "Full" || row[5] == "Partial",
+                    "fit column must be Full or Partial, got {}",
+                    row[5]
+                );
             }
         }
     }

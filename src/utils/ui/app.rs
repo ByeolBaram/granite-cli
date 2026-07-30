@@ -351,7 +351,7 @@ impl App {
             Section::Recommend => {
                 let all_rows = ModelCommands::recommend_rows(None);
 
-                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "VARIANT", "TYPE"])
+                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "VARIANT", "TYPE", "FIT"])
                     .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                 let rows: Vec<Row> = all_rows.iter().enumerate().map(|(i, r)| {
@@ -368,15 +368,17 @@ impl App {
                         Cell::from(r[2].clone()),
                         Cell::from(r[3].clone()),
                         Cell::from(r[4].clone()),
+                        Cell::from(r[5].clone()),
                     ]).style(style)
                 }).collect();
 
                 let table = Table::new(rows, [
-                    Constraint::Percentage(30),
-                    Constraint::Percentage(20),
-                    Constraint::Percentage(8),
                     Constraint::Percentage(27),
-                    Constraint::Percentage(15),
+                    Constraint::Percentage(18),
+                    Constraint::Percentage(8),
+                    Constraint::Percentage(25),
+                    Constraint::Percentage(12),
+                    Constraint::Percentage(10),
                 ])
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Recommend "));
@@ -770,9 +772,9 @@ mod tests {
     }
 
     #[test]
-    fn recommend_rows_all_have_five_columns() {
+    fn recommend_rows_all_have_six_columns() {
         for row in ModelCommands::recommend_rows(None) {
-            assert_eq!(row.len(), 5, "each recommend row must have 5 columns");
+            assert_eq!(row.len(), 6, "each recommend row must have 6 columns");
         }
     }
 
