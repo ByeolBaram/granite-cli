@@ -1,3 +1,3 @@
 # Granite CLI
 
-PLACEHOLDER
+🚧 🚧 🚧 UNDER CONSTRUCTION 🚧 🚧 🚧
