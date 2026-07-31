@@ -4,9 +4,10 @@ use anyhow::Result;
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, Configured, DependsOn, Requirement};
-use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType};
+use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType, ModelVariant};
 use crate::utils::hardware::detect_hardware;
-use crate::providers::{Provider, ProviderMetadata, ProviderSource};
+use crate::providers::{Provider, ProviderMetadata, ProviderSource, ProviderType, PROVIDER_REGISTRY};
+use crate::utils::ui::Ui;
 use crate::utils::Searchable;
 
 /// Compare semantic versions in descending order (higher versions first).
@@ -440,7 +441,7 @@ impl ModelCommands {
 
                 let model_config = crate::config::ModelConfig {
                     model_id: model_id.to_string(),
-                    provider_id,
+                    provider_id: provider_id.clone(),
                     variant: Some(format!("{}/{}", selected_variant.format, selected_variant.precision)),
                     enabled: true,
                 };
@@ -451,6 +452,32 @@ impl ModelCommands {
 
                 ctx.ui.info(&format!("\nModel '{}' configured successfully!", model_id));
 
+                if let Some(pid) = &provider_id {
+                    let is_local = ctx.config.get_provider(pid)
+                        .and_then(|pc| PROVIDER_REGISTRY.get(&pc.provider_type))
+                        .map(|meta| meta.provider_type == ProviderType::Local)
+                        .unwrap_or(false);
+
+                    if is_local {
+                        let pull_now = ctx.ui.confirm(
+                            &format!(
+                                "'{}' is a local provider. Pull '{} ({}/{})' now?",
+                                pid, model_id, selected_variant.format, selected_variant.precision
+                            ),
+                            true,
+                        )?;
+                        if pull_now {
+                            let source = ProviderSource::from_config(&ctx.config);
+                            match source.instances().into_iter().find(|(id, _)| id == pid) {
+                                Some((_, provider)) => {
+                                    ensure_model_pulled(provider, &model, selected_variant, ctx.ui.as_ref()).await?;
+                                }
+                                None => ctx.ui.warn(&format!("Provider '{}' is not available; skipping pull.", pid)),
+                            }
+                        }
+                    }
+                }
+
                 Ok(())
             }
             None => {
@@ -460,6 +487,51 @@ impl ModelCommands {
                 anyhow::bail!("Model not found");
             }
         }
+    }
+
+    pub async fn pull(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
+        let model = match MODEL_REGISTRY.get(model_id) {
+            Some(model) => model,
+            None => {
+                ctx.ui.error(&format!("Model '{}' not found in registry.", model_id));
+                let available: Vec<_> = MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
+                ctx.ui.info(&format!("Available models: {}", available.join(", ")));
+                anyhow::bail!("Model not found");
+            }
+        };
+
+        let configured = ctx.config.get_model(model_id);
+        let (variant_str, provider_id) = match configured {
+            Some(c) if c.variant.is_some() && c.provider_id.is_some() => {
+                (c.variant.clone().unwrap(), c.provider_id.clone().unwrap())
+            }
+            _ => {
+                anyhow::bail!("Model '{}' is not configured yet. Run `model setup {}` first.", model_id, model_id);
+            }
+        };
+
+        let (format, precision) = variant_str.split_once('/').ok_or_else(|| {
+            anyhow::anyhow!("Invalid stored variant '{}' for model '{}'.", variant_str, model_id)
+        })?;
+
+        let variant: &ModelVariant = model.variants.iter()
+            .find(|v| v.format == format && v.precision == precision)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Variant '{}/{}' is no longer available for model '{}'.", format, precision, model_id
+            ))?;
+
+        let source = ProviderSource::from_config(&ctx.config);
+        let instances = source.instances();
+        let provider = instances.iter()
+            .find(|(id, _)| id == &provider_id)
+            .map(|(_, p)| *p)
+            .ok_or_else(|| anyhow::anyhow!(
+                "Provider '{}' is not configured or enabled. Run `provider setup` first.", provider_id
+            ))?;
+
+        ensure_model_pulled(provider, &model, variant, ctx.ui.as_ref()).await?;
+
+        Ok(())
     }
 
     /// Resolve which provider instance to use for a model variant, prompting
@@ -505,6 +577,19 @@ impl ModelCommands {
 
         Ok(Some(nickname))
     }
+}
+
+/// Trigger `provider`'s native download/pull mechanism for `variant`,
+/// reporting progress through `ui`. Separated from `ModelCommands::pull` so
+/// a future `launch` pre-flight step can call it directly without going
+/// through config lookup or CLI-specific error messages.
+pub async fn ensure_model_pulled(
+    provider: &dyn Provider,
+    model: &ModelMetadata,
+    variant: &ModelVariant,
+    ui: &dyn Ui,
+) -> Result<(), crate::providers::ProviderError> {
+    provider.pull_model(model, variant, ui).await
 }
 
 /*-- tests -----------------------------------------------------------------------*/
@@ -557,6 +642,19 @@ mod tests {
             enabled: true,
         });
         ctx
+    }
+
+    fn ctx_with_model_variant_and_provider(
+        model_id: &str, variant: &str, provider_id: &str, provider_type: &str, provider_config: serde_json::Value,
+    ) -> crate::AppContext {
+        let mut config = config_with_provider(provider_id, provider_type, provider_config);
+        config.models.insert(model_id.to_string(), ModelConfig {
+            model_id: model_id.to_string(),
+            provider_id: Some(provider_id.to_string()),
+            variant: Some(variant.to_string()),
+            enabled: true,
+        });
+        ctx_with_config(config)
     }
 
     // -- version comparison ---------------------------------------------------
@@ -1001,5 +1099,65 @@ mod tests {
         for row in &rows {
             assert_eq!(row[5], "None", "with no display providers, PROVIDERS column must be None, got {}", row[5]);
         }
+    }
+
+    // -- pull -------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn pull_unknown_model_errors() {
+        let mut ctx = empty_ctx();
+        let result = ModelCommands::pull(&mut ctx, "does-not-exist").await;
+        assert!(result.is_err());
+        assert!(!errors!(ctx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn pull_unconfigured_model_errors_with_setup_hint() {
+        let mut ctx = empty_ctx();
+        let result = ModelCommands::pull(&mut ctx, "granite-3.1-8b-instruct").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("model setup"));
+    }
+
+    #[tokio::test]
+    async fn pull_configured_model_missing_provider_or_variant_errors() {
+        let mut ctx = ctx_with_model("granite-3.1-8b-instruct", None);
+        let result = ModelCommands::pull(&mut ctx, "granite-3.1-8b-instruct").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn pull_with_unconfigured_provider_errors() {
+        let mut ctx = ctx_with_model("granite-3.1-8b-instruct", Some("missing-provider"));
+        ctx.config.models.get_mut("granite-3.1-8b-instruct").unwrap().variant =
+            Some("safetensors/bfloat16".to_string());
+        let result = ModelCommands::pull(&mut ctx, "granite-3.1-8b-instruct").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing-provider"));
+    }
+
+    #[tokio::test]
+    async fn pull_with_unknown_variant_errors() {
+        let mut ctx = ctx_with_model_variant_and_provider(
+            "granite-3.1-8b-instruct", "safetensors/does-not-exist", "openai",
+            "openai-compatible", serde_json::json!({ "base_url": "http://localhost:8080" }),
+        );
+        let result = ModelCommands::pull(&mut ctx, "granite-3.1-8b-instruct").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn pull_delegates_to_provider_pull_model() {
+        let mut ctx = ctx_with_model_variant_and_provider(
+            "granite-3.1-8b-instruct", "safetensors/bfloat16", "openai",
+            "openai-compatible", serde_json::json!({ "base_url": "http://localhost:8080" }),
+        );
+        // OpenAIProvider::pull_model is a pure warning (no network call), so
+        // this exercises the full lookup path end-to-end without needing a
+        // live server.
+        let result = ModelCommands::pull(&mut ctx, "granite-3.1-8b-instruct").await;
+        assert!(result.is_ok());
+        let warns = (&*(ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().warns.borrow();
+        assert!(!warns.is_empty());
     }
 }
