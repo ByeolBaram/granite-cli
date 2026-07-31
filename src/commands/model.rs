@@ -3,10 +3,43 @@ use anyhow::Result;
 
 // Local
 use crate::commands::ProviderCommands;
-use crate::dependency::{self, DependsOn, Requirement};
-use crate::models::{MODEL_REGISTRY, ModelType};
+use crate::dependency::{self, Configured, DependsOn, Requirement};
+use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType};
+use crate::utils::hardware::detect_hardware;
 use crate::providers::{Provider, ProviderMetadata, ProviderSource};
 use crate::utils::Searchable;
+
+/// Compare semantic versions in descending order (higher versions first).
+/// Handles versions like "3.1", "4.0", "3.0.1".
+fn compare_versions_desc(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse_version = |v: &str| -> Vec<u32> {
+        v.split('.')
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect()
+    };
+
+    let va = parse_version(a);
+    let vb = parse_version(b);
+
+    for (a_part, b_part) in va.iter().zip(vb.iter()) {
+        match b_part.cmp(a_part) {
+            std::cmp::Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+
+    vb.len().cmp(&va.len())
+}
+
+/// Sort enriched rows by family (asc), version (desc), size (desc), id (asc).
+fn sort_enriched_rows(rows: &mut Vec<(Vec<String>, ModelMetadata)>) {
+    rows.sort_by(|(row_a, meta_a), (row_b, meta_b)| {
+        meta_a.family.cmp(&meta_b.family)
+            .then_with(|| compare_versions_desc(&meta_a.version, &meta_b.version))
+            .then_with(|| meta_b.size.cmp(&meta_a.size))
+            .then_with(|| row_a[0].cmp(&row_b[0]))
+    });
+}
 
 pub struct ModelCommands;
 
@@ -45,31 +78,38 @@ impl DependsOn<dyn Provider> for VariantRequirement {
 }
 
 impl ModelCommands {
-    pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
+    /// Rows for the model search table: [id, family, size, context, type].
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn search_rows(query: &str) -> Vec<Vec<String>> {
         let q = query.to_lowercase();
         let models = MODEL_REGISTRY.entries();
-
-        let mut rows: Vec<Vec<String>> = models
+        let mut rows: Vec<(Vec<String>, ModelMetadata)> = models
             .iter()
             .filter(|(id, m)| {
                 id.to_lowercase().contains(&q)
                     || m.search_fields().iter().any(|f| f.to_lowercase().contains(&q))
             })
-            .map(|(id, m)| vec![
-                id.to_string(),
-                m.family.clone(),
-                format!("{}B", m.size / 1_000_000_000),
-                m.context_length.to_string(),
-                m.model_type.to_string(),
-            ])
+            .map(|(id, m)| {
+                let row = vec![
+                    id.to_string(),
+                    m.family.clone(),
+                    m.format_size(),
+                    m.context_length.to_string(),
+                    m.model_type.to_string(),
+                ];
+                (row, m.clone())
+            })
             .collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        sort_enriched_rows(&mut rows);
+        rows.into_iter().map(|(row, _)| row).collect()
+    }
 
+    pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
+        let rows = Self::search_rows(query);
         if rows.is_empty() {
             ctx.ui.info(&format!("No models found matching '{}'.", query));
             return Ok(());
         }
-
         ctx.ui.table(
             &format!("Search results for '{}' ({} models)", query, rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
@@ -78,35 +118,194 @@ impl ModelCommands {
         Ok(())
     }
 
-    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+    /// Rows for the recommend table: [id, size, variant, type, fit, providers]
+    /// (or, when `wide`, [id, family, size, context, variant, type, fit, providers]).
+    /// Shared by the CLI command and the TUI.
+    ///
+    /// `filter_providers`, when `Some`, restricts recommendations to variants
+    /// that at least one provider in the slice can run (`None` disables the
+    /// check entirely, e.g. for `--providers all`). `display_providers`
+    /// always populates the PROVIDERS column with the ids of configured
+    /// providers that can run the chosen variant, independent of any
+    /// `--providers` narrowing applied via `filter_providers`.
+    pub(crate) fn recommend_rows(
+        filter_type: Option<&ModelType>,
+        filter_providers: Option<&[&dyn Provider]>,
+        display_providers: &[(String, &dyn Provider)],
+        wide: bool,
+        ui: &dyn crate::utils::ui::base::Ui,
+    ) -> Vec<Vec<String>> {
+        let profile = detect_hardware();
         let models = MODEL_REGISTRY.entries();
 
-        let filtered: std::collections::HashMap<_, _> = match filter_type {
-            Some(ref t) => models.into_iter().filter(|(_, m)| m.model_type == *t).collect(),
-            None => models.into_iter().collect(),
+        let mut rows: Vec<(f64, Vec<String>)> = models
+            .iter()
+            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
+            .filter_map(|(id, m)| {
+                let fit_rank = |fit: &ContextFit| match fit {
+                    ContextFit::Full => 1,
+                    ContextFit::Partial(_) => 0,
+                    ContextFit::None => -1,
+                };
+                let best = m.variants.iter()
+                    .map(|v| {
+                        let fit = crate::models::context_fit::estimate(
+                            m.context_length, &m.architecture, &m.native_dtype, v, &profile,
+                        );
+                        (fit, v)
+                    })
+                    .filter(|(fit, _)| *fit != ContextFit::None)
+                    .filter(|(_, v)| filter_providers.map_or(true, |ps| {
+                        ps.iter().any(|p| p.can_run_model(&v.format, &v.precision))
+                    }))
+                    .max_by(|(fit_a, a), (fit_b, b)| {
+                        fit_rank(fit_a).cmp(&fit_rank(fit_b)).then_with(|| a.size_gb.partial_cmp(&b.size_gb).unwrap())
+                    })?;
+                let (fit, variant) = best;
+                let variant_label = format!("{} / {} ({:.1} GB)", variant.format, variant.precision, variant.size_gb);
+                let providers_str = {
+                    let matching: Vec<&str> = display_providers.iter()
+                        .filter(|(_, p)| p.can_run_model(&variant.format, &variant.precision))
+                        .map(|(pid, _)| pid.as_str())
+                        .collect();
+                    if matching.is_empty() { "None".to_string() } else { matching.join(", ") }
+                };
+
+                let fit_str = if matches!(fit, ContextFit::Partial(_)) {
+                    ui.warn_mark(&fit.to_string())
+                } else {
+                    fit.to_string()
+                };
+
+                let row = if wide {
+                    vec![
+                        id.to_string(),
+                        m.family.clone(),
+                        m.format_size(),
+                        m.context_length.to_string(),
+                        variant_label,
+                        m.model_type.to_string(),
+                        fit_str,
+                        providers_str,
+                    ]
+                } else {
+                    vec![
+                        id.to_string(),
+                        m.format_size(),
+                        variant_label,
+                        m.model_type.to_string(),
+                        fit_str,
+                        providers_str,
+                    ]
+                };
+                Some((variant.size_gb, row))
+            })
+            .collect();
+
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        rows.into_iter().map(|(_, row)| row).collect()
+    }
+
+    /// Resolves the `--providers` flag against configured providers.
+    ///
+    /// - `providers_arg` empty: use all configured+enabled providers.
+    /// - `providers_arg == ["all"]` (case-insensitive): skip the provider
+    ///   check entirely (`None`).
+    /// - otherwise: restrict to the named provider ids, erroring if any is
+    ///   not a configured+enabled provider.
+    pub fn recommend(
+        ctx: &crate::AppContext,
+        filter_type: Option<ModelType>,
+        providers_arg: &[String],
+        wide: bool,
+    ) -> Result<()> {
+        let source = ProviderSource::from_config(&ctx.config);
+        let instances = source.instances();
+
+        let skip_all = providers_arg.iter().any(|p| p.eq_ignore_ascii_case("all"));
+        if skip_all && providers_arg.len() > 1 {
+            anyhow::bail!("--providers all cannot be combined with specific provider ids");
+        }
+
+        let providers: Option<Vec<&dyn Provider>> = if skip_all {
+            None
+        } else if providers_arg.is_empty() {
+            Some(instances.iter().map(|(_, p)| *p).collect())
+        } else {
+            let unknown: Vec<&str> = providers_arg.iter()
+                .filter(|id| !instances.iter().any(|(iid, _)| iid == *id))
+                .map(String::as_str)
+                .collect();
+            if !unknown.is_empty() {
+                let configured = instances.iter().map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>().join(", ");
+                anyhow::bail!(
+                    "Unknown or disabled provider(s): {}. Configured providers: {}",
+                    unknown.join(", "),
+                    if configured.is_empty() { "none".to_string() } else { configured },
+                );
+            }
+            Some(instances.iter().filter(|(iid, _)| providers_arg.contains(iid)).map(|(_, p)| *p).collect())
         };
 
-        if filtered.is_empty() {
+        let table_rows = Self::recommend_rows(filter_type.as_ref(), providers.as_deref(), &instances, wide, ctx.ui.as_ref());
+        if table_rows.is_empty() {
+            let msg = if matches!(&providers, Some(list) if list.is_empty()) {
+                "No models fit: no providers are configured. Use --providers all to ignore \
+                 this check, or run `granite-cli provider setup` to add one."
+            } else {
+                "No models fit the current hardware profile and configured providers."
+            };
+            ctx.ui.info(msg);
+            return Ok(());
+        }
+        let headers: &[&str] = if wide {
+            &["ID", "FAMILY", "SIZE", "CONTEXT", "VARIANT", "TYPE", "FIT", "PROVIDERS"]
+        } else {
+            &["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"]
+        };
+        ctx.ui.table(
+            &format!("Recommended Models for this hardware ({} models)", table_rows.len()),
+            headers,
+            &table_rows,
+        );
+
+        Ok(())
+    }
+
+    /// Rows for the model catalog table: [id, family, size, context, type].
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn catalog_rows(filter_type: Option<&ModelType>) -> Vec<Vec<String>> {
+        let models = MODEL_REGISTRY.entries();
+        let mut rows: Vec<(Vec<String>, ModelMetadata)> = models
+            .iter()
+            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
+            .map(|(id, m)| {
+                let row = vec![
+                    id.to_string(),
+                    m.family.clone(),
+                    m.format_size(),
+                    m.context_length.to_string(),
+                    m.model_type.to_string(),
+                ];
+                (row, m.clone())
+            })
+            .collect();
+        sort_enriched_rows(&mut rows);
+        rows.into_iter().map(|(row, _)| row).collect()
+    }
+
+    pub fn catalog(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+        let rows = Self::catalog_rows(filter_type.as_ref());
+        if rows.is_empty() {
             ctx.ui.info(&format!(
                 "No models found{}.",
                 filter_type.as_ref().map(|t| format!(" matching type: {}", t)).unwrap_or_default()
             ));
             return Ok(());
         }
-
-        let mut rows: Vec<Vec<String>> = filtered.iter().map(|(model_id, model)| {
-            vec![
-                model_id.to_string(),
-                model.family.clone(),
-                format!("{}B", model.size / 1_000_000_000),
-                model.context_length.to_string(),
-                model.model_type.to_string(),
-            ]
-        }).collect();
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
-
         ctx.ui.table(
-            &format!("Model Catalog ({} models)", filtered.len()),
+            &format!("Model Catalog ({} models)", rows.len()),
             &["ID", "FAMILY", "SIZE", "CONTEXT", "TYPE"],
             &rows,
         );
@@ -114,7 +313,7 @@ impl ModelCommands {
     }
 
     pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
-        let mut rows: Vec<Vec<String>> = Vec::new();
+        let mut enriched: Vec<(Vec<String>, ModelMetadata)> = Vec::new();
 
         for (model_id, model_config) in &ctx.config.models {
             if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
@@ -123,17 +322,20 @@ impl ModelCommands {
                         continue;
                     }
                 }
-                rows.push(vec![
+                let row = vec![
                     model_id.clone(),
                     model_md.family.clone(),
-                    format!("{}B", model_md.size / 1_000_000_000),
+                    model_md.format_size(),
                     model_md.context_length.to_string(),
                     model_md.model_type.to_string(),
                     model_config.provider_id.clone().unwrap_or_else(|| "None".to_string()),
-                ]);
+                ];
+                enriched.push((row, model_md.clone()));
             }
         }
-        rows.sort_by(|a, b| a[0].cmp(&b[0]));
+        sort_enriched_rows(&mut enriched);
+
+        let rows: Vec<Vec<String>> = enriched.into_iter().map(|(row, _)| row).collect();
 
         ctx.ui.table(
             &format!("Configured Models ({} models)", rows.len()),
@@ -143,37 +345,40 @@ impl ModelCommands {
         Ok(())
     }
 
+    /// Key-value fields for model detail. Returns `None` if the ID is not in the registry.
+    /// Shared by the CLI command and the TUI.
+    pub(crate) fn info_fields(model_id: &str) -> Option<Vec<(&'static str, String)>> {
+        let model = MODEL_REGISTRY.get(model_id)?;
+        let mut fields: Vec<(&'static str, String)> = vec![
+            ("Family",         model.family.clone()),
+            ("Version",        model.version.clone()),
+            ("Size",           format!("{} parameters", model.format_size())),
+            ("Context Length", format!("{} tokens", model.context_length)),
+            ("Type",           model.model_type.to_string()),
+            ("Hugging Face",   model.huggingface_repo.clone()),
+        ];
+        if let Some(desc) = &model.description {
+            fields.push(("Description", desc.clone()));
+        }
+        if !model.tags.is_empty() {
+            fields.push(("Tags", model.tags.join(", ")));
+        }
+        let variants_str = model.variants.iter()
+            .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push(("Variants", variants_str));
+        let funcs_str = model.supported_functions.iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        fields.push(("Supported Functions", funcs_str));
+        Some(fields)
+    }
+
     pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
-        match MODEL_REGISTRY.get(model_id) {
-            Some(model) => {
-                let mut fields: Vec<(&str, String)> = vec![
-                    ("Family",        model.family.clone()),
-                    ("Version",       model.version.clone()),
-                    ("Size",          format!("{}B parameters ({:.2}B)", model.size, model.size as f64 / 1_000_000_000.0)),
-                    ("Context Length", format!("{} tokens", model.context_length)),
-                    ("Type",          model.model_type.to_string()),
-                    ("Hugging Face",  model.huggingface_repo.clone()),
-                ];
-
-                if let Some(desc) = &model.description {
-                    fields.push(("Description", desc.clone()));
-                }
-                if !model.tags.is_empty() {
-                    fields.push(("Tags", model.tags.join(", ")));
-                }
-
-                let variants_str = model.variants.iter()
-                    .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                fields.push(("Variants", variants_str));
-
-                let funcs_str = model.supported_functions.iter()
-                    .map(|f| f.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                fields.push(("Supported Functions", funcs_str));
-
+        match Self::info_fields(model_id) {
+            Some(mut fields) => {
                 if let Some(configured) = ctx.config.get_model(model_id) {
                     fields.push(("Config: Provider", format!("{:?}", configured.provider_id)));
                     fields.push(("Config: Variant",  format!("{:?}", configured.variant)));
@@ -196,9 +401,9 @@ impl ModelCommands {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
                 ctx.ui.info(&format!("\nSetting up model: {}", model_id));
-                ctx.ui.info(&format!("{}", model.description.as_deref().unwrap_or("No description available.")));
+                ctx.ui.info(model.description.as_deref().unwrap_or("No description available."));
                 ctx.ui.info("");
-                ctx.ui.info(&format!("Size: {}B params, {} context", model.size / 1_000_000_000, model.context_length));
+                ctx.ui.info(&format!("Size: {} params, {} context", model.format_size(), model.context_length));
                 ctx.ui.info(&format!("Type: {}", model.model_type));
                 ctx.ui.info("");
 
@@ -352,6 +557,50 @@ mod tests {
             enabled: true,
         });
         ctx
+    }
+
+    // -- version comparison ---------------------------------------------------
+
+    #[test]
+    fn compare_versions_desc_simple() {
+        assert_eq!(compare_versions_desc("3.1", "3.0"), std::cmp::Ordering::Less);
+        assert_eq!(compare_versions_desc("3.0", "3.1"), std::cmp::Ordering::Greater);
+        assert_eq!(compare_versions_desc("3.1", "3.1"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_versions_desc_multi_part() {
+        assert_eq!(compare_versions_desc("3.1.1", "3.1.0"), std::cmp::Ordering::Less);
+        assert_eq!(compare_versions_desc("3.1", "3.1.0"), std::cmp::Ordering::Greater);
+    }
+
+    #[test]
+    fn compare_versions_desc_major_difference() {
+        assert_eq!(compare_versions_desc("4.0", "3.1"), std::cmp::Ordering::Less);
+    }
+
+    #[test]
+    fn sort_model_rows_by_family_version_size() {
+        let rows = vec![
+            vec!["granite-3.0-8b-instruct".to_string(), "Granite 3.0".to_string(), "8B".to_string()],
+            vec!["granite-3.1-2b-instruct".to_string(), "Granite 3.1".to_string(), "2B".to_string()],
+            vec!["granite-3.1-8b-instruct".to_string(), "Granite 3.1".to_string(), "8B".to_string()],
+            vec!["granite-3.0-2b-instruct".to_string(), "Granite 3.0".to_string(), "2B".to_string()],
+        ];
+        let mut enriched: Vec<(Vec<String>, ModelMetadata)> = rows
+            .into_iter()
+            .filter_map(|row| {
+                MODEL_REGISTRY.get(&row[0]).map(|m| (row, m.clone()))
+            })
+            .collect();
+        sort_enriched_rows(&mut enriched);
+        let sorted: Vec<String> = enriched.into_iter().map(|(row, _)| row[0].clone()).collect();
+        assert_eq!(sorted, vec![
+            "granite-3.0-8b-instruct",
+            "granite-3.0-2b-instruct",
+            "granite-3.1-8b-instruct",
+            "granite-3.1-2b-instruct",
+        ]);
     }
 
     // -- catalog --------------------------------------------------------------
@@ -560,5 +809,197 @@ mod tests {
         assert!(!tables.is_empty());
         let (_, _, rows) = &tables[0];
         assert!(!rows.is_empty());
+    }
+
+    // ── recommend ─────────────────────────────────────────────────────────────
+
+    /// `--providers all` sentinel: skip the provider-filter check entirely,
+    /// reproducing pre-provider-filtering (hardware-only) behavior.
+    fn all_providers() -> Vec<String> {
+        vec!["all".to_string()]
+    }
+
+    fn config_with_provider(id: &str, provider_type: &str, config: serde_json::Value) -> Config {
+        let mut config_obj = Config::default();
+        config_obj.providers.insert(id.to_string(), crate::config::ProviderConfig {
+            provider_id: id.to_string(),
+            provider_type: provider_type.to_string(),
+            config,
+            enabled: true,
+        });
+        config_obj
+    }
+
+    fn ctx_with_config(config: Config) -> crate::AppContext {
+        crate::AppContext { config, ui: Box::new(CaptureUi::default()) }
+    }
+
+    #[test]
+    fn recommend_returns_table_or_info() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
+        let has_table = !tables!(ctx).is_empty();
+        let has_info  = !infos!(ctx).is_empty();
+        assert!(has_table || has_info, "expected a table or an info message");
+    }
+
+    #[test]
+    fn recommend_all_rows_have_six_columns() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row.len(), 6, "each row must have 6 columns");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_wide_rows_have_eight_columns() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), true).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row.len(), 8, "each wide row must have 8 columns");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_fit_column_is_full_or_partial() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert!(
+                    row[4] == "Full" || row[4].starts_with("Partial"),
+                    "fit column must be Full or Partial, got {}",
+                    row[4]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_type_filter_limits_results() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, Some(ModelType::Text), &all_providers(), false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row[3], "Text", "filtered rows must all be Text type");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_rows_sorted_descending_by_variant_size() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &all_providers(), false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            // Extract the GB value from the VARIANT column "format / precision (N.N GB)"
+            let sizes: Vec<f64> = rows.iter().map(|r| {
+                let v = &r[2];
+                let start = v.rfind('(').unwrap() + 1;
+                let end   = v.rfind(" GB)").unwrap();
+                v[start..end].parse::<f64>().expect("parseable GB value")
+            }).collect();
+            for window in sizes.windows(2) {
+                assert!(window[0] >= window[1], "rows must be sorted descending by variant size");
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_default_with_no_configured_providers_shows_no_providers_info() {
+        let ctx = empty_ctx();
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
+        assert!(tables!(ctx).is_empty());
+        let infos = infos!(ctx);
+        assert!(infos.iter().any(|m| m.contains("no providers are configured")));
+    }
+
+    #[test]
+    fn recommend_default_with_permissive_provider_shows_results() {
+        let ctx = ctx_with_config(config_with_provider(
+            "openai", "openai-compatible", serde_json::json!({ "base_url": "http://localhost:8080" }),
+        ));
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
+        assert!(!tables!(ctx).is_empty(), "a permissive configured provider should surface recommendations");
+    }
+
+    #[test]
+    fn recommend_default_with_gguf_only_provider_excludes_non_gguf_models() {
+        let with_all = ctx_with_config(Config::default());
+        ModelCommands::recommend(&with_all, None, &all_providers(), false).unwrap();
+        let all_count: usize = tables!(with_all).iter().map(|(_, _, rows)| rows.len()).sum();
+
+        let gguf_only = ctx_with_config(config_with_provider(
+            "llama-cpp", "llama-cpp", serde_json::json!({}),
+        ));
+        ModelCommands::recommend(&gguf_only, None, &[], false).unwrap();
+        let gguf_rows: Vec<Vec<String>> = tables!(gguf_only).iter()
+            .flat_map(|(_, _, rows)| rows.clone()).collect();
+
+        assert!(
+            gguf_rows.len() <= all_count,
+            "gguf-only provider should not recommend more models than the unfiltered set",
+        );
+        for row in &gguf_rows {
+            assert!(row[2].to_lowercase().starts_with("gguf"), "variant column must be gguf, got {}", row[2]);
+        }
+    }
+
+    #[test]
+    fn recommend_providers_flag_narrows_to_named_provider() {
+        let mut config = config_with_provider("llama-cpp", "llama-cpp", serde_json::json!({}));
+        config.providers.insert("openai".to_string(), crate::config::ProviderConfig {
+            provider_id: "openai".to_string(),
+            provider_type: "openai-compatible".to_string(),
+            config: serde_json::json!({ "base_url": "http://localhost:8080" }),
+            enabled: true,
+        });
+        let ctx = ctx_with_config(config);
+
+        ModelCommands::recommend(&ctx, None, &["llama-cpp".to_string()], false).unwrap();
+        let narrowed_rows: Vec<Vec<String>> = tables!(ctx).iter().flat_map(|(_, _, rows)| rows.clone()).collect();
+        for row in &narrowed_rows {
+            assert!(row[2].to_lowercase().starts_with("gguf"), "narrowed to llama-cpp should only show gguf, got {}", row[2]);
+        }
+    }
+
+    #[test]
+    fn recommend_unknown_provider_id_errors() {
+        let ctx = empty_ctx();
+        let result = ModelCommands::recommend(&ctx, None, &["does-not-exist".to_string()], false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn recommend_all_combined_with_named_provider_errors() {
+        let ctx = empty_ctx();
+        let result = ModelCommands::recommend(&ctx, None, &["all".to_string(), "llama-cpp".to_string()], false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn recommend_providers_column_lists_matching_configured_providers() {
+        let ctx = ctx_with_config(config_with_provider(
+            "llama-cpp", "llama-cpp", serde_json::json!({}),
+        ));
+        ModelCommands::recommend(&ctx, None, &[], false).unwrap();
+        for (_, _, rows) in tables!(ctx).iter() {
+            for row in rows {
+                assert_eq!(row[5], "llama-cpp", "providers column should name the matching configured provider, got {}", row[5]);
+            }
+        }
+    }
+
+    #[test]
+    fn recommend_providers_column_is_none_with_no_display_providers() {
+        let ui = Box::new(CaptureUi::default());
+        let rows = ModelCommands::recommend_rows(None, None, &[], false, &*ui);
+        for row in &rows {
+            assert_eq!(row[5], "None", "with no display providers, PROVIDERS column must be None, got {}", row[5]);
+        }
     }
 }

@@ -27,9 +27,126 @@ fi
 # Request delay to avoid rate limiting
 REQUEST_DELAY="${HF_REQUEST_DELAY:-1}"
 
+# Derives the generic `architecture` block (layer shape + per-layer-kind
+# counts) from a model's raw config.json. Encodes the config-schema-specific
+# knowledge (layer_types vocabularies, mamba field names, dtype field-name
+# drift) here so the Rust side only ever sees the generic LayerKind shape.
+extract_architecture() {
+    local repo="$1"
+    local config="$2"
+
+    # Vision-language models nest the actual language-backbone shape under
+    # text_config instead of the top level. Fall back to it whenever it's
+    # present so VLMs get a real (non-degenerate) architecture too.
+    local config
+    config=$(echo "$config" | jq -c 'if .text_config then .text_config else . end')
+
+    local num_hidden_layers hidden_size num_attention_heads num_key_value_heads head_dim
+    num_hidden_layers=$(echo "$config" | jq -r '.num_hidden_layers // 0')
+    hidden_size=$(echo "$config" | jq -r '.hidden_size // 0')
+    num_attention_heads=$(echo "$config" | jq -r '.num_attention_heads // 0')
+    num_key_value_heads=$(echo "$config" | jq -r '.num_key_value_heads // .num_attention_heads // 0')
+    head_dim=$(echo "$config" | jq -r '
+        if .head_dim then .head_dim
+        elif (.num_attention_heads // 0) > 0 then ((.hidden_size / .num_attention_heads) | floor)
+        else 0
+        end')
+
+    # Mamba d_inner: prefer n_heads*d_head, fall back to expand*hidden_size,
+    # and warn (not fail) if both are present but disagree.
+    local mamba_n_heads mamba_d_head mamba_expand
+    mamba_n_heads=$(echo "$config" | jq -r '.mamba_n_heads // empty')
+    mamba_d_head=$(echo "$config" | jq -r '.mamba_d_head // empty')
+    mamba_expand=$(echo "$config" | jq -r '.mamba_expand // empty')
+
+    local d_inner_from_heads="" d_inner_from_expand="" d_inner=""
+    if [ -n "$mamba_n_heads" ] && [ -n "$mamba_d_head" ]; then
+        d_inner_from_heads=$((mamba_n_heads * mamba_d_head))
+    fi
+    if [ -n "$mamba_expand" ] && [ "$hidden_size" != "0" ]; then
+        d_inner_from_expand=$((mamba_expand * hidden_size))
+    fi
+    if [ -n "$d_inner_from_heads" ]; then
+        d_inner="$d_inner_from_heads"
+    else
+        d_inner="$d_inner_from_expand"
+    fi
+    if [ -n "$d_inner_from_heads" ] && [ -n "$d_inner_from_expand" ] && [ "$d_inner_from_heads" != "$d_inner_from_expand" ]; then
+        echo "  WARNING: $repo: mamba d_inner mismatch (n_heads*d_head=$d_inner_from_heads vs expand*hidden_size=$d_inner_from_expand)" >&2
+    fi
+
+    local mamba_d_conv mamba_d_state mamba_n_groups sliding_window
+    mamba_d_conv=$(echo "$config" | jq -r '.mamba_d_conv // empty')
+    mamba_d_state=$(echo "$config" | jq -r '.mamba_d_state // empty')
+    mamba_n_groups=$(echo "$config" | jq -r '.mamba_n_groups // empty')
+    sliding_window=$(echo "$config" | jq -r '.sliding_window // empty')
+
+    # Group the raw layer_types list (if present) into per-kind counts. Two
+    # vocabularies are known in the wild: "mamba"/"attention" (hybrid models)
+    # and "full_attention"/"sliding_attention" (SWA models). Absent
+    # layer_types means a plain dense model -- one full_attention entry
+    # covering every layer.
+    local layer_types_raw
+    layer_types_raw=$(echo "$config" | jq -c '.layer_types // null')
+
+    local layer_types_json
+    if [ "$layer_types_raw" == "null" ]; then
+        layer_types_json=$(jq -n --argjson count "$num_hidden_layers" '[{kind: "full_attention", count: $count}]')
+    else
+        layer_types_json=$(echo "$layer_types_raw" | jq -c '
+            map(
+                if . == "mamba" then "recurrent"
+                elif . == "sliding_attention" then "sliding_attention"
+                else "full_attention"
+                end
+            )
+            | group_by(.)
+            | map({kind: .[0], count: length})
+        ')
+        layer_types_json=$(echo "$layer_types_json" | jq -c \
+            --argjson window "${sliding_window:-null}" \
+            --argjson d_conv "${mamba_d_conv:-null}" \
+            --argjson d_state "${mamba_d_state:-null}" \
+            --argjson d_inner "${d_inner:-null}" \
+            --argjson n_groups "${mamba_n_groups:-null}" \
+            'map(
+                if .kind == "sliding_attention" then . + {window: $window}
+                elif .kind == "recurrent" then . + {mamba: {d_conv: $d_conv, d_state: $d_state, d_inner: $d_inner, n_groups: $n_groups}}
+                else .
+                end
+            )')
+    fi
+
+    jq -n \
+        --argjson num_hidden_layers "$num_hidden_layers" \
+        --argjson hidden_size "$hidden_size" \
+        --argjson num_attention_heads "$num_attention_heads" \
+        --argjson num_key_value_heads "$num_key_value_heads" \
+        --argjson head_dim "$head_dim" \
+        --argjson layer_types "$layer_types_json" \
+        '{
+            num_hidden_layers: $num_hidden_layers,
+            hidden_size: $hidden_size,
+            num_attention_heads: $num_attention_heads,
+            num_key_value_heads: $num_key_value_heads,
+            head_dim: $head_dim,
+            layer_types: $layer_types
+        }'
+}
+
+map_family() {
+    local family="$1"
+    if [[ "$family" =~ [0-9] ]]; then
+        echo "Granite Language"
+    else
+        echo "$family"
+    fi
+}
+
 fetch_model_metadata() {
     local repo="$1"
-    local family="$2"
+    local family
+    family=$(map_family "$2")
     local version="$3"
 
     # If version is not set from the collection, parse from the model name
@@ -55,9 +172,13 @@ fetch_model_metadata() {
     local context_length=8192
     local model_type="Text"
     local description=""
+    local native_dtype="unknown"
+    local architecture="null"
 
     if [ "$config" != "{}" ]; then
         context_length=$(echo "$config" | jq -r '.max_position_embeddings // .n_positions // 8192')
+        native_dtype=$(echo "$config" | jq -r '.torch_dtype // .dtype // "unknown"')
+        architecture=$(extract_architecture "$repo" "$config")
     fi
 
     # Get the model metadata to fetch the size
@@ -90,6 +211,8 @@ fetch_model_metadata() {
         --argjson context_length "$context_length" \
         --arg model_type "$model_type" \
         --arg description "$description" \
+        --arg native_dtype "$native_dtype" \
+        --argjson architecture "$architecture" \
         --argjson config "$config" \
         '{
             repo: $repo,
@@ -99,6 +222,8 @@ fetch_model_metadata() {
             context_length: $context_length,
             model_type: $model_type,
             description: $description,
+            native_dtype: $native_dtype,
+            architecture: $architecture,
             config: $config
         }'
 

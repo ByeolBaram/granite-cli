@@ -12,7 +12,7 @@ pub mod providers;
 use clap::{Parser, Subcommand};
 
 // Local
-use commands::{CapabilityCommands, ModelCommands, ProviderCommands};
+use commands::{CapabilityCommands, HardwareCommands, ModelCommands, ProviderCommands};
 use utils::ui::{run_interactive_tui, Ui, UI_REGISTRY};
 
 // Hoist paste macro for use in our own macros
@@ -95,6 +95,9 @@ enum Commands {
     /// Provider management commands
     Provider(ProviderWithOutput),
 
+    /// Show hardware profile and recommended precision
+    Hardware,
+
     /// Configure tools with Granite capabilities
     Configure(ConfigureWithOutput),
 
@@ -122,6 +125,23 @@ enum ModelSubcommands {
     Search {
         /// Case-insensitive substring to search for
         query: String,
+    },
+
+    /// Recommend models that fit current hardware
+    Recommend {
+        /// Filter by model type
+        #[arg(short, long)]
+        r#type: Option<String>,
+
+        /// Configured provider id(s) to check against (comma-separated or
+        /// repeatable), or "all" to skip the provider check and show every
+        /// model that fits the hardware regardless of configured providers
+        #[arg(short = 'p', long = "providers", value_delimiter = ',')]
+        providers: Vec<String>,
+
+        /// Show all columns, including family and full context length
+        #[arg(long)]
+        wide: bool,
     },
 
     /// Show detailed model information
@@ -245,6 +265,10 @@ async fn main() {
             run_provider_command(&mut ctx, wrapper.subcommand).await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
+        Some(Commands::Hardware) => {
+            let ctx = construct_context("terminal");
+            HardwareCommands::show(&ctx).map_err(|e| ctx.ui.error(&e.to_string()))
+        }
         Some(Commands::Configure(wrapper)) => {
             let ui = construct_ui(&wrapper.output);
             run_configure(&*ui, wrapper.args).await
@@ -298,6 +322,19 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             ModelCommands::list(ctx, filter)
         }
         ModelSubcommands::Search { query } => ModelCommands::search(ctx, &query),
+        ModelSubcommands::Recommend { r#type, providers, wide } => {
+            let filter = match r#type.as_deref() {
+                Some("text") => Some(models::ModelType::Text),
+                Some("vision") => Some(models::ModelType::Vision),
+                Some("speech") => Some(models::ModelType::Speech),
+                Some("embedding") => Some(models::ModelType::Embedding),
+                Some(t) => {
+                    anyhow::bail!("Unknown model type: {}. Valid types: text, vision, speech, embedding", t);
+                }
+                None => None,
+            };
+            ModelCommands::recommend(ctx, filter, &providers, wide)
+        }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
     }

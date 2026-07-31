@@ -19,6 +19,7 @@ pub trait Searchable {
 #[cfg(test)]
 mod searchable_tests {
     use super::*;
+    use crate::models::{LayerKind, LayerTypeCount, ModelArchitecture};
     use crate::models::{ModelMetadata, ModelType};
 
     fn metadata(family: &str, description: Option<&str>, tags: Vec<&str>) -> ModelMetadata {
@@ -29,6 +30,15 @@ mod searchable_tests {
             context_length: 4096,
             model_type: ModelType::Text,
             huggingface_repo: "ibm-granite/test".to_string(),
+            native_dtype: "bfloat16".to_string(),
+            architecture: ModelArchitecture {
+                num_hidden_layers: 1,
+                hidden_size: 1,
+                num_attention_heads: 1,
+                num_key_value_heads: 1,
+                head_dim: 1,
+                layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 1 }],
+            },
             variants: vec![],
             description: description.map(String::from),
             tags: tags.into_iter().map(String::from).collect(),
