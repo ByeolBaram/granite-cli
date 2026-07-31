@@ -1,5 +1,5 @@
 # Granite Models Catalog
-# Generated: 2026-07-30 20:12:58 UTC
+# Generated: 2026-07-31 18:52:35 UTC
 # Source: HuggingFace ibm-granite organization
 
 - id: granite-speech-4.1-2b
@@ -289,7 +289,7 @@
     - transcription
 
 - id: granite-4.1-30b
-  family: "Granite 4.1 Language Models"
+  family: "Granite Language"
   version: "4.1"
   size: 28865728512
   context_length: 131072
@@ -383,7 +383,7 @@
     - text
 
 - id: granite-4.1-8b
-  family: "Granite 4.1 Language Models"
+  family: "Granite Language"
   version: "4.1"
   size: 8791592960
   context_length: 131072
@@ -477,7 +477,7 @@
     - text
 
 - id: granite-4.1-3b
-  family: "Granite 4.1 Language Models"
+  family: "Granite Language"
   version: "4.1"
   size: 3402836480
   context_length: 131072
@@ -571,7 +571,7 @@
     - text
 
 - id: granite-4.0-h-1b
-  family: "Granite 4.0 Nano Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 1461538368
   context_length: 131072
@@ -668,7 +668,7 @@
     - text
 
 - id: granite-4.0-h-350m
-  family: "Granite 4.0 Nano Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 340332224
   context_length: 32768
@@ -765,7 +765,7 @@
     - text
 
 - id: granite-4.0-1b
-  family: "Granite 4.0 Nano Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 1631750144
   context_length: 131072
@@ -859,7 +859,7 @@
     - text
 
 - id: granite-4.0-350m
-  family: "Granite 4.0 Nano Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 352379904
   context_length: 32768
@@ -1031,7 +1031,7 @@
     - vision
 
 - id: granite-4.0-micro
-  family: "Granite 4.0 Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 3402836480
   context_length: 131072
@@ -1125,7 +1125,7 @@
     - text
 
 - id: granite-4.0-h-micro
-  family: "Granite 4.0 Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 3191396096
   context_length: 131072
@@ -1222,7 +1222,7 @@
     - text
 
 - id: granite-4.0-h-tiny
-  family: "Granite 4.0 Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 6939037248
   context_length: 131072
@@ -1319,7 +1319,7 @@
     - text
 
 - id: granite-4.0-h-small
-  family: "Granite 4.0 Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 32207337984
   context_length: 131072
@@ -1416,7 +1416,7 @@
     - text
 
 - id: granite-4.0-tiny-preview
-  family: "Granite 4.0 Language Models"
+  family: "Granite Language"
   version: "4.0"
   size: 6671539776
   context_length: 131072
