@@ -152,6 +152,21 @@ pub trait Provider: ConfigConstructable + Send + Sync {
             .cloned()
             .unwrap_or_default()
     }
+
+    /// Pull/download a model variant so this provider can run it.
+    ///
+    /// Hosted providers never need to download anything, so the default
+    /// implementation is a no-op. Local providers (Ollama, LM Studio,
+    /// llama.cpp) override this to drive their server's native pull API,
+    /// reporting progress through `ui`.
+    async fn pull_model(
+        &self,
+        _model: &crate::models::ModelMetadata,
+        _variant: &crate::models::ModelVariant,
+        _ui: &dyn crate::utils::ui::Ui,
+    ) -> Result<(), ProviderError> {
+        Ok(())
+    }
 }
 
 /*-- Metadata Types ----------------------------------------------------------*/
