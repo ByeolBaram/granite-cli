@@ -165,6 +165,20 @@ impl Provider for OpenAIProvider {
             }
         }
     }
+
+    async fn pull_model(
+        &self,
+        model: &crate::models::ModelMetadata,
+        variant: &crate::models::ModelVariant,
+        ui: &dyn crate::utils::ui::Ui,
+    ) -> Result<(), ProviderError> {
+        ui.warn(&format!(
+            "Generic OpenAI-compatible provider '{}' cannot pull models automatically. \
+             Pull '{} ({} {})' manually using whatever mechanism your specific server requires, then restart it.",
+            self.name(), model.family, variant.format, variant.precision
+        ));
+        Ok(())
+    }
 }
 
 impl HasProviderMetadata for OpenAIProvider {
