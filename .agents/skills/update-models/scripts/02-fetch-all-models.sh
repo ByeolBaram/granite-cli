@@ -134,9 +134,19 @@ extract_architecture() {
         }'
 }
 
+map_family() {
+    local family="$1"
+    if [[ "$family" =~ [0-9] ]]; then
+        echo "Granite Language"
+    else
+        echo "$family"
+    fi
+}
+
 fetch_model_metadata() {
     local repo="$1"
-    local family="$2"
+    local family
+    family=$(map_family "$2")
     local version="$3"
 
     # If version is not set from the collection, parse from the model name
