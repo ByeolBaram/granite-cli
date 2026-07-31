@@ -61,6 +61,31 @@ impl Ui for PlainOutput {
     fn info(&self, msg: &str)  { println!("{}", msg); }
     fn warn(&self, msg: &str)  { println!("Warning: {}", msg); }
     fn error(&self, msg: &str) { eprintln!("Error: {}", msg); }
+
+    fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> crate::utils::ui::base::PullHandle {
+        match total_bytes {
+            Some(total) => println!("Pulling {} ({} bytes total)...", label, total),
+            None => println!("Pulling {}...", label),
+        }
+        crate::utils::ui::base::PullHandle(0)
+    }
+
+    fn pull_progress(&self, _handle: crate::utils::ui::base::PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>) {
+        match total_bytes {
+            Some(total) if total > 0 => {
+                let pct = ((downloaded_bytes as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
+                println!("  {}%", pct);
+            }
+            _ => println!("  {} bytes", downloaded_bytes),
+        }
+    }
+
+    fn pull_finish(&self, _handle: crate::utils::ui::base::PullHandle, label: &str, error: Option<&str>) {
+        match error {
+            Some(e) => println!("{}: failed: {}", label, e),
+            None => println!("{}: done", label),
+        }
+    }
 }
 
 impl HasUiMetadata for PlainOutput {

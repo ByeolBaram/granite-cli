@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+
 use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::backends::plain::PlainOutput;
-use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
+use crate::utils::ui::base::{HasUiMetadata, PullHandle, Ui, UiMetadata};
 
 /*-- public --*/
 
@@ -17,6 +22,8 @@ use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
 pub struct TerminalOutput {
     is_tty: bool,
     terminal_width: Option<u16>,
+    next_pull_handle: AtomicU64,
+    active_pulls: Mutex<HashMap<u64, ProgressBar>>,
 }
 
 impl ConfigConstructable for TerminalOutput {
@@ -28,6 +35,8 @@ impl ConfigConstructable for TerminalOutput {
         Self {
             is_tty,
             terminal_width: width,
+            next_pull_handle: AtomicU64::new(0),
+            active_pulls: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -207,6 +216,82 @@ impl Ui for TerminalOutput {
             return PlainOutput.detail_mark(msg);
         }
         format!("{}{}{}", SetForegroundColor(Color::DarkGrey), msg, ResetColor)
+    }
+
+    fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle {
+        if !self.is_tty {
+            return PlainOutput.pull_start(label, total_bytes);
+        }
+
+        let bar = match total_bytes {
+            Some(total) => {
+                let bar = ProgressBar::new(total);
+                if let Ok(style) = ProgressStyle::with_template(
+                    "{msg}  [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({percent}%)",
+                ) {
+                    bar.set_style(style);
+                }
+                bar
+            }
+            None => {
+                let bar = ProgressBar::new_spinner();
+                if let Ok(style) =
+                    ProgressStyle::with_template("{msg}  {spinner} {bytes} downloaded")
+                {
+                    bar.set_style(style);
+                }
+                bar.enable_steady_tick(std::time::Duration::from_millis(120));
+                bar
+            }
+        };
+        bar.set_message(label.to_string());
+
+        let id = self.next_pull_handle.fetch_add(1, Ordering::SeqCst);
+        self.active_pulls.lock().unwrap().insert(id, bar);
+        PullHandle(id)
+    }
+
+    fn pull_progress(&self, handle: PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>) {
+        if !self.is_tty {
+            return PlainOutput.pull_progress(handle, downloaded_bytes, total_bytes);
+        }
+
+        let pulls = self.active_pulls.lock().unwrap();
+        if let Some(bar) = pulls.get(&handle.0) {
+            if let Some(total) = total_bytes {
+                // The bar may have started as a spinner (total unknown at
+                // `pull_start` time, e.g. llama.cpp doesn't know the size
+                // until the first SSE progress frame). Upgrade it to a
+                // percentage-capable style now that a total is known.
+                if bar.length().is_none() {
+                    bar.disable_steady_tick();
+                    if let Ok(style) = ProgressStyle::with_template(
+                        "{msg}  [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({percent}%)",
+                    ) {
+                        bar.set_style(style);
+                    }
+                }
+                bar.set_length(total);
+            }
+            bar.set_position(downloaded_bytes);
+        }
+    }
+
+    fn pull_finish(&self, handle: PullHandle, label: &str, error: Option<&str>) {
+        if !self.is_tty {
+            return PlainOutput.pull_finish(handle, label, error);
+        }
+
+        match self.active_pulls.lock().unwrap().remove(&handle.0) {
+            Some(bar) => match error {
+                Some(e) => bar.abandon_with_message(format!("{}: failed: {}", label, e)),
+                None => bar.finish_with_message(format!("{}: done", label)),
+            },
+            None => match error {
+                Some(e) => self.error(&format!("{}: failed: {}", label, e)),
+                None => self.info(&format!("{}: done", label)),
+            },
+        }
     }
 }
 
