@@ -298,7 +298,6 @@ mod tests {
     /// `Error` when a line with a non-empty `error` field is encountered,
     /// or `Incomplete` when no terminal event appeared in any line.
     fn process_pull_lines(lines: impl IntoIterator<Item = String>) -> PullOutcome {
-        let mut success_observed = false;
         for line in lines {
             let line = line.trim();
             if line.is_empty() {
@@ -312,15 +311,10 @@ mod tests {
                 return PullOutcome::Error(err);
             }
             if progress.status == "success" {
-                success_observed = true;
                 return PullOutcome::Success;
             }
         }
-        if success_observed {
-            PullOutcome::Success
-        } else {
-            PullOutcome::Incomplete
-        }
+        PullOutcome::Incomplete
     }
 
     #[test]

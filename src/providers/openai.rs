@@ -170,7 +170,7 @@ impl Provider for OpenAIProvider {
         &self,
         model: &crate::models::ModelMetadata,
         variant: &crate::models::ModelVariant,
-        ui: &dyn crate::utils::ui::Ui,
+        _ui: &dyn crate::utils::ui::Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
         let message = format!(
             "Generic OpenAI-compatible provider '{}' does not support pulling models. \

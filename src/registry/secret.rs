@@ -51,6 +51,7 @@ mod tests {
 
     #[derive(schemars::JsonSchema)]
     struct HasSecret {
+        #[allow(unused)] // Used for schema inspection
         api_key: Option<Secret>,
     }
 

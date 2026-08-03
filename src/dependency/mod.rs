@@ -191,6 +191,7 @@ mod tests {
     // directly per recipe to stand in for that per-type lookup.
     #[derive(schemars::JsonSchema)]
     struct MixRatio {
+        #[allow(unused)] // Used for schema inspection
         parts_base: u32,
     }
 

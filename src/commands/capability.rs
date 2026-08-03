@@ -95,7 +95,7 @@ impl CapabilityCommands {
 
                 // Check dependencies
                 ctx.ui.info("Checking dependencies:");
-                let mut all_satisfied = true;
+                // let mut all_satisfied = true;
 
                 // for dep in &cap.dependencies {
                 //     let status = Self::check_dep_status(ctx, dep);
@@ -108,20 +108,20 @@ impl CapabilityCommands {
                 // Use DI factory to validate dependencies
                 // TODO: Recursively resolve dependencies
 
-                if !all_satisfied {
-                    ctx.ui.info("\nSome dependencies are missing. You may want to:");
-                    ctx.ui.info("  - Configure required models: granite-cli model setup <model-id>");
-                    ctx.ui.info("  - Configure required providers: granite-cli provider setup <provider-id>");
-                    ctx.ui.info("  - Install required external tools");
-                    ctx.ui.info("");
+                // if !all_satisfied {
+                //     ctx.ui.info("\nSome dependencies are missing. You may want to:");
+                //     ctx.ui.info("  - Configure required models: granite-cli model setup <model-id>");
+                //     ctx.ui.info("  - Configure required providers: granite-cli provider setup <provider-id>");
+                //     ctx.ui.info("  - Install required external tools");
+                //     ctx.ui.info("");
 
-                    let continue_anyway = ctx.ui.confirm("Continue with setup anyway?", false)?;
+                //     let continue_anyway = ctx.ui.confirm("Continue with setup anyway?", false)?;
 
-                    if !continue_anyway {
-                        ctx.ui.info("Capability setup cancelled.");
-                        return Ok(());
-                    }
-                }
+                //     if !continue_anyway {
+                //         ctx.ui.info("Capability setup cancelled.");
+                //         return Ok(());
+                //     }
+                // }
 
                 // Run on_setup hook
                 // TODO: Recursively set up dependencies
