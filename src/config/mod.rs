@@ -7,16 +7,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TopLevelConfig {
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
 }
 
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub models: HashMap<String, ModelConfig>,
     pub providers: HashMap<String, ProviderConfig>,
@@ -25,7 +22,6 @@ pub struct Config {
     pub shell: ShellConfig,
     pub tools: HashMap<String, ToolConfig>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -66,21 +62,17 @@ impl Default for ProviderConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityConfig {
     pub capability_id: String,
     pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoutingConfig {
     pub model_routes: HashMap<String, Vec<ProviderRoute>>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderRoute {
@@ -130,23 +122,24 @@ impl Config {
         let val_res = std::env::var("GRANITE_CLI_HOME");
 
         if let Ok(val) = val_res
-            && !val.is_empty() {
-                let path = PathBuf::from(&val);
+            && !val.is_empty()
+        {
+            let path = PathBuf::from(&val);
 
-                let has_valid_parent = path.parent().is_none_or(|p| p.exists());
+            let has_valid_parent = path.parent().is_none_or(|p| p.exists());
 
-                let valid_dir =
-                    (!path.exists() && has_valid_parent) || (path.exists() && path.is_dir());
+            let valid_dir =
+                (!path.exists() && has_valid_parent) || (path.exists() && path.is_dir());
 
-                if !valid_dir {
-                    anyhow::bail!(
-                        "Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.",
-                        val
-                    );
-                }
-
-                return Ok(path);
+            if !valid_dir {
+                anyhow::bail!(
+                    "Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.",
+                    val
+                );
             }
+
+            return Ok(path);
+        }
 
         let default_dir = dirs::config_dir().ok_or_else(|| {
             anyhow::Error::msg("Could not determine system configuration directory")

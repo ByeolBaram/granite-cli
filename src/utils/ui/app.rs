@@ -149,8 +149,7 @@ impl App {
                     }
                     KeyCode::Enter => {
                         // Confirm: position cursor at first match, return to browse
-                        let matches = self.filtered_ids(&q);
-                        self.row = if matches.is_empty() { 0 } else { 0 };
+                        self.row = 0;
                         self.sync_table_state();
                         self.mode = AppMode::Browse;
                     }
@@ -635,9 +634,10 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
         terminal.draw(|frame| app.render(frame))?;
 
         if let Event::Key(key) = event::read()?
-            && app.handle_key(key) {
-                break;
-            }
+            && app.handle_key(key)
+        {
+            break;
+        }
     }
 
     restore_terminal(terminal)?;
