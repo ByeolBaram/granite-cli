@@ -1,6 +1,10 @@
 mod secret;
 pub use secret::Secret;
 
+/// TODO: There are a number of instances of `#[allow(unused)]` that allow
+/// certain portions of the factories to be unused without warning. These should
+/// be removed once all factories are populated and utilized.
+
 /*-- Generic Factory Infrastructure ------------------------------------------*/
 
 /// Core trait that all factory-managed types must implement.
@@ -58,6 +62,7 @@ macro_rules! define_factory {
         /// Uses PhantomData to maintain type information without storing instances.
         struct MetaOf<T>(std::marker::PhantomData<T>);
         impl<T> MetaOf<T> {
+            #[allow(unused)]
             const fn new() -> Self { Self(std::marker::PhantomData) }
         }
 
@@ -69,12 +74,15 @@ macro_rules! define_factory {
                 fn describe(&self) -> $metadata;
 
                 /// Construct an instance with the given config
+                #[allow(unused)]
                 fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait>;
 
                 /// JSON schema of the config this implementation expects
+                #[allow(unused)]
                 fn config_schema(&self) -> schemars::Schema;
 
                 /// Default config value for this implementation
+                #[allow(unused)]
                 fn default_config(&self) -> serde_json::Value;
             }
 
@@ -156,6 +164,7 @@ macro_rules! define_factory {
                 /// # Arguments
                 ///
                 /// * `name` - Static string identifier for this implementation
+                #[allow(unused)]
                 pub(crate) fn register<T>(&mut self, name: &'static str)
                 where
                     T: $trait + [<Has $trait Metadata>] + Send + Sync + 'static,
@@ -174,6 +183,7 @@ macro_rules! define_factory {
                 ///
                 /// * `Ok(Box<dyn Trait>)` - Successfully constructed instance
                 /// * `Err(String)` - Error message if name not found
+                #[allow(unused)]
                 pub(crate) fn construct(
                     &self,
                     name: &str,
@@ -195,6 +205,7 @@ macro_rules! define_factory {
                 ///
                 /// * `Some(metadata)` - Metadata if found
                 /// * `None` - If name not registered
+                #[allow(unused)]
                 pub(crate) fn get(&self, name: &str) -> Option<$metadata> {
                     self.registry.get(name).map(|x| x.describe())
                 }
@@ -204,6 +215,7 @@ macro_rules! define_factory {
                 /// # Returns
                 ///
                 /// HashMap mapping names to metadata for all registered implementations
+                #[allow(unused)]
                 pub(crate) fn entries(&self) -> std::collections::HashMap<&str, $metadata> {
                     self.registry
                         .iter()
@@ -221,6 +233,7 @@ macro_rules! define_factory {
                 ///
                 /// * `Some(schema)` - Schema of the config `construct` expects, if found
                 /// * `None` - If name not registered
+                #[allow(unused)]
                 pub(crate) fn config_schema(&self, name: &str) -> Option<schemars::Schema> {
                     self.registry.get(name).map(|x| x.config_schema())
                 }
@@ -235,6 +248,7 @@ macro_rules! define_factory {
                 ///
                 /// * `Some(value)` - Default config value, if found
                 /// * `None` - If name not registered
+                #[allow(unused)]
                 pub(crate) fn default_config(&self, name: &str) -> Option<serde_json::Value> {
                     self.registry.get(name).map(|x| x.default_config())
                 }
