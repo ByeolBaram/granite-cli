@@ -1,5 +1,7 @@
 # Granite CLI
 
+🚧 🚧 🚧 UNDER CONSTRUCTION 🚧 🚧 🚧
+
 A command-line tool for discovering, configuring, and launching Granite-powered local and remote AI workflows.
 
 ## Quick Start
