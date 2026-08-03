@@ -1,9 +1,9 @@
 mod secret;
 pub use secret::Secret;
 
-/// TODO: There are a number of instances of `#[allow(unused)]` that allow
-/// certain portions of the factories to be unused without warning. These should
-/// be removed once all factories are populated and utilized.
+// TODO: There are a number of instances of `#[allow(unused)]` that allow
+// certain portions of the factories to be unused without warning. These should
+// be removed once all factories are populated and utilized.
 
 /*-- Generic Factory Infrastructure ------------------------------------------*/
 

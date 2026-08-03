@@ -32,7 +32,7 @@ fn compare_versions_desc(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// Sort enriched rows by family (asc), version (desc), size (desc), id (asc).
-fn sort_enriched_rows(rows: &mut Vec<(Vec<String>, ModelMetadata)>) {
+fn sort_enriched_rows(rows: &mut [(Vec<String>, ModelMetadata)]) {
     rows.sort_by(|(row_a, meta_a), (row_b, meta_b)| {
         meta_a
             .family
@@ -376,9 +376,10 @@ impl ModelCommands {
         for (model_id, model_config) in &ctx.config.models {
             if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
                 if let Some(ref t) = filter_type
-                    && model_md.model_type != *t {
-                        continue;
-                    }
+                    && model_md.model_type != *t
+                {
+                    continue;
+                }
                 let row = vec![
                     model_id.clone(),
                     model_md.family.clone(),
@@ -503,16 +504,17 @@ impl ModelCommands {
                 ));
 
                 if let Some(existing) = ctx.config.get_model(model_id)
-                    && existing.enabled {
-                        let overwrite = ctx.ui.confirm(
-                            &format!("Model '{}' is already configured. Overwrite?", model_id),
-                            false,
-                        )?;
-                        if !overwrite {
-                            ctx.ui.info("Model setup skipped.");
-                            return Ok(());
-                        }
+                    && existing.enabled
+                {
+                    let overwrite = ctx.ui.confirm(
+                        &format!("Model '{}' is already configured. Overwrite?", model_id),
+                        false,
+                    )?;
+                    if !overwrite {
+                        ctx.ui.info("Model setup skipped.");
+                        return Ok(());
                     }
+                }
 
                 let requirement = VariantRequirement {
                     format: selected_variant.format.clone(),

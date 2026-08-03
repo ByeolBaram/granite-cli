@@ -149,11 +149,8 @@ impl Provider for LMStudioProvider {
     }
 
     fn can_run_model(&self, variant_format: &str, _variant_precision: &str) -> bool {
-        match variant_format.to_lowercase().as_str() {
-            "gguf" => true,
-            "mlx" => cfg!(target_os = "macos"),
-            _ => false,
-        }
+        let format = variant_format.to_lowercase();
+        matches!(format.as_str(), "gguf" | "mlx" if format != "mlx" || cfg!(target_os = "macos"))
     }
 
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
