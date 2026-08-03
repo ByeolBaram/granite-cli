@@ -145,7 +145,7 @@ impl ModelCommands {
 
         let mut rows: Vec<(f64, Vec<String>)> = models
             .iter()
-            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
+            .filter(|(_, m)| filter_type.is_none_or(|t| m.model_type == *t))
             .filter_map(|(id, m)| {
                 let fit_rank = |fit: &ContextFit| match fit {
                     ContextFit::Full => 1,
@@ -167,7 +167,7 @@ impl ModelCommands {
                     })
                     .filter(|(fit, _)| *fit != ContextFit::None)
                     .filter(|(_, v)| {
-                        filter_providers.map_or(true, |ps| {
+                        filter_providers.is_none_or(|ps| {
                             ps.iter().any(|p| p.can_run_model(&v.format, &v.precision))
                         })
                     })
@@ -334,7 +334,7 @@ impl ModelCommands {
         let models = MODEL_REGISTRY.entries();
         let mut rows: Vec<(Vec<String>, ModelMetadata)> = models
             .iter()
-            .filter(|(_, m)| filter_type.map_or(true, |t| m.model_type == *t))
+            .filter(|(_, m)| filter_type.is_none_or(|t| m.model_type == *t))
             .map(|(id, m)| {
                 let row = vec![
                     id.to_string(),
@@ -375,11 +375,10 @@ impl ModelCommands {
 
         for (model_id, model_config) in &ctx.config.models {
             if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
-                if let Some(ref t) = filter_type {
-                    if model_md.model_type != *t {
+                if let Some(ref t) = filter_type
+                    && model_md.model_type != *t {
                         continue;
                     }
-                }
                 let row = vec![
                     model_id.clone(),
                     model_md.family.clone(),
@@ -503,8 +502,8 @@ impl ModelCommands {
                     selected_variant.format, selected_variant.precision
                 ));
 
-                if let Some(existing) = ctx.config.get_model(model_id) {
-                    if existing.enabled {
+                if let Some(existing) = ctx.config.get_model(model_id)
+                    && existing.enabled {
                         let overwrite = ctx.ui.confirm(
                             &format!("Model '{}' is already configured. Overwrite?", model_id),
                             false,
@@ -514,7 +513,6 @@ impl ModelCommands {
                             return Ok(());
                         }
                     }
-                }
 
                 let requirement = VariantRequirement {
                     format: selected_variant.format.clone(),

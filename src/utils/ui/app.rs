@@ -29,7 +29,7 @@ fn strip_ansi(input: &str) -> String {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
@@ -634,11 +634,10 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
     loop {
         terminal.draw(|frame| app.render(frame))?;
 
-        if let Event::Key(key) = event::read()? {
-            if app.handle_key(key) {
+        if let Event::Key(key) = event::read()?
+            && app.handle_key(key) {
                 break;
             }
-        }
     }
 
     restore_terminal(terminal)?;
