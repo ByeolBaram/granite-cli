@@ -8,7 +8,7 @@ Today, the project already supports:
 - checking provider health
 - recommending models based on local hardware
 - pulling model weights for supported local providers
-- rendering output in terminal, plain text, JSON, and Markdown formats
+- rendering output in the terminal, as plain text, JSON, and Markdown
 
 The longer-term goal is for Granite CLI to become the control plane for Granite-based developer tooling: a single place to manage models, providers, capabilities, and launcher integrations for tools like coding assistants and agentic workflows.
 
