@@ -1,41 +1,49 @@
 # Contributing to Granite CLI
 
-Thank you for your interest in contributing! This guide covers the basic setup and development workflow.
+Thank you for your interest in contributing. Please read this guide before opening a PR.
 
-## Prerequisites
+All participants are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
-  - Verify installation: `rustup --version`
+## Building
 
-## Getting Started
+Requires Rust 1.88.0 or later (see `rust-version` in [`Cargo.toml`](Cargo.toml)).
 
-1. Clone the repository
-2. Build the project for the first time to resolve dependencies:
-
-```bash
+```sh
 cargo build
 ```
 
-## Common Commands
+For a release build:
 
-| Command | Description |
-|---------|-------------|
-| `cargo build` | Compile the project (in debug mode) |
-| `cargo run` | Run the CLI tool locally |
-| `cargo test` | Run all tests in dev-mode only |
-| `cargo clippy` | Lint code for style and potential issues |
-
-## Development Workflow
-
-Before submitting a change:
-
-1. Ensure your feature builds successfully:
-   ```bash
-    cargo build
+```sh
+cargo build --release
 ```
 
-2. If you added new functionality or modified existing behavior, add tests in the relevant test files and run `cargo test` to verify everything passes.
+## Running
 
-3. Run clippy to check for linting issues (catches common mistakes):
-   ```bash
-    cargo clippy
+```sh
+cargo run -- --help
+```
+
+## Testing
+
+```sh
+cargo test
+```
+
+## Contribution flow
+
+1. **Fork** the repository and create a branch for your change.
+2. Make a focused, reviewable change. Keep it minimal and task-specific.
+3. Run formatting, linting, and tests before pushing:
+   ```sh
+   cargo fmt --check
+   cargo clippy
+   cargo test
+   ```
+4. **Sign off** every commit with a `Signed-off-by` trailer to certify the [Developer Certificate of Origin](https://developercertificate.org/):
+   ```sh
+   git commit -s -m "your commit message"
+   ```
+5. Open a **pull request** against `main`. Describe what the change does and link any related issues.
+
+Maintainers will review and may request changes before merging.
