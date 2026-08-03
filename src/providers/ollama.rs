@@ -202,6 +202,7 @@ impl Provider for OllamaProvider {
         let handle = ui.pull_start(&label, None);
         let mut stream = response.bytes_stream();
         let mut buf: Vec<u8> = Vec::new();
+        let mut success_observed = false;
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
@@ -228,14 +229,24 @@ impl Provider for OllamaProvider {
                     ui.pull_progress(handle, completed, Some(total));
                 }
                 if progress.status == "success" {
-                    ui.pull_finish(handle, &label, None);
-                    return Ok(crate::providers::PullResult::Success);
+                    success_observed = true;
+                    break;
                 }
+            }
+            if success_observed {
+                break;
             }
         }
 
-        ui.pull_finish(handle, &label, None);
-        Ok(crate::providers::PullResult::Success)
+        if success_observed {
+            ui.pull_finish(handle, &label, None);
+            Ok(crate::providers::PullResult::Success)
+        } else {
+            ui.pull_finish(handle, &label, None);
+            Err(ProviderError::Other(
+                "Ollama pull stream ended without success status".to_string(),
+            ))
+        }
     }
 }
 
@@ -273,6 +284,44 @@ impl HasProviderMetadata for OllamaProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Result of processing a batch of Ollama pull progress NDJSON lines.
+    #[derive(Debug, PartialEq, Eq)]
+    enum PullOutcome {
+        Success,
+        Error(String),
+        Incomplete,
+    }
+
+    /// Process a sequence of NDJSON lines from an Ollama `/api/pull` stream.
+    /// Returns `Success` when a `status == "success"` line is observed,
+    /// `Error` when a line with a non-empty `error` field is encountered,
+    /// or `Incomplete` when no terminal event appeared in any line.
+    fn process_pull_lines(lines: impl IntoIterator<Item = String>) -> PullOutcome {
+        let mut success_observed = false;
+        for line in lines {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let progress: OllamaPullProgress = match serde_json::from_str(line) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if let Some(err) = progress.error {
+                return PullOutcome::Error(err);
+            }
+            if progress.status == "success" {
+                success_observed = true;
+                return PullOutcome::Success;
+            }
+        }
+        if success_observed {
+            PullOutcome::Success
+        } else {
+            PullOutcome::Incomplete
+        }
+    }
 
     #[test]
     fn test_default_config() {
@@ -340,5 +389,92 @@ mod tests {
         let progress: OllamaPullProgress = serde_json::from_str(line).unwrap();
         assert_eq!(progress.total, Some(100));
         assert_eq!(progress.completed, Some(50));
+    }
+
+    #[test]
+    fn test_pull_outcome_success() {
+        assert_eq!(
+            process_pull_lines(vec![
+                r#"{"status":"pulling manifest"}"#.to_string(),
+                r#"{"status":"downloading","digest":"sha256:abc"}"#.to_string(),
+                r#"{"status":"success"}"#.to_string(),
+            ]),
+            PullOutcome::Success,
+        );
+    }
+
+    #[test]
+    fn test_pull_outcome_incomplete_stream_ended() {
+        assert_eq!(
+            process_pull_lines(vec![
+                r#"{"status":"pulling manifest"}"#.to_string(),
+                r#"{"status":"downloading","digest":"sha256:abc"}"#.to_string(),
+            ]),
+            PullOutcome::Incomplete,
+        );
+    }
+
+    #[test]
+    fn test_pull_outcome_empty_stream() {
+        assert_eq!(process_pull_lines(Vec::<String>::new()), PullOutcome::Incomplete);
+    }
+
+    #[test]
+    fn test_pull_outcome_error_from_stream() {
+        let result = process_pull_lines(vec![
+            r#"{"status":"pulling manifest"}"#.to_string(),
+            r#"{"status":"failed","error":"disk full"}"#.to_string(),
+        ]);
+        if let PullOutcome::Error(msg) = result {
+            assert_eq!(msg, "disk full");
+        } else {
+            panic!("expected PullOutcome::Error, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_pull_outcome_ignores_empty_lines() {
+        assert_eq!(
+            process_pull_lines(vec![
+                "".to_string(),
+                "  ".to_string(),
+                r#"{"status":"pulling manifest"}"#.to_string(),
+            ]),
+            PullOutcome::Incomplete,
+        );
+    }
+
+    #[test]
+    fn test_pull_outcome_ignores_invalid_json() {
+        assert_eq!(
+            process_pull_lines(vec![
+                "not json".to_string(),
+                r#"{"status":"pulling manifest"}"#.to_string(),
+            ]),
+            PullOutcome::Incomplete,
+        );
+    }
+
+    #[test]
+    fn test_pull_outcome_success_before_error() {
+        let result = process_pull_lines(vec![
+            r#"{"status":"success"}"#.to_string(),
+            r#"{"status":"failed","error":"too late"}"#.to_string(),
+        ]);
+        assert_eq!(result, PullOutcome::Success);
+    }
+
+    #[test]
+    fn test_pull_outcome_incomplete_after_error_but_error_wins() {
+        // When stream ends without success but with an error line, error wins
+        let result = process_pull_lines(vec![
+            r#"{"status":"downloading","digest":"sha256:abc"}"#.to_string(),
+            r#"{"status":"failed","error":"connection reset"}"#.to_string(),
+        ]);
+        if let PullOutcome::Error(msg) = result {
+            assert_eq!(msg, "connection reset");
+        } else {
+            panic!("expected PullOutcome::Error, got {:?}", result);
+        }
     }
 }
