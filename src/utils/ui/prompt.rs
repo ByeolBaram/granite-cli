@@ -9,14 +9,25 @@ use crate::utils::ui::Ui;
 /// arrays (indented), and masks input for fields whose schema is marked
 /// `"format": "password"` (see `registry::Secret`) rather than guessing from
 /// field names.
-pub fn prompt_from_schema(ui: &dyn Ui, schema: &schemars::Schema, defaults: &Value) -> anyhow::Result<Value> {
+pub fn prompt_from_schema(
+    ui: &dyn Ui,
+    schema: &schemars::Schema,
+    defaults: &Value,
+) -> anyhow::Result<Value> {
     let root = serde_json::to_value(schema)?;
     prompt_value(ui, &root, &root, defaults, "", "")
 }
 
 /*-- Recursive dispatch ---------------------------------------------------------*/
 
-fn prompt_value(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_value(
+    ui: &dyn Ui,
+    root: &Value,
+    node: &Value,
+    default: &Value,
+    indent: &str,
+    label: &str,
+) -> anyhow::Result<Value> {
     let node = resolve_ref(root, node);
     match node.get("type").and_then(Value::as_str) {
         Some("object") => prompt_object(ui, root, node, default, indent, label),
@@ -28,7 +39,14 @@ fn prompt_value(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent
     }
 }
 
-fn prompt_object(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_object(
+    ui: &dyn Ui,
+    root: &Value,
+    node: &Value,
+    default: &Value,
+    indent: &str,
+    label: &str,
+) -> anyhow::Result<Value> {
     if !indent.is_empty() && !label.is_empty() {
         ui.info(&format!("{indent}{label}:"));
     }
@@ -52,7 +70,14 @@ fn prompt_object(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, inden
     Ok(Value::Object(result))
 }
 
-fn prompt_array(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_array(
+    ui: &dyn Ui,
+    root: &Value,
+    node: &Value,
+    default: &Value,
+    indent: &str,
+    label: &str,
+) -> anyhow::Result<Value> {
     let Some(items_schema) = node.get("items").map(|v| resolve_ref(root, v)) else {
         return Ok(Value::Array(vec![]));
     };
@@ -78,13 +103,23 @@ fn prompt_array(ui: &dyn Ui, root: &Value, node: &Value, default: &Value, indent
 
 /*-- Leaf prompts ---------------------------------------------------------------*/
 
-fn prompt_string(ui: &dyn Ui, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_string(
+    ui: &dyn Ui,
+    node: &Value,
+    default: &Value,
+    indent: &str,
+    label: &str,
+) -> anyhow::Result<Value> {
     let default_str = default.as_str().unwrap_or("").to_string();
     let prompt = format!("{indent}{label}");
 
     if is_secret_schema(node) {
         let entered = ui.password(&format!("{prompt} (leave blank to keep current)"))?;
-        let value = if entered.is_empty() { default_str } else { entered };
+        let value = if entered.is_empty() {
+            default_str
+        } else {
+            entered
+        };
         Ok(Value::String(value))
     } else {
         let entered = ui.text(&prompt, &default_str)?;
@@ -92,7 +127,13 @@ fn prompt_string(ui: &dyn Ui, node: &Value, default: &Value, indent: &str, label
     }
 }
 
-fn prompt_number(ui: &dyn Ui, node: &Value, default: &Value, indent: &str, label: &str) -> anyhow::Result<Value> {
+fn prompt_number(
+    ui: &dyn Ui,
+    node: &Value,
+    default: &Value,
+    indent: &str,
+    label: &str,
+) -> anyhow::Result<Value> {
     let is_integer = node.get("type").and_then(Value::as_str) == Some("integer");
     let default_str = default
         .as_number()
@@ -139,7 +180,12 @@ fn is_secret_schema(node: &Value) -> bool {
 fn is_promptable(node: &Value) -> bool {
     matches!(
         node.get("type").and_then(Value::as_str),
-        Some("object") | Some("array") | Some("string") | Some("integer") | Some("number") | Some("boolean")
+        Some("object")
+            | Some("array")
+            | Some("string")
+            | Some("integer")
+            | Some("number")
+            | Some("boolean")
     )
 }
 
@@ -205,10 +251,14 @@ mod tests {
 
     #[test]
     fn secret_format_is_detected_from_schema_not_field_name() {
-        assert!(is_secret_schema(&json!({"type": "string", "format": "password"})));
+        assert!(is_secret_schema(
+            &json!({"type": "string", "format": "password"})
+        ));
         assert!(!is_secret_schema(&json!({"type": "string"})));
         // A field literally named "api_key" with no format marker is NOT a secret.
-        assert!(!is_secret_schema(&json!({"type": "string", "title": "api_key"})));
+        assert!(!is_secret_schema(
+            &json!({"type": "string", "title": "api_key"})
+        ));
     }
 
     #[test]

@@ -5,5 +5,5 @@ pub mod prompt;
 pub mod tui;
 
 pub use app::run_interactive_tui;
-pub use base::{Ui, UI_REGISTRY};
+pub use base::{UI_REGISTRY, Ui};
 pub use prompt::prompt_from_schema;

@@ -118,7 +118,9 @@ mod gpu {
         for entry in drm_dir.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if !name.starts_with("card") || !name["card".len()..].bytes().all(|b| b.is_ascii_digit()) {
+            if !name.starts_with("card")
+                || !name["card".len()..].bytes().all(|b| b.is_ascii_digit())
+            {
                 continue;
             }
 

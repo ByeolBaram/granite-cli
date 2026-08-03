@@ -62,8 +62,8 @@ impl crate::dependency::Configured<dyn Provider> for ProviderSource {
 
 mod base;
 pub use base::{
-    ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat,
-    Provider, ProviderError, ProviderMetadata, ProviderType, PullResult,
+    ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat, Provider, ProviderError,
+    ProviderMetadata, ProviderType, PullResult,
 };
 
 mod openai;
@@ -84,7 +84,7 @@ pub use lmstudio::{LMStudioProvider, LMStudioProviderConfig};
 mod tests {
     use super::*;
     use crate::config::{Config, ProviderConfig};
-    use crate::dependency::{resolve, Configured, DependsOn, Requirement};
+    use crate::dependency::{Configured, DependsOn, Requirement, resolve};
 
     fn openai_provider_config(id: &str, base_url: &str) -> ProviderConfig {
         ProviderConfig {

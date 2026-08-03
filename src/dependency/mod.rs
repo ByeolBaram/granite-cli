@@ -205,7 +205,10 @@ mod tests {
 
     impl Configured<dyn Paint> for PaintShop {
         fn instances(&self) -> Vec<(String, &(dyn Paint + 'static))> {
-            self.cans.iter().map(|(id, p)| (id.clone(), p.as_ref())).collect()
+            self.cans
+                .iter()
+                .map(|(id, p)| (id.clone(), p.as_ref()))
+                .collect()
         }
         fn catalog(&self) -> HashMap<&'static str, PaintMetadata> {
             self.recipes
@@ -253,7 +256,8 @@ mod tests {
     #[test]
     fn resolution_includes_configurable_types_alongside_instances() {
         let mut shop = empty_shop();
-        shop.cans.push(("can-1".to_string(), Box::new(MixedPaint("blue"))));
+        shop.cans
+            .push(("can-1".to_string(), Box::new(MixedPaint("blue"))));
         shop.recipes.insert(
             "cyan-mix",
             PaintMetadata {
@@ -278,7 +282,8 @@ mod tests {
     #[test]
     fn resolution_is_configurable_only_when_no_instance_matches() {
         let mut shop = empty_shop();
-        shop.cans.push(("can-1".to_string(), Box::new(MixedPaint("red"))));
+        shop.cans
+            .push(("can-1".to_string(), Box::new(MixedPaint("red"))));
         shop.recipes.insert(
             "cyan-mix",
             PaintMetadata {
@@ -301,7 +306,8 @@ mod tests {
                 claimed_colors: vec!["blue", "green"],
             },
         );
-        shop.recipe_schemas.insert("cyan-mix", schemars::schema_for!(MixRatio));
+        shop.recipe_schemas
+            .insert("cyan-mix", schemars::schema_for!(MixRatio));
 
         let resolution = resolve(&WantsColor("blue"), &shop);
         assert_eq!(resolution.configurable_types, vec!["cyan-mix"]);

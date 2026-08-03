@@ -123,7 +123,10 @@ mod tests {
     fn test_detect_shell_returns_name() {
         let result = detect_shell();
         assert!(!result.0.is_empty());
-        assert!(matches!(result.0.as_str(), "bash" | "zsh" | "fish" | "unknown"));
+        assert!(matches!(
+            result.0.as_str(),
+            "bash" | "zsh" | "fish" | "unknown"
+        ));
     }
 
     #[test]

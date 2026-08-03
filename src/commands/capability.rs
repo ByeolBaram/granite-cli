@@ -13,11 +13,18 @@ impl CapabilityCommands {
     pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
         let capabilities = CAPABILITY_REGISTRY.entries();
 
-        let mut rows: Vec<Vec<String>> = capabilities.iter().map(|(cap_id, cap)| {
-            let deps: Vec<_> = cap.dependencies.iter().map(|d| d.to_string()).collect();
-            let deps_str = if deps.is_empty() { "None".to_string() } else { deps.join(", ") };
-            vec![cap_id.to_string(), cap.name.clone(), deps_str]
-        }).collect();
+        let mut rows: Vec<Vec<String>> = capabilities
+            .iter()
+            .map(|(cap_id, cap)| {
+                let deps: Vec<_> = cap.dependencies.iter().map(|d| d.to_string()).collect();
+                let deps_str = if deps.is_empty() {
+                    "None".to_string()
+                } else {
+                    deps.join(", ")
+                };
+                vec![cap_id.to_string(), cap.name.clone(), deps_str]
+            })
+            .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         ctx.ui.table(
@@ -29,12 +36,18 @@ impl CapabilityCommands {
     }
 
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        let mut rows: Vec<Vec<String>> = ctx.config.capabilities.iter().map(|(id, cfg)| {
-            let name = CAPABILITY_REGISTRY.get(id)
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| id.clone());
-            vec![id.clone(), name, cfg.enabled.to_string()]
-        }).collect();
+        let mut rows: Vec<Vec<String>> = ctx
+            .config
+            .capabilities
+            .iter()
+            .map(|(id, cfg)| {
+                let name = CAPABILITY_REGISTRY
+                    .get(id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| id.clone());
+                vec![id.clone(), name, cfg.enabled.to_string()]
+            })
+            .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         ctx.ui.table(
@@ -49,7 +62,7 @@ impl CapabilityCommands {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
                 let mut fields: Vec<(&str, String)> = vec![
-                    ("Name",        cap.name.clone()),
+                    ("Name", cap.name.clone()),
                     ("Description", cap.description.clone()),
                 ];
 
@@ -73,12 +86,18 @@ impl CapabilityCommands {
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
                     let fields: Vec<(&str, String)> = vec![
                         ("Enabled", configured.enabled.to_string()),
-                        ("Note", "Configured but not found in bundled registry.".to_string()),
+                        (
+                            "Note",
+                            "Configured but not found in bundled registry.".to_string(),
+                        ),
                     ];
                     ctx.ui.detail(capability_id, &fields);
                     Ok(())
                 } else {
-                    ctx.ui.error(&format!("Capability '{}' not found in registry.", capability_id));
+                    ctx.ui.error(&format!(
+                        "Capability '{}' not found in registry.",
+                        capability_id
+                    ));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -88,7 +107,8 @@ impl CapabilityCommands {
     pub async fn setup(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
-                ctx.ui.info(&format!("\nSetting up capability: {}", capability_id));
+                ctx.ui
+                    .info(&format!("\nSetting up capability: {}", capability_id));
                 ctx.ui.info(&format!("Name: {}", cap.name));
                 ctx.ui.info(&format!("Description: {}", cap.description));
                 ctx.ui.info("");
@@ -136,10 +156,15 @@ impl CapabilityCommands {
                 // Prompt for capability-specific configuration
                 let mut config_map = HashMap::new();
 
-                let enabled = ctx.ui.confirm(&format!("Enable '{}' capability?", cap.name), true)?;
+                let enabled = ctx
+                    .ui
+                    .confirm(&format!("Enable '{}' capability?", cap.name), true)?;
 
                 if enabled {
-                    ctx.ui.info(&format!("\nCapability {} will be available at tool launch time.", cap.name));
+                    ctx.ui.info(&format!(
+                        "\nCapability {} will be available at tool launch time.",
+                        cap.name
+                    ));
                     config_map.insert("enabled".to_string(), "true".to_string());
 
                     // Get runtime bindings to show what will be injected
@@ -154,21 +179,32 @@ impl CapabilityCommands {
                     //     }
                     // }
                 } else {
-                    ctx.ui.info(&format!("\nCapability {} is disabled.", cap.name));
+                    ctx.ui
+                        .info(&format!("\nCapability {} is disabled.", cap.name));
                     config_map.insert("enabled".to_string(), "false".to_string());
                 }
 
                 let capability_config = crate::config::CapabilityConfig {
                     capability_id: capability_id.to_string(),
-                    enabled: config_map.get("enabled").map(|v| v == "true").unwrap_or(true),
+                    enabled: config_map
+                        .get("enabled")
+                        .map(|v| v == "true")
+                        .unwrap_or(true),
                     config: config_map,
                 };
 
-                if let Err(e) = ctx.config.insert_capability(capability_id, capability_config) {
-                    ctx.ui.warn(&format!("failed to save capability config: {}", e));
+                if let Err(e) = ctx
+                    .config
+                    .insert_capability(capability_id, capability_config)
+                {
+                    ctx.ui
+                        .warn(&format!("failed to save capability config: {}", e));
                 }
 
-                ctx.ui.info(&format!("\nCapability '{}' configured successfully!", capability_id));
+                ctx.ui.info(&format!(
+                    "\nCapability '{}' configured successfully!",
+                    capability_id
+                ));
 
                 Ok(())
             }
@@ -189,15 +225,26 @@ impl CapabilityCommands {
 
                     if overwrite {
                         ctx.ui.info("\nPlease remove the existing config first:");
-                        ctx.ui.info(&format!("  granite-cli capability remove {}", capability_id));
+                        ctx.ui.info(&format!(
+                            "  granite-cli capability remove {}",
+                            capability_id
+                        ));
                         ctx.ui.info("Then run setup again.");
                     }
 
                     Ok(())
                 } else {
-                    ctx.ui.error(&format!("Capability '{}' not found in registry.", capability_id));
-                    let available: Vec<_> = CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect();
-                    ctx.ui.info(&format!("Available capabilities: {}", available.join(", ")));
+                    ctx.ui.error(&format!(
+                        "Capability '{}' not found in registry.",
+                        capability_id
+                    ));
+                    let available: Vec<_> = CAPABILITY_REGISTRY
+                        .entries()
+                        .keys()
+                        .map(|k| k.to_string())
+                        .collect();
+                    ctx.ui
+                        .info(&format!("Available capabilities: {}", available.join(", ")));
                     anyhow::bail!("Capability not found");
                 }
             }
@@ -274,23 +321,34 @@ mod tests {
 
     fn ctx_with_capability(id: &str, enabled: bool) -> crate::AppContext {
         let mut ctx = test_ctx();
-        ctx.config.capabilities.insert(id.to_string(), CapabilityConfig {
-            capability_id: id.to_string(),
-            enabled,
-            config: std::collections::HashMap::new(),
-        });
+        ctx.config.capabilities.insert(
+            id.to_string(),
+            CapabilityConfig {
+                capability_id: id.to_string(),
+                enabled,
+                config: std::collections::HashMap::new(),
+            },
+        );
         ctx
     }
 
     macro_rules! tables {
         ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().tables.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .tables
+                .borrow()
         };
     }
 
     macro_rules! details {
         ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().details.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .details
+                .borrow()
         };
     }
 

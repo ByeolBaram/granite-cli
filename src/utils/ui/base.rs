@@ -35,7 +35,9 @@ pub static UI_REGISTRY: LazyLock<UiFactory> = LazyLock::new(|| {
 /// Shared error for backends (json, markdown) that render for scripting/docs
 /// rather than a live session, and so can't sensibly block on interactive input.
 pub(crate) fn non_interactive<T>() -> anyhow::Result<T> {
-    anyhow::bail!("interactive prompts are not supported with this output format; rerun with --output=terminal or --output=plain")
+    anyhow::bail!(
+        "interactive prompts are not supported with this output format; rerun with --output=terminal or --output=plain"
+    )
 }
 
 /// Generates panic-safety contract tests for any [`Ui`] implementation.
@@ -285,7 +287,10 @@ pub(crate) mod tests {
         fn detail(&self, title: &str, fields: &[(&str, String)]) {
             self.details.borrow_mut().push((
                 title.to_string(),
-                fields.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+                fields
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
             ));
         }
 
@@ -308,19 +313,32 @@ pub(crate) mod tests {
         }
 
         fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle {
-            self.pull_starts.borrow_mut().push((label.to_string(), total_bytes));
+            self.pull_starts
+                .borrow_mut()
+                .push((label.to_string(), total_bytes));
             let mut next = self.next_pull_handle.borrow_mut();
             let handle = PullHandle(*next);
             *next += 1;
             handle
         }
 
-        fn pull_progress(&self, handle: PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>) {
-            self.pull_progresses.borrow_mut().push((handle, downloaded_bytes, total_bytes));
+        fn pull_progress(
+            &self,
+            handle: PullHandle,
+            downloaded_bytes: u64,
+            total_bytes: Option<u64>,
+        ) {
+            self.pull_progresses
+                .borrow_mut()
+                .push((handle, downloaded_bytes, total_bytes));
         }
 
         fn pull_finish(&self, handle: PullHandle, label: &str, error: Option<&str>) {
-            self.pull_finishes.borrow_mut().push((handle, label.to_string(), error.map(|e| e.to_string())));
+            self.pull_finishes.borrow_mut().push((
+                handle,
+                label.to_string(),
+                error.map(|e| e.to_string()),
+            ));
         }
 
         fn ok(&self, msg: &str) -> String {
@@ -344,23 +362,45 @@ pub(crate) mod tests {
         }
 
         fn select(&self, prompt: &str, items: &[String], default: usize) -> anyhow::Result<usize> {
-            self.select_prompts.borrow_mut().push((prompt.to_string(), items.to_vec(), default));
-            Ok(self.select_answers.borrow_mut().pop_front().unwrap_or(default))
+            self.select_prompts
+                .borrow_mut()
+                .push((prompt.to_string(), items.to_vec(), default));
+            Ok(self
+                .select_answers
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(default))
         }
 
         fn confirm(&self, prompt: &str, default: bool) -> anyhow::Result<bool> {
-            self.confirm_prompts.borrow_mut().push((prompt.to_string(), default));
-            Ok(self.confirm_answers.borrow_mut().pop_front().unwrap_or(default))
+            self.confirm_prompts
+                .borrow_mut()
+                .push((prompt.to_string(), default));
+            Ok(self
+                .confirm_answers
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(default))
         }
 
         fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
-            self.text_prompts.borrow_mut().push((prompt.to_string(), default.to_string()));
-            Ok(self.text_answers.borrow_mut().pop_front().unwrap_or_else(|| default.to_string()))
+            self.text_prompts
+                .borrow_mut()
+                .push((prompt.to_string(), default.to_string()));
+            Ok(self
+                .text_answers
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_else(|| default.to_string()))
         }
 
         fn password(&self, prompt: &str) -> anyhow::Result<String> {
             self.password_prompts.borrow_mut().push(prompt.to_string());
-            Ok(self.password_answers.borrow_mut().pop_front().unwrap_or_default())
+            Ok(self
+                .password_answers
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_default())
         }
     }
 
@@ -370,7 +410,6 @@ pub(crate) mod tests {
     // capture across threads, which is always true in practice.
     unsafe impl Send for CaptureUi {}
     unsafe impl Sync for CaptureUi {}
-
 
     // -- UiFactory registry ------------------------------------------------
 
@@ -453,7 +492,10 @@ pub(crate) mod tests {
     #[test]
     fn capture_records_detail_title_and_field_pairs() {
         let out = make();
-        out.detail("Item", &[("Key", "Value".to_string()), ("Foo", "Bar".to_string())]);
+        out.detail(
+            "Item",
+            &[("Key", "Value".to_string()), ("Foo", "Bar".to_string())],
+        );
         let details = out.details.borrow();
         assert_eq!(details.len(), 1);
         let (title, fields) = &details[0];
@@ -492,8 +534,18 @@ pub(crate) mod tests {
         out.status("provider-a", true, "");
         out.status("provider-b", false, "connection refused");
         let statuses = out.statuses.borrow();
-        assert_eq!(statuses[0], ("provider-a".to_string(), true, "".to_string()));
-        assert_eq!(statuses[1], ("provider-b".to_string(), false, "connection refused".to_string()));
+        assert_eq!(
+            statuses[0],
+            ("provider-a".to_string(), true, "".to_string())
+        );
+        assert_eq!(
+            statuses[1],
+            (
+                "provider-b".to_string(),
+                false,
+                "connection refused".to_string()
+            )
+        );
     }
 
     // -- CaptureUi input methods -------------------------------------------
@@ -501,7 +553,9 @@ pub(crate) mod tests {
     #[test]
     fn select_falls_back_to_default_when_no_canned_answer() {
         let ui = make();
-        let choice = ui.select("Pick one", &["a".to_string(), "b".to_string()], 1).unwrap();
+        let choice = ui
+            .select("Pick one", &["a".to_string(), "b".to_string()], 1)
+            .unwrap();
         assert_eq!(choice, 1);
         assert_eq!(ui.select_prompts.borrow()[0].0, "Pick one");
     }
@@ -549,7 +603,9 @@ pub(crate) mod tests {
     #[test]
     fn password_consumes_canned_answer() {
         let ui = make();
-        ui.password_answers.borrow_mut().push_back("s3cr3t".to_string());
+        ui.password_answers
+            .borrow_mut()
+            .push_back("s3cr3t".to_string());
         assert_eq!(ui.password("Secret?").unwrap(), "s3cr3t");
     }
 
@@ -566,12 +622,21 @@ pub(crate) mod tests {
         ui.pull_finish(h1, "model-a", None);
         ui.pull_finish(h2, "model-b", Some("boom"));
 
-        assert_eq!(*ui.pull_starts.borrow(), vec![
-            ("model-a".to_string(), Some(100)),
-            ("model-b".to_string(), None),
-        ]);
+        assert_eq!(
+            *ui.pull_starts.borrow(),
+            vec![
+                ("model-a".to_string(), Some(100)),
+                ("model-b".to_string(), None),
+            ]
+        );
         assert_eq!(*ui.pull_progresses.borrow(), vec![(h1, 50, Some(100))]);
-        assert_eq!(ui.pull_finishes.borrow()[0], (h1, "model-a".to_string(), None));
-        assert_eq!(ui.pull_finishes.borrow()[1], (h2, "model-b".to_string(), Some("boom".to_string())));
+        assert_eq!(
+            ui.pull_finishes.borrow()[0],
+            (h1, "model-a".to_string(), None)
+        );
+        assert_eq!(
+            ui.pull_finishes.borrow()[1],
+            (h2, "model-b".to_string(), Some("boom".to_string()))
+        );
     }
 }

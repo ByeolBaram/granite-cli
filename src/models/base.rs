@@ -12,9 +12,7 @@ use crate::utils::hardware::HardwareProfile;
 /// Functional capabilities that models can provide
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum ModelFunction {
-
     /*-- Chat Functions --*/
-
     /// Text-based conversational interaction
     Chat,
     /// Tool inputs and invocations
@@ -27,12 +25,10 @@ pub enum ModelFunction {
     Guardian,
 
     /*-- Embedding Functions --*/
-
     /// Vector representation generation for text
     Embeddings,
 
     /*-- Audio Functions --*/
-
     /// Audio-to-text transcription
     Transcription,
     /// Audio translation
@@ -108,7 +104,6 @@ pub struct ModelArchitecture {
 /// Core trait for model implementations.
 /// All models must implement this trait along with ConfigConstructable.
 pub trait Model: ConfigConstructable {
-
     /// Get the model family name
     fn family(&self) -> &str;
 
@@ -268,7 +263,10 @@ mod format_size_tests {
             num_attention_heads: 32,
             num_key_value_heads: 8,
             head_dim: 128,
-            layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 32 }],
+            layer_types: vec![LayerTypeCount {
+                kind: LayerKind::FullAttention,
+                count: 32,
+            }],
         }
     }
 
@@ -330,7 +328,10 @@ mod searchable_tests {
                 num_attention_heads: 32,
                 num_key_value_heads: 8,
                 head_dim: 128,
-                layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 32 }],
+                layer_types: vec![LayerTypeCount {
+                    kind: LayerKind::FullAttention,
+                    count: 32,
+                }],
             },
             variants: vec![],
             description: description.map(String::from),
@@ -365,4 +366,3 @@ mod searchable_tests {
         assert!(fields.contains(&"chat"));
     }
 }
-
