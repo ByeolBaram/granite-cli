@@ -838,7 +838,7 @@ mod tests {
     }
 
 
-    fn metadata_supporting(formats: Vec<ModelFormat>, precisions: Vec<&str>) -> ProviderMetadata {
+    fn metadata_supporting(formats: Vec<ModelFormat>) -> ProviderMetadata {
         ProviderMetadata {
             name: "Test Provider".to_string(),
             description: "".to_string(),
@@ -855,21 +855,21 @@ mod tests {
     #[test]
     fn admits_type_only_checks_format_not_precision() {
         let requirement = VariantRequirement { format: "gguf".to_string(), precision: "some-exotic-precision".to_string() };
-        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16"]);
+        let metadata = metadata_supporting(vec![ModelFormat::GGUF]);
         assert!(requirement.admits_type(&metadata));
     }
 
     #[test]
     fn admits_type_rejects_unsupported_format() {
         let requirement = VariantRequirement { format: "gguf".to_string(), precision: "fp16".to_string() };
-        let metadata = metadata_supporting(vec![ModelFormat::Safetensors], vec!["fp16"]);
+        let metadata = metadata_supporting(vec![ModelFormat::Safetensors]);
         assert!(!requirement.admits_type(&metadata));
     }
 
     #[test]
     fn admits_type_matches_format_case_insensitively() {
         let requirement = VariantRequirement { format: "GGUF".to_string(), precision: "FP16".to_string() };
-        let metadata = metadata_supporting(vec![ModelFormat::GGUF], vec!["fp16", "fp32"]);
+        let metadata = metadata_supporting(vec![ModelFormat::GGUF]);
         assert!(requirement.admits_type(&metadata));
     }
 

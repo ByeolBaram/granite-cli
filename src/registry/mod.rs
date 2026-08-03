@@ -277,7 +277,7 @@ mod tests {
     extern crate paste;
 
     // Test trait and types
-    trait TestTrait: ConfigConstructable {
+    pub(crate) trait TestTrait: ConfigConstructable {
         fn get_value(&self) -> i32;
     }
 
@@ -328,6 +328,7 @@ mod tests {
 
     #[derive(schemars::JsonSchema)]
     struct TestImpl2Config {
+        #[allow(unused)] // Used for schema inspection
         value: i32,
     }
 
