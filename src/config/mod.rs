@@ -8,21 +8,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TopLevelConfig {
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
 }
 
-impl Default for TopLevelConfig {
-    fn default() -> Self {
-        Self {
-            routing: RoutingConfig::default(),
-            shell: ShellConfig::default(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     pub models: HashMap<String, ModelConfig>,
     pub providers: HashMap<String, ProviderConfig>,
@@ -32,18 +26,6 @@ pub struct Config {
     pub tools: HashMap<String, ToolConfig>,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            models: HashMap::new(),
-            providers: HashMap::new(),
-            capabilities: HashMap::new(),
-            routing: RoutingConfig::default(),
-            shell: ShellConfig::default(),
-            tools: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -85,34 +67,20 @@ impl Default for ProviderConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct CapabilityConfig {
     pub capability_id: String,
     pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
-impl Default for CapabilityConfig {
-    fn default() -> Self {
-        Self {
-            capability_id: String::new(),
-            enabled: false,
-            config: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct RoutingConfig {
     pub model_routes: HashMap<String, Vec<ProviderRoute>>,
 }
 
-impl Default for RoutingConfig {
-    fn default() -> Self {
-        Self {
-            model_routes: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderRoute {
@@ -161,11 +129,11 @@ impl Config {
     fn config_dir() -> Result<PathBuf> {
         let val_res = std::env::var("GRANITE_CLI_HOME");
 
-        if let Ok(val) = val_res {
-            if !val.is_empty() {
+        if let Ok(val) = val_res
+            && !val.is_empty() {
                 let path = PathBuf::from(&val);
 
-                let has_valid_parent = path.parent().map_or(true, |p| p.exists());
+                let has_valid_parent = path.parent().is_none_or(|p| p.exists());
 
                 let valid_dir =
                     (!path.exists() && has_valid_parent) || (path.exists() && path.is_dir());
@@ -179,7 +147,6 @@ impl Config {
 
                 return Ok(path);
             }
-        }
 
         let default_dir = dirs::config_dir().ok_or_else(|| {
             anyhow::Error::msg("Could not determine system configuration directory")
@@ -246,7 +213,7 @@ impl Config {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "yaml") {
+            if path.extension().is_some_and(|ext| ext == "yaml") {
                 let file_name = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())

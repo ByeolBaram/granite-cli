@@ -341,7 +341,7 @@ fn visible_len(s: &str) -> usize {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
@@ -372,7 +372,7 @@ fn split_cell_ansi(s: &str) -> (&str, &str, &str) {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
