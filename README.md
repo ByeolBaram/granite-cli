@@ -1,6 +1,23 @@
 # Granite CLI
 
-Granite CLI is a Rust command-line tool for discovering, configuring, and eventually launching Granite-powered local and remote AI workflows.
+A command-line tool for discovering, configuring, and launching Granite-powered local and remote AI workflows.
+
+## Quick Start
+
+```sh
+# Clone and build
+git clone https://github.com/ibm-granite/granite-cli.git
+cd granite-cli
+cargo build --release
+
+# Install to ~/.cargo/bin
+cargo install --path .
+
+# Verify installation
+granite --help
+```
+
+## Roadmap
 
 Today, the project already supports:
 - browsing a catalog of Granite models
@@ -12,7 +29,7 @@ Today, the project already supports:
 
 The longer-term goal is for Granite CLI to become the control plane for Granite-based developer tooling: a single place to manage models, providers, capabilities, and launcher integrations for tools like coding assistants and agentic workflows.
 
-## Current direction
+### Current direction
 
 The project is currently focused on building a strong foundation in a few areas:
 
@@ -22,7 +39,7 @@ The project is currently focused on building a strong foundation in a few areas:
 - **Launcher architecture**: eventually launching external tools with Granite-aware configuration and overlays
 - **Multiple output modes**: terminal-first UX with machine-readable output formats for scripting and automation
 
-## What the project wants to be
+### What the project wants to be
 
 Granite CLI is aiming to become:
 
@@ -31,9 +48,7 @@ Granite CLI is aiming to become:
 3. a **bridge layer** between Granite model/capability definitions and downstream tools such as assistants, launchers, and IDE workflows
 4. a **repeatable automation surface** that works well both interactively and in scripts/CI
 
-## Near-term roadmap themes
-
-Based on the current codebase and open issues, the near-term direction includes:
+### Near-term themes
 
 - improving CI and contributor workflows
 - expanding provider support
@@ -42,15 +57,8 @@ Based on the current codebase and open issues, the near-term direction includes:
 - implementing capability and launcher architecture
 - improving documentation and release automation
 
-## Status
-
 This repository is still under active construction. The architecture is taking shape, but some areas are intentionally incomplete while core foundations are being built.
 
 ## Contributing
 
-Contributions are welcome. If you are picking up an issue, it is usually best to:
-
-- start with a focused, reviewable change
-- align with the existing registry/factory-driven architecture
-- keep changes minimal and task-specific
-- run formatting, linting, and tests before opening a PR
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full details. We follow a fork-and-PR workflow with [DCO](https://developercertificate.org/) sign-off, and ask that all participants follow our [Code of Conduct](CODE_OF_CONDUCT.md).
