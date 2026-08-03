@@ -239,7 +239,7 @@ mod tests {
         );
 
         exporter
-            .add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")])
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
             .unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();
@@ -261,7 +261,7 @@ mod tests {
         );
 
         exporter
-            .add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")])
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
             .unwrap();
 
         let content_after_add = fs::read_to_string(&export_file).unwrap();
@@ -290,7 +290,7 @@ mod tests {
         assert!(!exporter.check_shell_profile_updated());
 
         exporter
-            .add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")])
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
             .unwrap();
 
         assert!(exporter.check_shell_profile_updated());
@@ -309,10 +309,10 @@ mod tests {
         );
 
         exporter
-            .add_exports(&CaptureUi::default(), &vec![("API_KEY", "old_secret")])
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "old_secret")])
             .unwrap();
         exporter
-            .add_exports(&CaptureUi::default(), &vec![("API_KEY", "new_secret")])
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "new_secret")])
             .unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();

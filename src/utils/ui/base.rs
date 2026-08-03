@@ -571,14 +571,14 @@ pub(crate) mod tests {
     #[test]
     fn confirm_falls_back_to_default_when_no_canned_answer() {
         let ui = make();
-        assert_eq!(ui.confirm("Sure?", true).unwrap(), true);
+        assert!(ui.confirm("Sure?", true).unwrap());
     }
 
     #[test]
     fn confirm_consumes_canned_answer() {
         let ui = make();
         ui.confirm_answers.borrow_mut().push_back(false);
-        assert_eq!(ui.confirm("Sure?", true).unwrap(), false);
+        assert!(!ui.confirm("Sure?", true).unwrap());
     }
 
     #[test]

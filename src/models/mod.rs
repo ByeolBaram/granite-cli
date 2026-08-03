@@ -33,7 +33,7 @@ mod tests {
     #[test]
     fn test_all_models_registered() {
         let models = MODEL_REGISTRY.entries();
-        assert!(models.len() > 0, "Expected models to be registered");
+        assert!(!models.is_empty(), "Expected models to be registered");
     }
 
     #[test]
@@ -55,7 +55,7 @@ mod tests {
     fn test_model_variants() {
         let model = MODEL_REGISTRY.get("granite-3.1-8b-instruct").unwrap();
         assert!(
-            model.variants.len() > 0,
+            !model.variants.is_empty(),
             "granite-3.1-8b-instruct should have variants"
         );
 
