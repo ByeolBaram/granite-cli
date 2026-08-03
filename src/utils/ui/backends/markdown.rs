@@ -17,7 +17,14 @@ impl Ui for MarkdownOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
         println!("\n## {}\n", title);
         let header_line = format!("| {} |", headers.join(" | "));
-        let sep_line = format!("| {} |", headers.iter().map(|h| "-".repeat(h.len() + 2)).collect::<Vec<_>>().join(" | "));
+        let sep_line = format!(
+            "| {} |",
+            headers
+                .iter()
+                .map(|h| "-".repeat(h.len() + 2))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
         println!("{}", header_line);
         println!("{}", sep_line);
         for row in rows {
@@ -43,9 +50,15 @@ impl Ui for MarkdownOutput {
         }
     }
 
-    fn info(&self, msg: &str)  { println!("{}", msg); }
-    fn warn(&self, msg: &str)  { println!("Warning: {}", msg); }
-    fn error(&self, msg: &str) { eprintln!("Error: {}", msg); }
+    fn info(&self, msg: &str) {
+        println!("{}", msg);
+    }
+    fn warn(&self, msg: &str) {
+        println!("Warning: {}", msg);
+    }
+    fn error(&self, msg: &str) {
+        eprintln!("Error: {}", msg);
+    }
 
     fn select(&self, _prompt: &str, _items: &[String], _default: usize) -> anyhow::Result<usize> {
         base::non_interactive()
@@ -67,7 +80,13 @@ impl Ui for MarkdownOutput {
         base::PullHandle(0)
     }
 
-    fn pull_progress(&self, _handle: base::PullHandle, _downloaded_bytes: u64, _total_bytes: Option<u64>) {}
+    fn pull_progress(
+        &self,
+        _handle: base::PullHandle,
+        _downloaded_bytes: u64,
+        _total_bytes: Option<u64>,
+    ) {
+    }
 
     fn pull_finish(&self, _handle: base::PullHandle, label: &str, error: Option<&str>) {
         match error {
@@ -98,7 +117,11 @@ mod tests {
     #[test]
     fn markdown_table_contains_pipe_chars() {
         let out = CaptureUi::default();
-        out.table("Test", &["ID", "NAME"], &[vec!["id-1".to_string(), "name-1".to_string()]]);
+        out.table(
+            "Test",
+            &["ID", "NAME"],
+            &[vec!["id-1".to_string(), "name-1".to_string()]],
+        );
         let tables = out.tables.borrow();
         // verify the CaptureOutput recorded correctly; live rendering tested via contract tests
         assert_eq!(tables.len(), 1);
@@ -108,7 +131,11 @@ mod tests {
     fn markdown_table_has_header_separator() {
         // Invoke the real MarkdownOutput (print-only) — just verifies no panic
         let md = MarkdownOutput::new(&serde_json::json!({}));
-        md.table("T", &["ID", "NAME"], &[vec!["a".to_string(), "b".to_string()]]);
+        md.table(
+            "T",
+            &["ID", "NAME"],
+            &[vec!["a".to_string(), "b".to_string()]],
+        );
     }
 
     #[test]

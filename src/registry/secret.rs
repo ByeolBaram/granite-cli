@@ -65,7 +65,10 @@ mod tests {
         // whole schema (properties + $defs) rather than assuming a specific nesting
         // shape, since that's what matters for consumers like `utils::schema_prompt`.
         let as_str = serde_json::to_string(&schema).unwrap();
-        assert!(as_str.contains("\"password\""), "schema should mark api_key as password format: {as_str}");
+        assert!(
+            as_str.contains("\"password\""),
+            "schema should mark api_key as password format: {as_str}"
+        );
     }
 
     #[test]

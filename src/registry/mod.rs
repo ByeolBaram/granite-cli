@@ -10,7 +10,6 @@ pub use secret::Secret;
 /// Core trait that all factory-managed types must implement.
 /// Provides construction from a configuration object.
 pub trait ConfigConstructable {
-
     /// Construct with a config instance
     fn new(cfg: &serde_json::Value) -> Self
     where
@@ -57,13 +56,14 @@ pub trait ConfigConstructable {
 #[macro_export]
 macro_rules! define_factory {
     ($trait:ident, $metadata:ty, $factory:ident) => {
-
         /// Wrapper type that connects an implementation to its metadata.
         /// Uses PhantomData to maintain type information without storing instances.
         struct MetaOf<T>(std::marker::PhantomData<T>);
         impl<T> MetaOf<T> {
             #[allow(unused)]
-            const fn new() -> Self { Self(std::marker::PhantomData) }
+            const fn new() -> Self {
+                Self(std::marker::PhantomData)
+            }
         }
 
         $crate::paste::paste! {

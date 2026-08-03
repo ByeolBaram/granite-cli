@@ -20,7 +20,9 @@ impl std::fmt::Display for ContextFit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ContextFit::Full => write!(f, "Full"),
-            ContextFit::Partial(max_context) => write!(f, "Partial ({})", format_token_count(*max_context)),
+            ContextFit::Partial(max_context) => {
+                write!(f, "Partial ({})", format_token_count(*max_context))
+            }
             ContextFit::None => write!(f, "None"),
         }
     }
@@ -79,8 +81,13 @@ pub(crate) fn estimate(
         return ContextFit::Full;
     }
 
-    let max_context_tokens =
-        max_context_fitting(architecture, variant, native_dtype, usable_gb, context_length);
+    let max_context_tokens = max_context_fitting(
+        architecture,
+        variant,
+        native_dtype,
+        usable_gb,
+        context_length,
+    );
     let min_useful_context = ((context_length as f64 * MIN_USABLE_CONTEXT_FRACTION) as u64)
         .max(MIN_USABLE_CONTEXT_TOKENS_FLOOR)
         .min(context_length);
@@ -103,15 +110,22 @@ fn required_gb(
 ) -> f64 {
     let attn_bytes_per_elem = cache_bytes_per_elem_attention(&variant.format, native_dtype);
     let recurrent_bytes_per_elem = cache_bytes_per_elem_recurrent(&variant.format, native_dtype);
-    let kv_bytes_per_token =
-        2.0 * architecture.num_key_value_heads as f64 * architecture.head_dim as f64 * attn_bytes_per_elem;
+    let kv_bytes_per_token = 2.0
+        * architecture.num_key_value_heads as f64
+        * architecture.head_dim as f64
+        * attn_bytes_per_elem;
 
     let layers_bytes: f64 = architecture
         .layer_types
         .iter()
         .map(|ltc| {
             ltc.count as f64
-                * layer_kind_bytes(&ltc.kind, context_tokens, kv_bytes_per_token, recurrent_bytes_per_elem)
+                * layer_kind_bytes(
+                    &ltc.kind,
+                    context_tokens,
+                    kv_bytes_per_token,
+                    recurrent_bytes_per_elem,
+                )
         })
         .sum();
 
@@ -137,8 +151,8 @@ fn layer_kind_bytes(
             // Fixed-size state, independent of context length: conv-state +
             // SSM-state element counts, per the Mamba2/SSM cache-sizing
             // formula (see llama.cpp's recurrent-state handling).
-            let conv_state_elems =
-                shape.d_conv.saturating_sub(1) * (shape.d_inner + 2 * shape.n_groups * shape.d_state);
+            let conv_state_elems = shape.d_conv.saturating_sub(1)
+                * (shape.d_inner + 2 * shape.n_groups * shape.d_state);
             let ssm_state_elems = shape.d_state * shape.d_inner;
             (conv_state_elems + ssm_state_elems) as f64 * recurrent_bytes_per_elem
         }
@@ -244,7 +258,10 @@ mod tests {
             num_attention_heads: 32,
             num_key_value_heads: 8,
             head_dim: 128,
-            layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 40 }],
+            layer_types: vec![LayerTypeCount {
+                kind: LayerKind::FullAttention,
+                count: 40,
+            }],
         }
     }
 
@@ -257,7 +274,10 @@ mod tests {
             num_key_value_heads: 4,
             head_dim: 128,
             layer_types: vec![
-                LayerTypeCount { kind: LayerKind::FullAttention, count: 4 },
+                LayerTypeCount {
+                    kind: LayerKind::FullAttention,
+                    count: 4,
+                },
                 LayerTypeCount {
                     kind: LayerKind::Recurrent(MambaShape {
                         d_conv: 4,
@@ -280,7 +300,10 @@ mod tests {
             num_key_value_heads: 4,
             head_dim: 128,
             layer_types: vec![
-                LayerTypeCount { kind: LayerKind::FullAttention, count: 7 },
+                LayerTypeCount {
+                    kind: LayerKind::FullAttention,
+                    count: 7,
+                },
                 LayerTypeCount {
                     kind: LayerKind::SlidingAttention { window: 128 },
                     count: 17,
@@ -294,14 +317,24 @@ mod tests {
         // conv_state = (4-1) * (3072 + 2*1*128) = 3 * 3328 = 9984
         // ssm_state  = 128 * 3072 = 393216
         // total elems = 403200, * 4 bytes (F32) = 1612800 bytes
-        let shape = MambaShape { d_conv: 4, d_state: 128, d_inner: 3072, n_groups: 1 };
+        let shape = MambaShape {
+            d_conv: 4,
+            d_state: 128,
+            d_inner: 3072,
+            n_groups: 1,
+        };
         let bytes = layer_kind_bytes(&LayerKind::Recurrent(shape), 100_000, 999.0, 4.0);
         assert_eq!(bytes, 1_612_800.0);
     }
 
     #[test]
     fn recurrent_layer_bytes_ignore_context_length() {
-        let shape = MambaShape { d_conv: 4, d_state: 128, d_inner: 3072, n_groups: 1 };
+        let shape = MambaShape {
+            d_conv: 4,
+            d_state: 128,
+            d_inner: 3072,
+            n_groups: 1,
+        };
         let short = layer_kind_bytes(&LayerKind::Recurrent(shape.clone()), 100, 999.0, 4.0);
         let long = layer_kind_bytes(&LayerKind::Recurrent(shape), 1_000_000, 999.0, 4.0);
         assert_eq!(short, long);
@@ -309,10 +342,16 @@ mod tests {
 
     #[test]
     fn sliding_attention_caps_at_window() {
-        let below_window = layer_kind_bytes(&LayerKind::SlidingAttention { window: 128 }, 64, 10.0, 4.0);
-        let at_window = layer_kind_bytes(&LayerKind::SlidingAttention { window: 128 }, 128, 10.0, 4.0);
-        let above_window =
-            layer_kind_bytes(&LayerKind::SlidingAttention { window: 128 }, 1_000_000, 10.0, 4.0);
+        let below_window =
+            layer_kind_bytes(&LayerKind::SlidingAttention { window: 128 }, 64, 10.0, 4.0);
+        let at_window =
+            layer_kind_bytes(&LayerKind::SlidingAttention { window: 128 }, 128, 10.0, 4.0);
+        let above_window = layer_kind_bytes(
+            &LayerKind::SlidingAttention { window: 128 },
+            1_000_000,
+            10.0,
+            4.0,
+        );
         assert_eq!(below_window, 640.0);
         assert_eq!(at_window, 1280.0);
         assert_eq!(above_window, 1280.0);
@@ -341,14 +380,26 @@ mod tests {
     #[test]
     fn ample_vram_yields_full_fit() {
         let hardware = hardware_with_vram(256.0);
-        let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         assert_eq!(fit, ContextFit::Full);
     }
 
     #[test]
     fn insufficient_vram_for_weights_alone_yields_none() {
         let hardware = hardware_with_vram(4.0);
-        let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         assert_eq!(fit, ContextFit::None);
     }
 
@@ -357,14 +408,26 @@ mod tests {
         // Enough for weights + a meaningfully reduced dense KV cache, but
         // not the full 131072-token context.
         let hardware = hardware_with_vram(22.5);
-        let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         assert!(matches!(fit, ContextFit::Partial(_)));
     }
 
     #[test]
     fn partial_fit_carries_max_context_as_power_of_two() {
         let hardware = hardware_with_vram(22.5);
-        let fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         match fit {
             ContextFit::Partial(max_context) => {
                 assert!(max_context.is_power_of_two());
@@ -387,8 +450,20 @@ mod tests {
     fn hybrid_model_fits_full_context_where_dense_equivalent_would_not() {
         let hardware = hardware_with_vram(6.0);
         let variant = variant("GGUF", 2.0);
-        let dense_fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant, &hardware);
-        let hybrid_fit = estimate(131_072, &hybrid_architecture(), "bfloat16", &variant, &hardware);
+        let dense_fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant,
+            &hardware,
+        );
+        let hybrid_fit = estimate(
+            131_072,
+            &hybrid_architecture(),
+            "bfloat16",
+            &variant,
+            &hardware,
+        );
         assert_ne!(dense_fit, ContextFit::Full);
         assert_eq!(hybrid_fit, ContextFit::Full);
     }
@@ -397,8 +472,20 @@ mod tests {
     fn swa_model_fits_full_context_where_dense_equivalent_would_not() {
         let hardware = hardware_with_vram(7.5);
         let variant = variant("GGUF", 2.0);
-        let dense_fit = estimate(131_072, &dense_architecture(), "bfloat16", &variant, &hardware);
-        let swa_fit = estimate(131_072, &swa_architecture(), "bfloat16", &variant, &hardware);
+        let dense_fit = estimate(
+            131_072,
+            &dense_architecture(),
+            "bfloat16",
+            &variant,
+            &hardware,
+        );
+        let swa_fit = estimate(
+            131_072,
+            &swa_architecture(),
+            "bfloat16",
+            &variant,
+            &hardware,
+        );
         assert_ne!(dense_fit, ContextFit::Full);
         assert_eq!(swa_fit, ContextFit::Full);
     }
@@ -406,7 +493,13 @@ mod tests {
     #[test]
     fn zero_context_length_yields_none() {
         let hardware = hardware_with_vram(256.0);
-        let fit = estimate(0, &dense_architecture(), "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            0,
+            &dense_architecture(),
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         assert_eq!(fit, ContextFit::None);
     }
 
@@ -421,7 +514,13 @@ mod tests {
             head_dim: 0,
             layer_types: vec![],
         };
-        let fit = estimate(4096, &empty_architecture, "bfloat16", &variant("GGUF", 5.0), &hardware);
+        let fit = estimate(
+            4096,
+            &empty_architecture,
+            "bfloat16",
+            &variant("GGUF", 5.0),
+            &hardware,
+        );
         assert_eq!(fit, ContextFit::None);
     }
 
@@ -431,7 +530,10 @@ mod tests {
         let variant = variant("safetensors", 16.0);
         let bf16_gb = required_gb(&architecture, &variant, "bfloat16", 100_000);
         let fp32_gb = required_gb(&architecture, &variant, "float32", 100_000);
-        assert!(fp32_gb > bf16_gb, "float32 KV cache should require more memory than bfloat16");
+        assert!(
+            fp32_gb > bf16_gb,
+            "float32 KV cache should require more memory than bfloat16"
+        );
     }
 
     #[test]
@@ -439,7 +541,8 @@ mod tests {
         let architecture = dense_architecture();
         let variant = variant("GGUF", 5.0);
         let usable_gb = 8.0;
-        let max_tokens = max_context_fitting(&architecture, &variant, "bfloat16", usable_gb, 131_072);
+        let max_tokens =
+            max_context_fitting(&architecture, &variant, "bfloat16", usable_gb, 131_072);
         assert!(max_tokens <= 131_072);
         assert!(required_gb(&architecture, &variant, "bfloat16", max_tokens) <= usable_gb);
         if max_tokens < 131_072 {

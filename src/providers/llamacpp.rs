@@ -1,13 +1,12 @@
 use crate::models::huggingface::hf_repo_id;
 use crate::models::{ModelFunction, ModelMetadata, ModelVariant};
 use crate::providers::base::{
-    http_health_check, ApiEndpoint, ApiType, AuthType, HealthStatus,
-    ModelFormat, Provider, ProviderError, ProviderMetadata, ProviderType,
-    HasProviderMetadata,
+    ApiEndpoint, ApiType, AuthType, HasProviderMetadata, HealthStatus, ModelFormat, Provider,
+    ProviderError, ProviderMetadata, ProviderType, http_health_check,
 };
 use crate::registry::{ConfigConstructable, Secret};
-use crate::utils::ui::base::PullHandle;
 use crate::utils::ui::Ui;
+use crate::utils::ui::base::PullHandle;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -116,14 +115,15 @@ impl LlamaCppProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
 
-        map.insert(ModelFunction::Chat, vec![
-            ApiEndpoint::OpenAIChat,
-            ApiEndpoint::AnthropicMessages,
-        ]);
+        map.insert(
+            ModelFunction::Chat,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
 
-        map.insert(ModelFunction::Embeddings, vec![
-            ApiEndpoint::OpenAIEmbeddings,
-        ]);
+        map.insert(
+            ModelFunction::Embeddings,
+            vec![ApiEndpoint::OpenAIEmbeddings],
+        );
 
         map
     }
@@ -164,7 +164,9 @@ impl LlamaCppProvider {
             while let Some(pos) = find_double_newline(&buf) {
                 let frame_bytes: Vec<u8> = buf.drain(..pos + 2).collect();
                 let frame_text = String::from_utf8_lossy(&frame_bytes);
-                let Some(json_str) = frame_text.trim().strip_prefix("data:") else { continue };
+                let Some(json_str) = frame_text.trim().strip_prefix("data:") else {
+                    continue;
+                };
                 let json_str = json_str.trim();
                 if json_str.is_empty() {
                     continue;
@@ -179,14 +181,21 @@ impl LlamaCppProvider {
 
                 match frame.event.as_str() {
                     "download_progress" => {
-                        if let Some(progress) = frame.data.get("progress").and_then(|p| p.as_object()) {
+                        if let Some(progress) =
+                            frame.data.get("progress").and_then(|p| p.as_object())
+                        {
                             let mut done_sum = 0u64;
                             let mut total_sum = 0u64;
                             for entry in progress.values() {
                                 done_sum += entry.get("done").and_then(|v| v.as_u64()).unwrap_or(0);
-                                total_sum += entry.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                                total_sum +=
+                                    entry.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
                             }
-                            ui.pull_progress(handle, done_sum, if total_sum > 0 { Some(total_sum) } else { None });
+                            ui.pull_progress(
+                                handle,
+                                done_sum,
+                                if total_sum > 0 { Some(total_sum) } else { None },
+                            );
                         }
                     }
                     "download_finished" => {
@@ -229,7 +238,10 @@ impl LlamaCppProvider {
             if !response.status().is_success() {
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                let err = format!("llama.cpp models status check failed ({}): {}", status, body);
+                let err = format!(
+                    "llama.cpp models status check failed ({}): {}",
+                    status, body
+                );
                 ui.pull_finish(handle, label, Some(&err));
                 return Err(ProviderError::Other(err));
             }
@@ -253,8 +265,8 @@ impl LlamaCppProvider {
 
 impl ConfigConstructable for LlamaCppProvider {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: LlamaCppProviderConfig = serde_json::from_value(cfg.clone())
-            .unwrap_or_default();
+        let config: LlamaCppProviderConfig =
+            serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -267,7 +279,11 @@ impl ConfigConstructable for LlamaCppProvider {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { config, client, stream_client }
+        Self {
+            config,
+            client,
+            stream_client,
+        }
     }
 }
 
@@ -299,7 +315,8 @@ impl Provider for LlamaCppProvider {
             &self.config.base_url,
             &self.config.health_check_endpoint,
             self.config.api_key.as_ref(),
-        ).await
+        )
+        .await
     }
 
     async fn pull_model(
@@ -308,15 +325,23 @@ impl Provider for LlamaCppProvider {
         variant: &ModelVariant,
         ui: &dyn Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
-        let repo = hf_repo_id(&variant.url).ok_or_else(|| ProviderError::Other(format!(
-            "cannot determine a HuggingFace repo for {} variant {}/{}",
-            model.family, variant.format, variant.precision
-        )))?;
+        let repo = hf_repo_id(&variant.url).ok_or_else(|| {
+            ProviderError::Other(format!(
+                "cannot determine a HuggingFace repo for {} variant {}/{}",
+                model.family, variant.format, variant.precision
+            ))
+        })?;
         let model_ref = format!("{}:{}", repo, variant.precision);
-        let label = format!("{} ({} {})", model.family, variant.format, variant.precision);
+        let label = format!(
+            "{} ({} {})",
+            model.family, variant.format, variant.precision
+        );
 
         let post_url = format!("{}/models", self.config.base_url);
-        let mut request = self.client.post(&post_url).json(&serde_json::json!({ "model": model_ref }));
+        let mut request = self
+            .client
+            .post(&post_url)
+            .json(&serde_json::json!({ "model": model_ref }));
         if let Some(key) = &self.config.api_key {
             request = request.bearer_auth(&key.0);
         }
@@ -329,12 +354,18 @@ impl Provider for LlamaCppProvider {
                 ui.info(&format!("{} is already downloaded.", label));
                 return Ok(crate::providers::PullResult::Success);
             }
-            return Err(ProviderError::Other(format!("llama.cpp model pull request failed ({}): {}", status, body)));
+            return Err(ProviderError::Other(format!(
+                "llama.cpp model pull request failed ({}): {}",
+                status, body
+            )));
         }
 
         let handle = ui.pull_start(&label, None);
 
-        match self.watch_pull_via_sse(&model_ref, handle, &label, ui).await {
+        match self
+            .watch_pull_via_sse(&model_ref, handle, &label, ui)
+            .await
+        {
             Ok(true) => Ok(crate::providers::PullResult::Success),
             Ok(false) => self.watch_pull_via_polling(repo, handle, &label, ui).await,
             Err(e) => Err(e),
@@ -393,7 +424,10 @@ mod tests {
         assert_eq!(meta.name, "llama.cpp");
         assert!(meta.supported_api_types.contains(&ApiType::OpenAI));
         assert!(meta.supported_api_types.contains(&ApiType::Anthropic));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Chat));
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Chat)
+        );
     }
 
     #[test]

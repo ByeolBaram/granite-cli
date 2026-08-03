@@ -1,9 +1,8 @@
 use crate::models::huggingface::hf_repo_id;
 use crate::models::{ModelFunction, ModelMetadata, ModelVariant};
 use crate::providers::base::{
-    http_health_check, ApiEndpoint, ApiType, AuthType, HealthStatus,
-    ModelFormat, Provider, ProviderError, ProviderMetadata, ProviderType,
-    HasProviderMetadata,
+    ApiEndpoint, ApiType, AuthType, HasProviderMetadata, HealthStatus, ModelFormat, Provider,
+    ProviderError, ProviderMetadata, ProviderType, http_health_check,
 };
 use crate::registry::{ConfigConstructable, Secret};
 use crate::utils::ui::Ui;
@@ -92,14 +91,15 @@ impl LMStudioProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
 
-        map.insert(ModelFunction::Chat, vec![
-            ApiEndpoint::OpenAIChat,
-            ApiEndpoint::AnthropicMessages,
-        ]);
+        map.insert(
+            ModelFunction::Chat,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
 
-        map.insert(ModelFunction::Embeddings, vec![
-            ApiEndpoint::OpenAIEmbeddings,
-        ]);
+        map.insert(
+            ModelFunction::Embeddings,
+            vec![ApiEndpoint::OpenAIEmbeddings],
+        );
 
         map
     }
@@ -117,8 +117,8 @@ impl LMStudioProvider {
 
 impl ConfigConstructable for LMStudioProvider {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: LMStudioProviderConfig = serde_json::from_value(cfg.clone())
-            .unwrap_or_default();
+        let config: LMStudioProviderConfig =
+            serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -162,7 +162,8 @@ impl Provider for LMStudioProvider {
             &self.config.base_url,
             &self.config.health_check_endpoint,
             self.config.api_key.as_ref(),
-        ).await
+        )
+        .await
     }
 
     async fn pull_model(
@@ -171,11 +172,16 @@ impl Provider for LMStudioProvider {
         variant: &ModelVariant,
         ui: &dyn Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
-        let repo = hf_repo_id(&variant.url).ok_or_else(|| ProviderError::Other(format!(
-            "cannot determine a HuggingFace repo for {} variant {}/{}",
+        let repo = hf_repo_id(&variant.url).ok_or_else(|| {
+            ProviderError::Other(format!(
+                "cannot determine a HuggingFace repo for {} variant {}/{}",
+                model.family, variant.format, variant.precision
+            ))
+        })?;
+        let label = format!(
+            "{} ({} {})",
             model.family, variant.format, variant.precision
-        )))?;
-        let label = format!("{} ({} {})", model.family, variant.format, variant.precision);
+        );
 
         let url = format!("{}/api/v1/models/download", self.config.base_url);
         let mut request = self.client.post(&url).json(&serde_json::json!({
@@ -190,7 +196,10 @@ impl Provider for LMStudioProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Other(format!("LM Studio download request failed ({}): {}", status, body)));
+            return Err(ProviderError::Other(format!(
+                "LM Studio download request failed ({}): {}",
+                status, body
+            )));
         }
         let started: LMStudioDownloadResponse = response.json().await?;
 
@@ -208,7 +217,10 @@ impl Provider for LMStudioProvider {
                 return Ok(crate::providers::PullResult::Success);
             }
         };
-        let status_url = format!("{}/api/v1/models/download/status/{}", self.config.base_url, job_id);
+        let status_url = format!(
+            "{}/api/v1/models/download/status/{}",
+            self.config.base_url, job_id
+        );
 
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -267,7 +279,9 @@ impl HasProviderMetadata for LMStudioProvider {
 
         ProviderMetadata {
             name: "LM Studio".to_string(),
-            description: "User-friendly local inference server with GUI, supporting GGUF and MLX models".to_string(),
+            description:
+                "User-friendly local inference server with GUI, supporting GGUF and MLX models"
+                    .to_string(),
             provider_type: ProviderType::Local,
             default_endpoint: "http://localhost:1234".to_string(),
             supported_api_types: vec![ApiType::OpenAI, ApiType::Anthropic],
@@ -309,7 +323,10 @@ mod tests {
         assert_eq!(meta.name, "LM Studio");
         assert!(meta.supported_api_types.contains(&ApiType::OpenAI));
         assert!(meta.supported_api_types.contains(&ApiType::Anthropic));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Chat));
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Chat)
+        );
     }
 
     #[test]

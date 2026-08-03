@@ -1,4 +1,3 @@
-
 /*-- Searchable Trait ---------------------------------------------------------*/
 
 /// Declares which string fields on a metadata struct participate in search.
@@ -37,7 +36,10 @@ mod searchable_tests {
                 num_attention_heads: 1,
                 num_key_value_heads: 1,
                 head_dim: 1,
-                layer_types: vec![LayerTypeCount { kind: LayerKind::FullAttention, count: 1 }],
+                layer_types: vec![LayerTypeCount {
+                    kind: LayerKind::FullAttention,
+                    count: 1,
+                }],
             },
             variants: vec![],
             description: description.map(String::from),

@@ -39,13 +39,18 @@ mod tests {
 
     #[test]
     fn hf_repo_id_from_bare_repo() {
-        assert_eq!(hf_repo_id("ibm-granite/granite-speech-4.1-2b"), Some("ibm-granite/granite-speech-4.1-2b"));
+        assert_eq!(
+            hf_repo_id("ibm-granite/granite-speech-4.1-2b"),
+            Some("ibm-granite/granite-speech-4.1-2b")
+        );
     }
 
     #[test]
     fn hf_repo_id_from_blob_url() {
         assert_eq!(
-            hf_repo_id("https://huggingface.co/ibm-granite/granite-speech-4.1-2b-GGUF/blob/main/granite-speech-4.1-2b-Q4_K_M.gguf"),
+            hf_repo_id(
+                "https://huggingface.co/ibm-granite/granite-speech-4.1-2b-GGUF/blob/main/granite-speech-4.1-2b-Q4_K_M.gguf"
+            ),
             Some("ibm-granite/granite-speech-4.1-2b-GGUF")
         );
     }
@@ -58,7 +63,9 @@ mod tests {
     #[test]
     fn hf_blob_filename_from_blob_url() {
         assert_eq!(
-            hf_blob_filename("https://huggingface.co/ibm-granite/granite-speech-4.1-2b-GGUF/blob/main/granite-speech-4.1-2b-Q4_K_M.gguf"),
+            hf_blob_filename(
+                "https://huggingface.co/ibm-granite/granite-speech-4.1-2b-GGUF/blob/main/granite-speech-4.1-2b-Q4_K_M.gguf"
+            ),
             Some("granite-speech-4.1-2b-Q4_K_M.gguf")
         );
     }

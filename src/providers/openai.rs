@@ -1,7 +1,7 @@
 use crate::models::ModelFunction;
 use crate::providers::base::{
-    ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat, Provider, ProviderError,
-    ProviderMetadata, ProviderType, HasProviderMetadata,
+    ApiEndpoint, ApiType, AuthType, HasProviderMetadata, HealthStatus, ModelFormat, Provider,
+    ProviderError, ProviderMetadata, ProviderType,
 };
 use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
@@ -73,16 +73,21 @@ impl OpenAIProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
         map.insert(ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]);
-        map.insert(ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]);
-        map.insert(ModelFunction::Transcription, vec![ApiEndpoint::OpenAIAudioTranscription]);
+        map.insert(
+            ModelFunction::Embeddings,
+            vec![ApiEndpoint::OpenAIEmbeddings],
+        );
+        map.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
+        );
         map
     }
 }
 
 impl ConfigConstructable for OpenAIProvider {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: OpenAIProviderConfig = serde_json::from_value(cfg.clone())
-            .unwrap_or_default();
+        let config: OpenAIProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -90,16 +95,21 @@ impl ConfigConstructable for OpenAIProvider {
             .build()
             .expect("Failed to create HTTP client");
 
-        let function_endpoints = config.function_endpoints.clone()
+        let function_endpoints = config
+            .function_endpoints
+            .clone()
             .unwrap_or_else(Self::default_function_endpoints);
 
-        Self { config, client, function_endpoints }
+        Self {
+            config,
+            client,
+            function_endpoints,
+        }
     }
 }
 
 #[async_trait]
 impl Provider for OpenAIProvider {
-
     fn name(&self) -> &str {
         "OpenAI Compatible Provider"
     }
@@ -113,10 +123,7 @@ impl Provider for OpenAIProvider {
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
-        vec![
-            ModelFormat::Safetensors,
-            ModelFormat::GGUF,
-        ]
+        vec![ModelFormat::Safetensors, ModelFormat::GGUF]
     }
 
     fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
@@ -126,7 +133,10 @@ impl Provider for OpenAIProvider {
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
         let start = Instant::now();
 
-        let url = format!("{}{}", self.config.base_url, self.config.health_check_endpoint);
+        let url = format!(
+            "{}{}",
+            self.config.base_url, self.config.health_check_endpoint
+        );
 
         let mut request = self.client.get(&url);
 
@@ -148,7 +158,8 @@ impl Provider for OpenAIProvider {
                     Ok(HealthStatus {
                         healthy: false,
                         latency,
-                        error: Some(format!("HTTP {}: {}",
+                        error: Some(format!(
+                            "HTTP {}: {}",
                             response.status(),
                             response.text().await.unwrap_or_default()
                         )),
@@ -175,7 +186,10 @@ impl Provider for OpenAIProvider {
         let message = format!(
             "Generic OpenAI-compatible provider '{}' does not support pulling models. \
              Pull '{} ({} {})' manually using whatever mechanism your specific server requires, then restart it.",
-            self.name(), model.family, variant.format, variant.precision
+            self.name(),
+            model.family,
+            variant.format,
+            variant.precision
         );
         Ok(crate::providers::PullResult::Unsupported { message })
     }
@@ -185,8 +199,14 @@ impl HasProviderMetadata for OpenAIProvider {
     fn metadata() -> ProviderMetadata {
         let mut default_mappings = HashMap::new();
         default_mappings.insert(ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]);
-        default_mappings.insert(ModelFunction::Embeddings, vec![ApiEndpoint::OpenAIEmbeddings]);
-        default_mappings.insert(ModelFunction::Transcription, vec![ApiEndpoint::OpenAIAudioTranscription]);
+        default_mappings.insert(
+            ModelFunction::Embeddings,
+            vec![ApiEndpoint::OpenAIEmbeddings],
+        );
+        default_mappings.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
+        );
 
         ProviderMetadata {
             name: "OpenAI Compatible Provider".to_string(),
@@ -253,9 +273,18 @@ mod tests {
         let meta = OpenAIProvider::metadata();
         assert_eq!(meta.name, "OpenAI Compatible Provider");
         assert!(meta.supported_api_types.contains(&ApiType::OpenAI));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Chat));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Embeddings));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Transcription));
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Chat)
+        );
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Embeddings)
+        );
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Transcription)
+        );
     }
 
     #[test]
@@ -267,7 +296,10 @@ mod tests {
         });
         let provider = OpenAIProvider::new(&cfg);
         assert_eq!(provider.config.base_url, "http://example.com:8080");
-        assert_eq!(provider.config.api_key, Some(Secret("test-key".to_string())));
+        assert_eq!(
+            provider.config.api_key,
+            Some(Secret("test-key".to_string()))
+        );
         assert_eq!(provider.config.timeout_secs, 30);
     }
 

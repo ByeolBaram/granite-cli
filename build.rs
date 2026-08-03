@@ -20,9 +20,7 @@ fn main() {
 }
 
 fn generate_models_code(models: &[YamlModel]) -> String {
-    let mut code = String::from(
-        "// Auto-generated from resources/models.yaml - do not edit\n\n",
-    );
+    let mut code = String::from("// Auto-generated from resources/models.yaml - do not edit\n\n");
 
     // Generate a struct for each model
     for model in models {
@@ -30,10 +28,15 @@ fn generate_models_code(models: &[YamlModel]) -> String {
     }
 
     // Generate registration function
-    code.push_str("pub fn register_all_models(factory: &mut crate::models::base::ModelFactory) {\n");
+    code.push_str(
+        "pub fn register_all_models(factory: &mut crate::models::base::ModelFactory) {\n",
+    );
     for model in models {
         let struct_name = model_id_to_struct_name(&model.id);
-        code.push_str(&format!("    factory.register::<{}>(\"{}\");\n", struct_name, model.id));
+        code.push_str(&format!(
+            "    factory.register::<{}>(\"{}\");\n",
+            struct_name, model.id
+        ));
     }
     code.push_str("}\n");
 
@@ -48,19 +51,40 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str(&format!("pub struct {} {{}}\n\n", struct_name));
 
     // ConfigConstructable implementation
-    s.push_str(&format!("impl crate::registry::ConfigConstructable for {} {{\n", struct_name));
+    s.push_str(&format!(
+        "impl crate::registry::ConfigConstructable for {} {{\n",
+        struct_name
+    ));
     s.push_str("    fn new(_cfg: &serde_json::Value) -> Self { Self {} }\n");
     s.push_str("}\n\n");
 
     // Model trait implementation
-    s.push_str(&format!("impl crate::models::base::Model for {} {{\n", struct_name));
-    s.push_str(&format!("    fn family(&self) -> &str {{ {:?} }}\n", model.family));
-    s.push_str(&format!("    fn version(&self) -> &str {{ {:?} }}\n", model.version));
+    s.push_str(&format!(
+        "impl crate::models::base::Model for {} {{\n",
+        struct_name
+    ));
+    s.push_str(&format!(
+        "    fn family(&self) -> &str {{ {:?} }}\n",
+        model.family
+    ));
+    s.push_str(&format!(
+        "    fn version(&self) -> &str {{ {:?} }}\n",
+        model.version
+    ));
     s.push_str(&format!("    fn size(&self) -> u64 {{ {} }}\n", model.size));
-    s.push_str(&format!("    fn context_length(&self) -> u64 {{ {} }}\n", model.context_length));
+    s.push_str(&format!(
+        "    fn context_length(&self) -> u64 {{ {} }}\n",
+        model.context_length
+    ));
     s.push_str(&format!("    fn model_type(&self) -> &crate::models::base::ModelType {{ &crate::models::base::ModelType::{} }}\n", model.model_type));
-    s.push_str(&format!("    fn huggingface_repo(&self) -> &str {{ {:?} }}\n", model.huggingface_repo));
-    s.push_str(&format!("    fn native_dtype(&self) -> &str {{ {:?} }}\n", model.native_dtype));
+    s.push_str(&format!(
+        "    fn huggingface_repo(&self) -> &str {{ {:?} }}\n",
+        model.huggingface_repo
+    ));
+    s.push_str(&format!(
+        "    fn native_dtype(&self) -> &str {{ {:?} }}\n",
+        model.native_dtype
+    ));
 
     // Architecture - use static slice (contains a Vec, so not const-constructible)
     s.push_str("    fn architecture(&self) -> &crate::models::base::ModelArchitecture {\n");
@@ -75,14 +99,26 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("        static VARIANTS: std::sync::LazyLock<Vec<crate::models::base::ModelVariant>> = std::sync::LazyLock::new(|| vec![\n");
     for variant in &model.variants {
         s.push_str("            crate::models::base::ModelVariant {\n");
-        s.push_str(&format!("                format: {:?}.to_string(),\n", variant.format));
-        s.push_str(&format!("                precision: {:?}.to_string(),\n", variant.precision));
-        s.push_str(&format!("                size_gb: {},\n", format_float(variant.size_gb)));
-        s.push_str(&format!("                url: {:?}.to_string(),\n", variant.url));
+        s.push_str(&format!(
+            "                format: {:?}.to_string(),\n",
+            variant.format
+        ));
+        s.push_str(&format!(
+            "                precision: {:?}.to_string(),\n",
+            variant.precision
+        ));
+        s.push_str(&format!(
+            "                size_gb: {},\n",
+            format_float(variant.size_gb)
+        ));
+        s.push_str(&format!(
+            "                url: {:?}.to_string(),\n",
+            variant.url
+        ));
         s.push_str("            },\n");
     }
     s.push_str("        ]);\n");
-        s.push_str("        &VARIANTS\n");
+    s.push_str("        &VARIANTS\n");
     s.push_str("    }\n");
 
     // Description
@@ -108,7 +144,10 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("    fn supported_functions(&self) -> &[crate::models::base::ModelFunction] {\n");
     s.push_str("        static FUNCS: std::sync::LazyLock<Vec<crate::models::base::ModelFunction>> = std::sync::LazyLock::new(|| vec![\n");
     for func in &model.supported_functions {
-        s.push_str(&format!("            crate::models::base::ModelFunction::{},\n", func));
+        s.push_str(&format!(
+            "            crate::models::base::ModelFunction::{},\n",
+            func
+        ));
     }
     s.push_str("        ]);\n");
     s.push_str("        &FUNCS\n");
@@ -116,7 +155,10 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("}\n\n");
 
     // HasModelMetadata implementation
-    s.push_str(&format!("impl crate::models::base::HasModelMetadata for {} {{\n", struct_name));
+    s.push_str(&format!(
+        "impl crate::models::base::HasModelMetadata for {} {{\n",
+        struct_name
+    ));
     s.push_str("    fn metadata() -> crate::models::base::ModelMetadata {\n");
     s.push_str(&generate_metadata_literal(model));
     s.push_str("    }\n");
@@ -128,13 +170,31 @@ fn generate_model_struct(model: &YamlModel) -> String {
 fn generate_metadata_literal(model: &YamlModel) -> String {
     let mut s = String::new();
     s.push_str("        crate::models::base::ModelMetadata {\n");
-    s.push_str(&format!("            family: {:?}.to_string(),\n", model.family));
-    s.push_str(&format!("            version: {:?}.to_string(),\n", model.version));
+    s.push_str(&format!(
+        "            family: {:?}.to_string(),\n",
+        model.family
+    ));
+    s.push_str(&format!(
+        "            version: {:?}.to_string(),\n",
+        model.version
+    ));
     s.push_str(&format!("            size: {},\n", model.size));
-    s.push_str(&format!("            context_length: {},\n", model.context_length));
-    s.push_str(&format!("            model_type: crate::models::base::ModelType::{},\n", model.model_type));
-    s.push_str(&format!("            huggingface_repo: {:?}.to_string(),\n", model.huggingface_repo));
-    s.push_str(&format!("            native_dtype: {:?}.to_string(),\n", model.native_dtype));
+    s.push_str(&format!(
+        "            context_length: {},\n",
+        model.context_length
+    ));
+    s.push_str(&format!(
+        "            model_type: crate::models::base::ModelType::{},\n",
+        model.model_type
+    ));
+    s.push_str(&format!(
+        "            huggingface_repo: {:?}.to_string(),\n",
+        model.huggingface_repo
+    ));
+    s.push_str(&format!(
+        "            native_dtype: {:?}.to_string(),\n",
+        model.native_dtype
+    ));
     s.push_str("            architecture: ");
     s.push_str(&generate_architecture_literal(&model.architecture));
     s.push_str(",\n");
@@ -143,17 +203,32 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     s.push_str("            variants: vec![\n");
     for variant in &model.variants {
         s.push_str("                crate::models::base::ModelVariant {\n");
-        s.push_str(&format!("                    format: {:?}.to_string(),\n", variant.format));
-        s.push_str(&format!("                    precision: {:?}.to_string(),\n", variant.precision));
-        s.push_str(&format!("                    size_gb: {},\n", format_float(variant.size_gb)));
-        s.push_str(&format!("                    url: {:?}.to_string(),\n", variant.url));
+        s.push_str(&format!(
+            "                    format: {:?}.to_string(),\n",
+            variant.format
+        ));
+        s.push_str(&format!(
+            "                    precision: {:?}.to_string(),\n",
+            variant.precision
+        ));
+        s.push_str(&format!(
+            "                    size_gb: {},\n",
+            format_float(variant.size_gb)
+        ));
+        s.push_str(&format!(
+            "                    url: {:?}.to_string(),\n",
+            variant.url
+        ));
         s.push_str("                },\n");
     }
     s.push_str("            ],\n");
 
     // Description
     if let Some(ref desc) = model.description {
-        s.push_str(&format!("            description: Some({:?}.to_string()),\n", desc));
+        s.push_str(&format!(
+            "            description: Some({:?}.to_string()),\n",
+            desc
+        ));
     } else {
         s.push_str("            description: None,\n");
     }
@@ -168,7 +243,10 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     // Supported functions
     s.push_str("            supported_functions: vec![\n");
     for func in &model.supported_functions {
-        s.push_str(&format!("                crate::models::base::ModelFunction::{},\n", func));
+        s.push_str(&format!(
+            "                crate::models::base::ModelFunction::{},\n",
+            func
+        ));
     }
     s.push_str("            ],\n");
 
@@ -179,15 +257,27 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
 fn generate_architecture_literal(arch: &YamlArchitecture) -> String {
     let mut s = String::new();
     s.push_str("crate::models::base::ModelArchitecture {\n");
-    s.push_str(&format!("            num_hidden_layers: {},\n", arch.num_hidden_layers));
+    s.push_str(&format!(
+        "            num_hidden_layers: {},\n",
+        arch.num_hidden_layers
+    ));
     s.push_str(&format!("            hidden_size: {},\n", arch.hidden_size));
-    s.push_str(&format!("            num_attention_heads: {},\n", arch.num_attention_heads));
-    s.push_str(&format!("            num_key_value_heads: {},\n", arch.num_key_value_heads));
+    s.push_str(&format!(
+        "            num_attention_heads: {},\n",
+        arch.num_attention_heads
+    ));
+    s.push_str(&format!(
+        "            num_key_value_heads: {},\n",
+        arch.num_key_value_heads
+    ));
     s.push_str(&format!("            head_dim: {},\n", arch.head_dim));
     s.push_str("            layer_types: vec![\n");
     for ltc in &arch.layer_types {
         s.push_str("                crate::models::base::LayerTypeCount {\n");
-        s.push_str(&format!("                    kind: {},\n", generate_layer_kind_literal(ltc)));
+        s.push_str(&format!(
+            "                    kind: {},\n",
+            generate_layer_kind_literal(ltc)
+        ));
         s.push_str(&format!("                    count: {},\n", ltc.count));
         s.push_str("                },\n");
     }
@@ -203,7 +293,10 @@ fn generate_layer_kind_literal(ltc: &YamlLayerTypeCount) -> String {
             let window = ltc
                 .window
                 .unwrap_or_else(|| panic!("sliding_attention layer_type missing `window` field"));
-            format!("crate::models::base::LayerKind::SlidingAttention {{ window: {} }}", window)
+            format!(
+                "crate::models::base::LayerKind::SlidingAttention {{ window: {} }}",
+                window
+            )
         }
         "recurrent" => {
             let mamba = ltc
@@ -239,16 +332,14 @@ fn model_id_to_struct_name(id: &str) -> String {
                 let mut chars = part.chars();
                 match chars.next() {
                     None => String::new(),
-                    Some(first) => {
-                        first.to_uppercase().collect::<String>() + chars.as_str()
-                    }
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
                 }
             }
         })
         .collect::<String>() // Join without separator for proper CamelCase
 }
 
- #[derive(serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct YamlModel {
     id: String,
     family: String,

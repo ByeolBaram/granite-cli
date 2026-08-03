@@ -25,15 +25,23 @@ impl Ui for PlainOutput {
                 }
             }
         }
-        let header_line: String = headers.iter().zip(widths.iter())
+        let header_line: String = headers
+            .iter()
+            .zip(widths.iter())
             .map(|(h, w)| format!("{:<width$}", h, width = w))
             .collect::<Vec<_>>()
             .join("  ");
         println!("{}", header_line);
-        let sep: String = widths.iter().map(|w| "-".repeat(*w)).collect::<Vec<_>>().join("  ");
+        let sep: String = widths
+            .iter()
+            .map(|w| "-".repeat(*w))
+            .collect::<Vec<_>>()
+            .join("  ");
         println!("{}", sep);
         for row in rows {
-            let line: String = row.iter().zip(widths.iter())
+            let line: String = row
+                .iter()
+                .zip(widths.iter())
                 .map(|(c, w)| format!("{:<width$}", c, width = w))
                 .collect::<Vec<_>>()
                 .join("  ");
@@ -58,11 +66,21 @@ impl Ui for PlainOutput {
         }
     }
 
-    fn info(&self, msg: &str)  { println!("{}", msg); }
-    fn warn(&self, msg: &str)  { println!("Warning: {}", msg); }
-    fn error(&self, msg: &str) { eprintln!("Error: {}", msg); }
+    fn info(&self, msg: &str) {
+        println!("{}", msg);
+    }
+    fn warn(&self, msg: &str) {
+        println!("Warning: {}", msg);
+    }
+    fn error(&self, msg: &str) {
+        eprintln!("Error: {}", msg);
+    }
 
-    fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> crate::utils::ui::base::PullHandle {
+    fn pull_start(
+        &self,
+        label: &str,
+        total_bytes: Option<u64>,
+    ) -> crate::utils::ui::base::PullHandle {
         match total_bytes {
             Some(total) => println!("Pulling {} ({} bytes total)...", label, total),
             None => println!("Pulling {}...", label),
@@ -70,17 +88,28 @@ impl Ui for PlainOutput {
         crate::utils::ui::base::PullHandle(0)
     }
 
-    fn pull_progress(&self, _handle: crate::utils::ui::base::PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>) {
+    fn pull_progress(
+        &self,
+        _handle: crate::utils::ui::base::PullHandle,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    ) {
         match total_bytes {
             Some(total) if total > 0 => {
-                let pct = ((downloaded_bytes as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
+                let pct =
+                    ((downloaded_bytes as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
                 println!("  {}%", pct);
             }
             _ => println!("  {} bytes", downloaded_bytes),
         }
     }
 
-    fn pull_finish(&self, _handle: crate::utils::ui::base::PullHandle, label: &str, error: Option<&str>) {
+    fn pull_finish(
+        &self,
+        _handle: crate::utils::ui::base::PullHandle,
+        label: &str,
+        error: Option<&str>,
+    ) {
         match error {
             Some(e) => println!("{}: failed: {}", label, e),
             None => println!("{}: done", label),

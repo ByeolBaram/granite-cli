@@ -145,4 +145,4 @@ pub struct ToolConfig {
 
 use crate::define_factory;
 
-define_factory!( Capability, CapabilityMetadata, CapabilityFactory);
+define_factory!(Capability, CapabilityMetadata, CapabilityFactory);
