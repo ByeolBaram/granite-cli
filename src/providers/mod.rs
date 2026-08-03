@@ -63,7 +63,7 @@ impl crate::dependency::Configured<dyn Provider> for ProviderSource {
 mod base;
 pub use base::{
     ApiEndpoint, ApiType, AuthType, HealthStatus, ModelFormat,
-    Provider, ProviderError, ProviderMetadata, ProviderType,
+    Provider, ProviderError, ProviderMetadata, ProviderType, PullResult,
 };
 
 mod openai;

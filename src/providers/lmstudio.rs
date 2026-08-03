@@ -170,7 +170,7 @@ impl Provider for LMStudioProvider {
         model: &ModelMetadata,
         variant: &ModelVariant,
         ui: &dyn Ui,
-    ) -> Result<(), ProviderError> {
+    ) -> Result<crate::providers::PullResult, ProviderError> {
         let repo = hf_repo_id(&variant.url).ok_or_else(|| ProviderError::Other(format!(
             "cannot determine a HuggingFace repo for {} variant {}/{}",
             model.family, variant.format, variant.precision
@@ -198,14 +198,14 @@ impl Provider for LMStudioProvider {
 
         if started.status == "already_downloaded" {
             ui.pull_finish(handle, &label, None);
-            return Ok(());
+            return Ok(crate::providers::PullResult::Success);
         }
 
         let job_id = match started.job_id {
             Some(id) => id,
             None => {
                 ui.pull_finish(handle, &label, None);
-                return Ok(());
+                return Ok(crate::providers::PullResult::Success);
             }
         };
         let status_url = format!("{}/api/v1/models/download/status/{}", self.config.base_url, job_id);
@@ -237,7 +237,7 @@ impl Provider for LMStudioProvider {
             match job.status.as_str() {
                 "completed" => {
                     ui.pull_finish(handle, &label, None);
-                    return Ok(());
+                    return Ok(crate::providers::PullResult::Success);
                 }
                 "failed" => {
                     let err = job.error.unwrap_or_else(|| "download failed".to_string());

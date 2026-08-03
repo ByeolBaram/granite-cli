@@ -169,7 +169,7 @@ impl Provider for OllamaProvider {
         model: &ModelMetadata,
         variant: &ModelVariant,
         ui: &dyn Ui,
-    ) -> Result<(), ProviderError> {
+    ) -> Result<crate::providers::PullResult, ProviderError> {
         let model_ref = if let Some(name) = ollama_library_ref(&variant.url) {
             name.to_string()
         } else if let Some(repo) = hf_repo_id(&variant.url) {
@@ -229,13 +229,13 @@ impl Provider for OllamaProvider {
                 }
                 if progress.status == "success" {
                     ui.pull_finish(handle, &label, None);
-                    return Ok(());
+                    return Ok(crate::providers::PullResult::Success);
                 }
             }
         }
 
         ui.pull_finish(handle, &label, None);
-        Ok(())
+        Ok(crate::providers::PullResult::Success)
     }
 }
 

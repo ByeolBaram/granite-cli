@@ -171,13 +171,13 @@ impl Provider for OpenAIProvider {
         model: &crate::models::ModelMetadata,
         variant: &crate::models::ModelVariant,
         ui: &dyn crate::utils::ui::Ui,
-    ) -> Result<(), ProviderError> {
-        ui.warn(&format!(
-            "Generic OpenAI-compatible provider '{}' cannot pull models automatically. \
+    ) -> Result<crate::providers::PullResult, ProviderError> {
+        let message = format!(
+            "Generic OpenAI-compatible provider '{}' does not support pulling models. \
              Pull '{} ({} {})' manually using whatever mechanism your specific server requires, then restart it.",
             self.name(), model.family, variant.format, variant.precision
-        ));
-        Ok(())
+        );
+        Ok(crate::providers::PullResult::Unsupported { message })
     }
 }
 

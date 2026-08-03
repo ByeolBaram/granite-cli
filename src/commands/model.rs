@@ -6,7 +6,7 @@ use crate::commands::ProviderCommands;
 use crate::dependency::{self, Configured, DependsOn, Requirement};
 use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType, ModelVariant};
 use crate::utils::hardware::detect_hardware;
-use crate::providers::{Provider, ProviderMetadata, ProviderSource, ProviderType, PROVIDER_REGISTRY};
+use crate::providers::{Provider, ProviderMetadata, ProviderSource, ProviderType, PullResult, PROVIDER_REGISTRY};
 use crate::utils::ui::Ui;
 use crate::utils::Searchable;
 
@@ -529,7 +529,22 @@ impl ModelCommands {
                 "Provider '{}' is not configured or enabled. Run `provider setup` first.", provider_id
             ))?;
 
-        ensure_model_pulled(provider, &model, variant, ctx.ui.as_ref()).await?;
+        let result = ensure_model_pulled(provider, &model, variant, ctx.ui.as_ref()).await;
+        match result {
+            Ok(PullResult::Success) => {
+                ctx.ui.info(&format!("Model '{}' pulled successfully.", model.family));
+            }
+            Ok(PullResult::Unnecessary) => {
+                ctx.ui.info(&format!("No pull needed for '{}' ({}).", model.family, provider.name()));
+            }
+            Ok(PullResult::Unsupported { message }) => {
+                ctx.ui.warn(&message);
+            }
+            Err(e) => {
+                ctx.ui.error(&format!("Failed to pull model: {}", e));
+                anyhow::bail!("Pull failed: {}", e);
+            }
+        }
 
         Ok(())
     }
@@ -588,7 +603,7 @@ pub async fn ensure_model_pulled(
     model: &ModelMetadata,
     variant: &ModelVariant,
     ui: &dyn Ui,
-) -> Result<(), crate::providers::ProviderError> {
+) -> Result<PullResult, crate::providers::ProviderError> {
     provider.pull_model(model, variant, ui).await
 }
 

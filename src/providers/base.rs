@@ -155,18 +155,32 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 
     /// Pull/download a model variant so this provider can run it.
     ///
-    /// Hosted providers never need to download anything, so the default
-    /// implementation is a no-op. Local providers (Ollama, LM Studio,
+    /// Returns one of the `PullResult` variants on success, or `Err(ProviderError)`
+    /// if the pull was attempted but failed. Local providers (Ollama, LM Studio,
     /// llama.cpp) override this to drive their server's native pull API,
-    /// reporting progress through `ui`.
+    /// reporting progress through `ui`. The default implementation returns
+    /// `PullResult::Unnecessary`.
     async fn pull_model(
         &self,
         _model: &crate::models::ModelMetadata,
         _variant: &crate::models::ModelVariant,
         _ui: &dyn crate::utils::ui::Ui,
-    ) -> Result<(), ProviderError> {
-        Ok(())
+    ) -> Result<PullResult, ProviderError> {
+        Ok(PullResult::Unnecessary)
     }
+}
+
+/*-- Pull Result Types -------------------------------------------------------*/
+
+/// Result of a `Provider::pull_model` call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PullResult {
+    /// Pull was attempted and completed successfully.
+    Success,
+    /// Pull is not needed for this provider (e.g. hosted or auto-available models).
+    Unnecessary,
+    /// This provider does not support pulling; the user may need to take action.
+    Unsupported { message: String },
 }
 
 /*-- Metadata Types ----------------------------------------------------------*/

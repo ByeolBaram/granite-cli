@@ -215,7 +215,7 @@ impl LlamaCppProvider {
         handle: PullHandle,
         label: &str,
         ui: &dyn Ui,
-    ) -> Result<(), ProviderError> {
+    ) -> Result<crate::providers::PullResult, ProviderError> {
         let models_url = format!("{}/models", self.config.base_url);
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -245,7 +245,7 @@ impl LlamaCppProvider {
             }
             if entry.status.value != "downloading" {
                 ui.pull_finish(handle, label, None);
-                return Ok(());
+                return Ok(crate::providers::PullResult::Success);
             }
         }
     }
@@ -307,7 +307,7 @@ impl Provider for LlamaCppProvider {
         model: &ModelMetadata,
         variant: &ModelVariant,
         ui: &dyn Ui,
-    ) -> Result<(), ProviderError> {
+    ) -> Result<crate::providers::PullResult, ProviderError> {
         let repo = hf_repo_id(&variant.url).ok_or_else(|| ProviderError::Other(format!(
             "cannot determine a HuggingFace repo for {} variant {}/{}",
             model.family, variant.format, variant.precision
@@ -327,7 +327,7 @@ impl Provider for LlamaCppProvider {
             let body = response.text().await.unwrap_or_default();
             if status == reqwest::StatusCode::BAD_REQUEST && body.contains("already exists") {
                 ui.info(&format!("{} is already downloaded.", label));
-                return Ok(());
+                return Ok(crate::providers::PullResult::Success);
             }
             return Err(ProviderError::Other(format!("llama.cpp model pull request failed ({}): {}", status, body)));
         }
@@ -335,7 +335,7 @@ impl Provider for LlamaCppProvider {
         let handle = ui.pull_start(&label, None);
 
         match self.watch_pull_via_sse(&model_ref, handle, &label, ui).await {
-            Ok(true) => Ok(()),
+            Ok(true) => Ok(crate::providers::PullResult::Success),
             Ok(false) => self.watch_pull_via_polling(repo, handle, &label, ui).await,
             Err(e) => Err(e),
         }
