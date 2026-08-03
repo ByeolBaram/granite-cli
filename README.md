@@ -16,7 +16,7 @@ cargo build --release
 cargo install --path .
 
 # Verify installation
-granite --help
+granite-cli --help
 ```
 
 ## Roadmap
