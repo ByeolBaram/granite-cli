@@ -1,14 +1,33 @@
-use crate::models::ModelFunction;
+use crate::models::huggingface::hf_repo_id;
+use crate::models::{ModelFunction, ModelMetadata, ModelVariant};
 use crate::providers::base::{
     http_health_check, ApiEndpoint, ApiType, AuthType, HealthStatus,
     ModelFormat, Provider, ProviderError, ProviderMetadata, ProviderType,
     HasProviderMetadata,
 };
 use crate::registry::{ConfigConstructable, Secret};
+use crate::utils::ui::Ui;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+
+/// Response from `POST /api/v1/models/download`.
+#[derive(Debug, Deserialize)]
+struct LMStudioDownloadResponse {
+    job_id: Option<String>,
+    status: String,
+    total_size_bytes: Option<u64>,
+}
+
+/// Response from `GET /api/v1/models/download/status/:job_id`.
+#[derive(Debug, Deserialize)]
+struct LMStudioJobStatus {
+    status: String,
+    downloaded_bytes: Option<u64>,
+    total_size_bytes: Option<u64>,
+    error: Option<String>,
+}
 
 /*-- LM Studio Provider Configuration ----------------------------------------*/
 
@@ -145,6 +164,90 @@ impl Provider for LMStudioProvider {
             self.config.api_key.as_ref(),
         ).await
     }
+
+    async fn pull_model(
+        &self,
+        model: &ModelMetadata,
+        variant: &ModelVariant,
+        ui: &dyn Ui,
+    ) -> Result<crate::providers::PullResult, ProviderError> {
+        let repo = hf_repo_id(&variant.url).ok_or_else(|| ProviderError::Other(format!(
+            "cannot determine a HuggingFace repo for {} variant {}/{}",
+            model.family, variant.format, variant.precision
+        )))?;
+        let label = format!("{} ({} {})", model.family, variant.format, variant.precision);
+
+        let url = format!("{}/api/v1/models/download", self.config.base_url);
+        let mut request = self.client.post(&url).json(&serde_json::json!({
+            "model": format!("https://huggingface.co/{}", repo),
+            "quantization": variant.precision,
+        }));
+        if let Some(key) = &self.config.api_key {
+            request = request.bearer_auth(&key.0);
+        }
+
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(ProviderError::Other(format!("LM Studio download request failed ({}): {}", status, body)));
+        }
+        let started: LMStudioDownloadResponse = response.json().await?;
+
+        let handle = ui.pull_start(&label, started.total_size_bytes);
+
+        if started.status == "already_downloaded" {
+            ui.pull_finish(handle, &label, None);
+            return Ok(crate::providers::PullResult::Success);
+        }
+
+        let job_id = match started.job_id {
+            Some(id) => id,
+            None => {
+                ui.pull_finish(handle, &label, None);
+                return Ok(crate::providers::PullResult::Success);
+            }
+        };
+        let status_url = format!("{}/api/v1/models/download/status/{}", self.config.base_url, job_id);
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            let mut status_request = self.client.get(&status_url);
+            if let Some(key) = &self.config.api_key {
+                status_request = status_request.bearer_auth(&key.0);
+            }
+
+            let status_response = status_request.send().await?;
+            if !status_response.status().is_success() {
+                let status = status_response.status();
+                let body = status_response.text().await.unwrap_or_default();
+                let err = format!("LM Studio status check failed ({}): {}", status, body);
+                ui.pull_finish(handle, &label, Some(&err));
+                return Err(ProviderError::Other(err));
+            }
+            let job: LMStudioJobStatus = status_response.json().await?;
+
+            ui.pull_progress(
+                handle,
+                job.downloaded_bytes.unwrap_or(0),
+                job.total_size_bytes.or(started.total_size_bytes),
+            );
+
+            match job.status.as_str() {
+                "completed" => {
+                    ui.pull_finish(handle, &label, None);
+                    return Ok(crate::providers::PullResult::Success);
+                }
+                "failed" => {
+                    let err = job.error.unwrap_or_else(|| "download failed".to_string());
+                    ui.pull_finish(handle, &label, Some(&err));
+                    return Err(ProviderError::Other(err));
+                }
+                _ => continue,
+            }
+        }
+    }
 }
 
 impl HasProviderMetadata for LMStudioProvider {
@@ -255,5 +358,21 @@ mod tests {
 
         #[cfg(not(target_os = "macos"))]
         assert!(!provider.can_run_model("mlx", "fp16"));
+    }
+
+    #[test]
+    fn test_lmstudio_download_response_parses() {
+        let body = r#"{"job_id":"abc123","status":"downloading","total_size_bytes":1000}"#;
+        let resp: LMStudioDownloadResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(resp.job_id, Some("abc123".to_string()));
+        assert_eq!(resp.total_size_bytes, Some(1000));
+    }
+
+    #[test]
+    fn test_lmstudio_job_status_parses() {
+        let body = r#"{"status":"completed","downloaded_bytes":1000,"total_size_bytes":1000}"#;
+        let job: LMStudioJobStatus = serde_json::from_str(body).unwrap();
+        assert_eq!(job.status, "completed");
+        assert_eq!(job.downloaded_bytes, Some(1000));
     }
 }

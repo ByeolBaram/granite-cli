@@ -12,6 +12,11 @@ pub struct UiMetadata {
     pub description: String,
 }
 
+/// Opaque handle identifying an in-flight pull/download for progress reporting.
+/// Allocated by [`Ui::pull_start`] and passed back into [`Ui::pull_progress`]/[`Ui::pull_finish`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PullHandle(pub u64);
+
 // Generate UiFactory and HasUiMetadata via the existing macro.
 use crate::define_factory;
 define_factory!(Ui, UiMetadata, UiFactory);
@@ -86,6 +91,15 @@ macro_rules! output_contract_tests {
             $make.error_mark("");
             $make.detail_mark("");
         }
+        #[test]
+        fn contract_pull_lifecycle_does_not_panic() {
+            let handle = $make.pull_start("model", Some(100));
+            $make.pull_progress(handle, 50, Some(100));
+            $make.pull_finish(handle, "model", None);
+            let handle2 = $make.pull_start("model2", None);
+            $make.pull_progress(handle2, 0, None);
+            $make.pull_finish(handle2, "model2", Some("failed"));
+        }
     };
 }
 
@@ -118,6 +132,18 @@ pub trait Ui: ConfigConstructable + Send + Sync + Any {
 
     /// Error message. Implementations should route this to stderr.
     fn error(&self, msg: &str);
+
+    /// Begin tracking a long-running pull/download. `total_bytes` is `None`
+    /// if the size isn't known upfront. Returns a handle for subsequent
+    /// `pull_progress`/`pull_finish` calls.
+    fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle;
+
+    /// Report incremental progress for a handle returned by `pull_start`.
+    /// Implementations may throttle how often this actually renders.
+    fn pull_progress(&self, handle: PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>);
+
+    /// Mark a handle as finished, successfully or with an error message.
+    fn pull_finish(&self, handle: PullHandle, label: &str, error: Option<&str>);
 
     /// Apply severity-based markings (e.g. green) to `msg`.
     fn ok(&self, msg: &str) -> String {
@@ -230,6 +256,15 @@ pub(crate) mod tests {
         pub text_answers: RefCell<VecDeque<String>>,
         /// Canned answers consumed in order by password(); falls back to "" when empty.
         pub password_answers: RefCell<VecDeque<String>>,
+
+        /// (label, total_bytes) for each pull_start() call, in handle-allocation order.
+        pub pull_starts: RefCell<Vec<(String, Option<u64>)>>,
+        /// (handle, downloaded_bytes, total_bytes) for each pull_progress() call.
+        pub pull_progresses: RefCell<Vec<(PullHandle, u64, Option<u64>)>>,
+        /// (handle, label, error) for each pull_finish() call.
+        pub pull_finishes: RefCell<Vec<(PullHandle, String, Option<String>)>>,
+        /// Counter used to allocate sequential PullHandles.
+        pub next_pull_handle: RefCell<u64>,
     }
 
     impl ConfigConstructable for CaptureUi {
@@ -270,6 +305,22 @@ pub(crate) mod tests {
 
         fn error(&self, msg: &str) {
             self.errors.borrow_mut().push(msg.to_string());
+        }
+
+        fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle {
+            self.pull_starts.borrow_mut().push((label.to_string(), total_bytes));
+            let mut next = self.next_pull_handle.borrow_mut();
+            let handle = PullHandle(*next);
+            *next += 1;
+            handle
+        }
+
+        fn pull_progress(&self, handle: PullHandle, downloaded_bytes: u64, total_bytes: Option<u64>) {
+            self.pull_progresses.borrow_mut().push((handle, downloaded_bytes, total_bytes));
+        }
+
+        fn pull_finish(&self, handle: PullHandle, label: &str, error: Option<&str>) {
+            self.pull_finishes.borrow_mut().push((handle, label.to_string(), error.map(|e| e.to_string())));
         }
 
         fn ok(&self, msg: &str) -> String {
@@ -500,5 +551,27 @@ pub(crate) mod tests {
         let ui = make();
         ui.password_answers.borrow_mut().push_back("s3cr3t".to_string());
         assert_eq!(ui.password("Secret?").unwrap(), "s3cr3t");
+    }
+
+    // -- CaptureUi pull lifecycle --------------------------------------------
+
+    #[test]
+    fn pull_lifecycle_records_calls_and_allocates_distinct_handles() {
+        let ui = make();
+        let h1 = ui.pull_start("model-a", Some(100));
+        let h2 = ui.pull_start("model-b", None);
+        assert_ne!(h1, h2);
+
+        ui.pull_progress(h1, 50, Some(100));
+        ui.pull_finish(h1, "model-a", None);
+        ui.pull_finish(h2, "model-b", Some("boom"));
+
+        assert_eq!(*ui.pull_starts.borrow(), vec![
+            ("model-a".to_string(), Some(100)),
+            ("model-b".to_string(), None),
+        ]);
+        assert_eq!(*ui.pull_progresses.borrow(), vec![(h1, 50, Some(100))]);
+        assert_eq!(ui.pull_finishes.borrow()[0], (h1, "model-a".to_string(), None));
+        assert_eq!(ui.pull_finishes.borrow()[1], (h2, "model-b".to_string(), Some("boom".to_string())));
     }
 }

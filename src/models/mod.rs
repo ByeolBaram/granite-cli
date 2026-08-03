@@ -22,6 +22,8 @@ pub use base::{
 pub(crate) mod context_fit;
 pub use context_fit::ContextFit;
 
+pub mod huggingface;
+
 /*-- tests -------------------------------------------------------------------*/
 
 #[cfg(test)]

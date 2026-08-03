@@ -121,6 +121,21 @@ impl Ui for JsonOutput {
     fn password(&self, _prompt: &str) -> anyhow::Result<String> {
         base::non_interactive()
     }
+
+    fn pull_start(&self, _label: &str, _total_bytes: Option<u64>) -> base::PullHandle {
+        base::PullHandle(0)
+    }
+
+    fn pull_progress(&self, _handle: base::PullHandle, _downloaded_bytes: u64, _total_bytes: Option<u64>) {}
+
+    fn pull_finish(&self, _handle: base::PullHandle, label: &str, error: Option<&str>) {
+        self.emit(serde_json::json!({
+            "type": "pull",
+            "label": label,
+            "success": error.is_none(),
+            "error": error,
+        }));
+    }
 }
 
 impl HasUiMetadata for JsonOutput {

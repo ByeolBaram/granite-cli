@@ -155,6 +155,12 @@ enum ModelSubcommands {
         /// Model ID to set up
         model_id: String,
     },
+
+    /// Pull (download) a configured model's weights via its provider
+    Pull {
+        /// Model ID to pull
+        model_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -337,6 +343,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
         }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
+        ModelSubcommands::Pull { model_id } => ModelCommands::pull(ctx, &model_id).await,
     }
 }
 
