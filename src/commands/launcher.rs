@@ -85,8 +85,7 @@ impl LauncherCommands {
             Some(def) => def,
             None => {
                 ctx.ui.error(&format!(
-                    "Launcher type '{}' not found in registry.",
-                    launcher_type
+                    "Launcher type '{launcher_type}' not found in registry."
                 ));
                 let available: Vec<String> = {
                     let mut entries: Vec<String> = LAUNCHER_REGISTRY
@@ -104,7 +103,7 @@ impl LauncherCommands {
         };
 
         ctx.ui
-            .info(&format!("\nSetting up launcher: {}", launcher_type));
+            .info(&format!("\nSetting up launcher: {launcher_type}"));
         ctx.ui.info(&launcher_def.description);
         ctx.ui.info(&format!(
             "Default command: {}",
@@ -154,10 +153,7 @@ impl LauncherCommands {
         // Standard same-id overwrite check
         if ctx.config.get_launcher(&instance_id).is_some() {
             let overwrite = ctx.ui.confirm(
-                &format!(
-                    "Launcher '{}' is already configured. Overwrite?",
-                    instance_id
-                ),
+                &format!("Launcher '{instance_id}' is already configured. Overwrite?"),
                 false,
             )?;
             if !overwrite {
@@ -170,10 +166,7 @@ impl LauncherCommands {
         let schema = LAUNCHER_REGISTRY
             .config_schema(launcher_type)
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No config schema registered for launcher type '{}'",
-                    launcher_type
-                )
+                anyhow::anyhow!("No config schema registered for launcher type '{launcher_type}'")
             })?;
         let defaults = ctx
             .config
@@ -190,7 +183,7 @@ impl LauncherCommands {
         // We retry once after they provide a path; if it still fails we bail.
         let launcher = LAUNCHER_REGISTRY
             .construct(launcher_type, &config)
-            .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
         match launcher.validate_command() {
             Ok(path) => {
@@ -217,7 +210,7 @@ impl LauncherCommands {
                 config["command_path"] = serde_json::Value::String(explicit.trim().to_string());
                 let launcher2 = LAUNCHER_REGISTRY
                     .construct(launcher_type, &config)
-                    .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
                 match launcher2.validate_command() {
                     Ok(path) => {
                         ctx.ui.info(&format!("  Binary found: {}", path.display()));
@@ -243,18 +236,16 @@ impl LauncherCommands {
         };
 
         if let Err(e) = ctx.config.insert_launcher(&instance_id, launcher_config) {
-            ctx.ui
-                .warn(&format!("Failed to save launcher config: {}", e));
+            ctx.ui.warn(&format!("Failed to save launcher config: {e}"));
         }
 
         ctx.ui.info(&format!(
-            "\nLauncher '{}' configured successfully!",
-            instance_id
+            "\nLauncher '{instance_id}' configured successfully!"
         ));
         if !launcher_def.supported_capabilities.is_empty() {
             ctx.ui.info("Supported capabilities:");
             for cap in &launcher_def.supported_capabilities {
-                ctx.ui.info(&format!("  - {}", cap));
+                ctx.ui.info(&format!("  - {cap}"));
             }
         }
 
@@ -268,14 +259,13 @@ impl LauncherCommands {
     pub fn validate(ctx: &crate::AppContext, launcher_id: &str) -> Result<()> {
         let lc = ctx.config.get_launcher(launcher_id).ok_or_else(|| {
             anyhow::anyhow!(
-                "No launcher configured with id '{}'. Run `granite-cli launcher setup` first.",
-                launcher_id
+                "No launcher configured with id '{launcher_id}'. Run `granite-cli launcher setup` first."
             )
         })?;
 
         let launcher = LAUNCHER_REGISTRY
             .construct(&lc.launcher_type, &lc.config)
-            .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
         match launcher.validate_command() {
             Ok(path) => {
@@ -284,7 +274,7 @@ impl LauncherCommands {
             }
             Err(e) => {
                 ctx.ui.status(launcher_id, false, &e.to_string());
-                anyhow::bail!("Binary not found: {}", e)
+                anyhow::bail!("Binary not found: {e}")
             }
         }
     }
@@ -296,14 +286,11 @@ impl LauncherCommands {
     /// and `granite-cli launch <id>` will return an error.
     pub fn remove(ctx: &mut crate::AppContext, launcher_id: &str) -> Result<()> {
         if ctx.config.get_launcher(launcher_id).is_none() {
-            anyhow::bail!(
-                "No launcher configured with id '{}'. Nothing to remove.",
-                launcher_id
-            );
+            anyhow::bail!("No launcher configured with id '{launcher_id}'. Nothing to remove.");
         }
 
         ctx.config.remove_launcher(launcher_id)?;
-        ctx.ui.info(&format!("Launcher '{}' removed.", launcher_id));
+        ctx.ui.info(&format!("Launcher '{launcher_id}' removed."));
         Ok(())
     }
 }

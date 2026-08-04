@@ -488,28 +488,23 @@ async fn run_launch(
 
     let lc = config.get_launcher(launcher_id).ok_or_else(|| {
         anyhow::anyhow!(
-            "No launcher configured with id '{}'. \
-             Run `granite-cli launcher setup {}` first.",
-            launcher_id,
-            launcher_id
+            "No launcher configured with id '{launcher_id}'. \
+             Run `granite-cli launcher setup {launcher_id}` first."
         )
     })?;
 
     if !lc.enabled {
-        anyhow::bail!("Launcher '{}' is disabled.", launcher_id);
+        anyhow::bail!("Launcher '{launcher_id}' is disabled.");
     }
 
     let launcher = LAUNCHER_REGISTRY
         .construct(&lc.launcher_type, &lc.config)
-        .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
     let binary = launcher.validate_command().map_err(|e| {
         anyhow::anyhow!(
-            "Cannot launch '{}': {}. \
-             Use `granite-cli launcher setup --id {}` to set a custom command_path.",
-            launcher_id,
-            e,
-            launcher_id
+            "Cannot launch '{launcher_id}': {e}. \
+             Use `granite-cli launcher setup --id {launcher_id}` to set a custom command_path."
         )
     })?;
 

@@ -312,7 +312,7 @@ impl Config {
 
         // Save individual launcher files
         for (id, launcher) in &self.launchers {
-            let path = Self::launchers_dir()?.join(format!("{}.yaml", id));
+            let path = Self::launchers_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, launcher)?;
         }
 
@@ -464,7 +464,7 @@ impl Config {
     pub fn remove_launcher(&mut self, id: &str) -> Result<()> {
         self.launchers.remove(id);
         let path = Self::launchers_dir().ok().and_then(|d| {
-            let p = d.join(format!("{}.yaml", id));
+            let p = d.join(format!("{id}.yaml"));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
