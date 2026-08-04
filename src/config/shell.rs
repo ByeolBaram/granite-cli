@@ -34,7 +34,7 @@ pub fn detect_shell() -> (String, PathBuf, String) {
         ),
         _ => (
             shell_name.clone(),
-            PathBuf::from(format!("/etc/shell_exports")),
+            PathBuf::from("/etc/shell_exports".to_string()),
             "export {VAR}=\"{VALUE}\"".to_string(),
         ),
     }
@@ -111,7 +111,7 @@ fn home_dir() -> Option<PathBuf> {
 fn config_home_dir() -> Option<PathBuf> {
     std::env::var("XDG_CONFIG_HOME")
         .ok()
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
         .or_else(|| home_dir().map(|h| h.join(".config")))
 }
 
@@ -123,7 +123,10 @@ mod tests {
     fn test_detect_shell_returns_name() {
         let result = detect_shell();
         assert!(!result.0.is_empty());
-        assert!(matches!(result.0.as_str(), "bash" | "zsh" | "fish" | "unknown"));
+        assert!(matches!(
+            result.0.as_str(),
+            "bash" | "zsh" | "fish" | "unknown"
+        ));
     }
 
     #[test]

@@ -1,10 +1,10 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
-    Frame,
 };
 
 use crate::commands::{HardwareCommands, ModelCommands};
@@ -29,7 +29,7 @@ fn strip_ansi(input: &str) -> String {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
@@ -57,21 +57,21 @@ pub enum Section {
 impl Section {
     fn next(&self) -> Self {
         match self {
-            Section::Models       => Section::Providers,
-            Section::Providers    => Section::Capabilities,
+            Section::Models => Section::Providers,
+            Section::Providers => Section::Capabilities,
             Section::Capabilities => Section::Recommend,
-            Section::Recommend    => Section::Hardware,
-            Section::Hardware     => Section::Models,
+            Section::Recommend => Section::Hardware,
+            Section::Hardware => Section::Models,
         }
     }
 
     fn label(&self) -> &'static str {
         match self {
-            Section::Models       => "Models",
-            Section::Providers    => "Providers",
+            Section::Models => "Models",
+            Section::Providers => "Providers",
             Section::Capabilities => "Capabilities",
-            Section::Recommend    => "Recommend",
-            Section::Hardware     => "Hardware",
+            Section::Recommend => "Recommend",
+            Section::Hardware => "Hardware",
         }
     }
 }
@@ -149,8 +149,7 @@ impl App {
                     }
                     KeyCode::Enter => {
                         // Confirm: position cursor at first match, return to browse
-                        let matches = self.filtered_ids(&q);
-                        self.row = if matches.is_empty() { 0 } else { 0 };
+                        self.row = 0;
                         self.sync_table_state();
                         self.mode = AppMode::Browse;
                     }
@@ -232,22 +231,46 @@ impl App {
         let q = query.to_lowercase();
         // Hardware has no selectable rows; Recommend uses its own row source
         let mut ids: Vec<String> = match self.section {
-            Section::Models       => MODEL_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Providers    => PROVIDER_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().keys().map(|k| k.to_string()).collect(),
-            Section::Recommend    => {
+            Section::Models => MODEL_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect(),
+            Section::Providers => PROVIDER_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect(),
+            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect(),
+            Section::Recommend => {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
-                let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref()).into_iter().map(|r| r[0].clone()).collect()
+                let providers: Vec<&dyn crate::providers::Provider> =
+                    instances.iter().map(|(_, p)| *p).collect();
+                ModelCommands::recommend_rows(
+                    None,
+                    Some(&providers),
+                    &instances,
+                    false,
+                    self.ctx.ui.as_ref(),
+                )
+                .into_iter()
+                .map(|r| r[0].clone())
+                .collect()
             }
-            Section::Hardware     => vec![],
+            Section::Hardware => vec![],
         };
         ids.sort();
         if q.is_empty() {
             ids
         } else {
-            ids.into_iter().filter(|id| id.to_lowercase().contains(&q)).collect()
+            ids.into_iter()
+                .filter(|id| id.to_lowercase().contains(&q))
+                .collect()
         }
     }
 
@@ -256,91 +279,128 @@ impl App {
     }
 
     fn selected_id(&self) -> Option<String> {
-        self.filtered_ids(self.active_query()).into_iter().nth(self.row)
+        self.filtered_ids(self.active_query())
+            .into_iter()
+            .nth(self.row)
     }
 
     fn render_nav(&self, frame: &mut Frame, area: Rect) {
         let sections = [
-            Section::Models, Section::Providers, Section::Capabilities,
-            Section::Recommend, Section::Hardware,
+            Section::Models,
+            Section::Providers,
+            Section::Capabilities,
+            Section::Recommend,
+            Section::Hardware,
         ];
-        let items: Vec<ListItem> = sections.iter().map(|s| {
-            let count = match s {
-                Section::Models       => MODEL_REGISTRY.entries().len(),
-                Section::Providers    => PROVIDER_REGISTRY.entries().len(),
-                Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY.entries().len(),
-                Section::Recommend    => {
-                    let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
-                    let instances = source.instances();
-                    let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                    ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref()).len()
-                }
-                Section::Hardware     => 0,
-            };
-            let style = if *s == self.section {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-            ListItem::new(Line::from(Span::styled(
-                format!("  {} ({})", s.label(), count),
-                style,
-            )))
-        }).collect();
+        let items: Vec<ListItem> = sections
+            .iter()
+            .map(|s| {
+                let count = match s {
+                    Section::Models => MODEL_REGISTRY.entries().len(),
+                    Section::Providers => PROVIDER_REGISTRY.entries().len(),
+                    Section::Capabilities => {
+                        crate::capabilities::CAPABILITY_REGISTRY.entries().len()
+                    }
+                    Section::Recommend => {
+                        let source =
+                            crate::providers::ProviderSource::from_config(&self.ctx.config);
+                        let instances = source.instances();
+                        let providers: Vec<&dyn crate::providers::Provider> =
+                            instances.iter().map(|(_, p)| *p).collect();
+                        ModelCommands::recommend_rows(
+                            None,
+                            Some(&providers),
+                            &instances,
+                            false,
+                            self.ctx.ui.as_ref(),
+                        )
+                        .len()
+                    }
+                    Section::Hardware => 0,
+                };
+                let style = if *s == self.section {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(Line::from(Span::styled(
+                    format!("  {} ({})", s.label(), count),
+                    style,
+                )))
+            })
+            .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" granite-cli "));
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" granite-cli "),
+        );
         let mut state = ListState::default();
         frame.render_stateful_widget(list, area, &mut state);
     }
 
     fn render_browse(&mut self, frame: &mut Frame, area: Rect, query: &str) {
         // When searching, split the pane: table on top, search bar on bottom
-        let (table_area, search_area) = if !query.is_empty() || matches!(self.mode, AppMode::Search(_)) {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(3)])
-                .split(area);
-            (chunks[0], Some(chunks[1]))
-        } else {
-            (area, None)
-        };
+        let (table_area, search_area) =
+            if !query.is_empty() || matches!(self.mode, AppMode::Search(_)) {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(1), Constraint::Length(3)])
+                    .split(area);
+                (chunks[0], Some(chunks[1]))
+            } else {
+                (area, None)
+            };
 
         match self.section {
             Section::Models => {
                 let filtered_ids = self.filtered_ids(query);
                 // Use the shared data layer — catalog_rows returns [id, family, size, context, type]
                 let all_rows = ModelCommands::catalog_rows(None);
-                let entries: Vec<Vec<String>> = all_rows.into_iter()
+                let entries: Vec<Vec<String>> = all_rows
+                    .into_iter()
                     .filter(|r| filtered_ids.contains(&r[0]))
                     .collect();
 
-                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "TYPE"])
-                    .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "TYPE"]).style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
 
-                let rows: Vec<Row> = entries.iter().enumerate().map(|(i, r)| {
-                    let style = if i == self.row {
-                        Style::default().bg(Color::DarkGray)
-                    } else if i % 2 == 0 {
-                        Style::default()
-                    } else {
-                        Style::default().bg(Color::Rgb(20, 20, 20))
-                    };
-                    // columns: [0]=id [1]=family [2]=size [3]=context [4]=type
-                    Row::new(vec![
-                        Cell::from(r[0].clone()),
-                        Cell::from(r[1].clone()),
-                        Cell::from(r[2].clone()),
-                        Cell::from(r[4].clone()),
-                    ]).style(style)
-                }).collect();
+                let rows: Vec<Row> = entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let style = if i == self.row {
+                            Style::default().bg(Color::DarkGray)
+                        } else if i % 2 == 0 {
+                            Style::default()
+                        } else {
+                            Style::default().bg(Color::Rgb(20, 20, 20))
+                        };
+                        // columns: [0]=id [1]=family [2]=size [3]=context [4]=type
+                        Row::new(vec![
+                            Cell::from(r[0].clone()),
+                            Cell::from(r[1].clone()),
+                            Cell::from(r[2].clone()),
+                            Cell::from(r[4].clone()),
+                        ])
+                        .style(style)
+                    })
+                    .collect();
 
-                let table = Table::new(rows, [
-                    Constraint::Percentage(45),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(20),
-                ])
+                let table = Table::new(
+                    rows,
+                    [
+                        Constraint::Percentage(45),
+                        Constraint::Percentage(25),
+                        Constraint::Percentage(10),
+                        Constraint::Percentage(20),
+                    ],
+                )
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Models "));
 
@@ -354,81 +414,112 @@ impl App {
                 };
 
                 let filtered_ids = self.filtered_ids(query);
-                let entries: Vec<_> = all_entries.into_iter()
+                let entries: Vec<_> = all_entries
+                    .into_iter()
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "ENDPOINT"])
-                    .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+                let header = Row::new(vec!["ID", "ENDPOINT"]).style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
 
-                let rows: Vec<Row> = entries.iter().enumerate().map(|(i, (id, p))| {
-                    let style = if i == self.row {
-                        Style::default().bg(Color::DarkGray)
-                    } else {
-                        Style::default()
-                    };
-                    Row::new(vec![
-                        Cell::from(id.to_string()),
-                        Cell::from(p.default_endpoint.clone()),
-                    ]).style(style)
-                }).collect();
+                let rows: Vec<Row> = entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (id, p))| {
+                        let style = if i == self.row {
+                            Style::default().bg(Color::DarkGray)
+                        } else {
+                            Style::default()
+                        };
+                        Row::new(vec![
+                            Cell::from(id.to_string()),
+                            Cell::from(p.default_endpoint.clone()),
+                        ])
+                        .style(style)
+                    })
+                    .collect();
 
-                let table = Table::new(rows, [
-                    Constraint::Percentage(30),
-                    Constraint::Percentage(70),
-                ])
+                let table = Table::new(
+                    rows,
+                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                )
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Providers "));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
             Section::Capabilities => {
-                let text = Paragraph::new("No capabilities registered yet.")
-                    .block(Block::default().borders(Borders::ALL).title(" Capabilities "));
+                let text = Paragraph::new("No capabilities registered yet.").block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Capabilities "),
+                );
                 frame.render_widget(text, table_area);
             }
             Section::Recommend => {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
                 let instances = source.instances();
-                let providers: Vec<&dyn crate::providers::Provider> = instances.iter().map(|(_, p)| *p).collect();
-                let all_rows = ModelCommands::recommend_rows(None, Some(&providers), &instances, false, self.ctx.ui.as_ref());
+                let providers: Vec<&dyn crate::providers::Provider> =
+                    instances.iter().map(|(_, p)| *p).collect();
+                let all_rows = ModelCommands::recommend_rows(
+                    None,
+                    Some(&providers),
+                    &instances,
+                    false,
+                    self.ctx.ui.as_ref(),
+                );
 
                 // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
                 let header = Row::new(vec!["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
-                    .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
-
-                let rows: Vec<Row> = all_rows.iter().enumerate().map(|(i, r)| {
-                    let style = if i == self.row {
-                        Style::default().bg(Color::DarkGray)
-                    } else if i % 2 == 0 {
+                    .style(
                         Style::default()
-                    } else {
-                        Style::default().bg(Color::Rgb(20, 20, 20))
-                    };
-                    let fit_display = strip_ansi(&r[4]);
-                    let fit_style = if fit_display.starts_with("Partial") {
-                        Style::default().fg(Color::Yellow)
-                    } else {
-                        Style::default()
-                    };
-                    Row::new(vec![
-                        Cell::from(r[0].clone()),
-                        Cell::from(r[1].clone()),
-                        Cell::from(r[2].clone()),
-                        Cell::from(r[3].clone()),
-                        Cell::from(fit_display).style(fit_style),
-                        Cell::from(r[5].clone()),
-                    ]).style(style)
-                }).collect();
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    );
 
-                let table = Table::new(rows, [
-                    Constraint::Percentage(22),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(10),
-                    Constraint::Percentage(13),
-                    Constraint::Percentage(20),
-                ])
+                let rows: Vec<Row> = all_rows
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let style = if i == self.row {
+                            Style::default().bg(Color::DarkGray)
+                        } else if i % 2 == 0 {
+                            Style::default()
+                        } else {
+                            Style::default().bg(Color::Rgb(20, 20, 20))
+                        };
+                        let fit_display = strip_ansi(&r[4]);
+                        let fit_style = if fit_display.starts_with("Partial") {
+                            Style::default().fg(Color::Yellow)
+                        } else {
+                            Style::default()
+                        };
+                        Row::new(vec![
+                            Cell::from(r[0].clone()),
+                            Cell::from(r[1].clone()),
+                            Cell::from(r[2].clone()),
+                            Cell::from(r[3].clone()),
+                            Cell::from(fit_display).style(fit_style),
+                            Cell::from(r[5].clone()),
+                        ])
+                        .style(style)
+                    })
+                    .collect();
+
+                let table = Table::new(
+                    rows,
+                    [
+                        Constraint::Percentage(22),
+                        Constraint::Percentage(10),
+                        Constraint::Percentage(25),
+                        Constraint::Percentage(10),
+                        Constraint::Percentage(13),
+                        Constraint::Percentage(20),
+                    ],
+                )
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Recommend "));
 
@@ -436,12 +527,17 @@ impl App {
             }
             Section::Hardware => {
                 // Hardware is a single static detail pane — no rows to browse
-                let content = HardwareCommands::hardware_fields().iter()
+                let content = HardwareCommands::hardware_fields()
+                    .iter()
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<_>>()
                     .join("\n");
                 let para = Paragraph::new(content)
-                    .block(Block::default().borders(Borders::ALL).title(" Hardware Profile "))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Hardware Profile "),
+                    )
                     .wrap(ratatui::widgets::Wrap { trim: false })
                     .scroll((self.detail_scroll as u16, 0));
                 frame.render_widget(para, table_area);
@@ -451,11 +547,12 @@ impl App {
         // Render the search bar when in search mode
         if let Some(bar_area) = search_area {
             let display = format!(" / {}", query);
-            let bar = Paragraph::new(display)
-                .block(Block::default()
+            let bar = Paragraph::new(display).block(
+                Block::default()
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Yellow))
-                    .title(" Search "));
+                    .title(" Search "),
+            );
             frame.render_widget(bar, bar_area);
         }
     }
@@ -465,7 +562,8 @@ impl App {
             Section::Models => {
                 // Use the shared data layer — no registry access here
                 match ModelCommands::info_fields(id) {
-                    Some(fields) => fields.iter()
+                    Some(fields) => fields
+                        .iter()
                         .map(|(k, v)| format!("{}: {}", k, v))
                         .collect::<Vec<_>>()
                         .join("\n"),
@@ -474,8 +572,10 @@ impl App {
             }
             Section::Providers => {
                 if let Some(p) = PROVIDER_REGISTRY.get(id) {
-                    format!("Provider: {}\n\nName: {}\nType: {}\nEndpoint: {}\n\nDescription: {}",
-                        id, p.name, p.provider_type, p.default_endpoint, p.description)
+                    format!(
+                        "Provider: {}\n\nName: {}\nType: {}\nEndpoint: {}\n\nDescription: {}",
+                        id, p.name, p.provider_type, p.default_endpoint, p.description
+                    )
                 } else {
                     format!("Provider '{}' not found.", id)
                 }
@@ -483,21 +583,27 @@ impl App {
             Section::Capabilities => format!("Capability: {}", id),
             // Recommend detail reuses the Model info_fields
             Section::Recommend => match ModelCommands::info_fields(id) {
-                Some(fields) => fields.iter()
+                Some(fields) => fields
+                    .iter()
                     .map(|(k, v)| format!("{}: {}", k, v))
                     .collect::<Vec<_>>()
                     .join("\n"),
                 None => format!("Model '{}' not found.", id),
             },
             // Hardware has no per-row detail — render the full profile
-            Section::Hardware => HardwareCommands::hardware_fields().iter()
+            Section::Hardware => HardwareCommands::hardware_fields()
+                .iter()
                 .map(|(k, v)| format!("{}: {}", k, v))
                 .collect::<Vec<_>>()
                 .join("\n"),
         };
 
         let para = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title(format!(" {} — Detail ", id)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} — Detail ", id)),
+            )
             .wrap(ratatui::widgets::Wrap { trim: false })
             .scroll((self.detail_scroll as u16, 0));
         frame.render_widget(para, area);
@@ -505,10 +611,12 @@ impl App {
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
         let hints = match &self.mode {
-            AppMode::Browse if self.section == Section::Hardware =>
-                "[↑↓/jk] Scroll  [Tab] Section  [q] Quit",
-            AppMode::Browse =>
-                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit",
+            AppMode::Browse if self.section == Section::Hardware => {
+                "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
+            }
+            AppMode::Browse => {
+                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit"
+            }
             AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
             AppMode::Detail(_) => "[↑↓/jk] Scroll  [Backspace/Esc/q] Back",
         };
@@ -525,10 +633,10 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
     loop {
         terminal.draw(|frame| app.render(frame))?;
 
-        if let Event::Key(key) = event::read()? {
-            if app.handle_key(key) {
-                break;
-            }
+        if let Event::Key(key) = event::read()?
+            && app.handle_key(key)
+        {
+            break;
         }
     }
 
@@ -822,7 +930,8 @@ mod tests {
 
     #[test]
     fn recommend_rows_all_have_six_columns() {
-        let ui: Box<dyn crate::utils::ui::base::Ui + Send + Sync> = Box::new(crate::utils::ui::base::tests::CaptureUi::default());
+        let ui: Box<dyn crate::utils::ui::base::Ui + Send + Sync> =
+            Box::new(crate::utils::ui::base::tests::CaptureUi::default());
         for row in ModelCommands::recommend_rows(None, None, &[], false, &*ui) {
             assert_eq!(row.len(), 6, "each recommend row must have 6 columns");
         }

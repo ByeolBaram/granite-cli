@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -89,8 +89,17 @@ impl Ui for TerminalOutput {
         );
 
         // 5. Render separator (unchanged)
-        let sep: String = widths.iter().map(|w| "─".repeat(*w)).collect::<Vec<_>>().join("  ");
-        println!("{}{}{}", SetForegroundColor(Color::DarkGrey), sep, ResetColor);
+        let sep: String = widths
+            .iter()
+            .map(|w| "─".repeat(*w))
+            .collect::<Vec<_>>()
+            .join("  ");
+        println!(
+            "{}{}{}",
+            SetForegroundColor(Color::DarkGrey),
+            sep,
+            ResetColor
+        );
 
         // 6. Render rows with wrapping
         render_rows_with_wrapping(rows, &widths);
@@ -132,7 +141,13 @@ impl Ui for TerminalOutput {
             ("✗", Color::Red)
         };
         if detail.is_empty() {
-            println!("  {}{}{}  {}", SetForegroundColor(colour), mark, ResetColor, label);
+            println!(
+                "  {}{}{}  {}",
+                SetForegroundColor(colour),
+                mark,
+                ResetColor,
+                label
+            );
         } else {
             println!(
                 "  {}{}{}  {}  {}",
@@ -215,7 +230,12 @@ impl Ui for TerminalOutput {
         if !self.is_tty {
             return PlainOutput.detail_mark(msg);
         }
-        format!("{}{}{}", SetForegroundColor(Color::DarkGrey), msg, ResetColor)
+        format!(
+            "{}{}{}",
+            SetForegroundColor(Color::DarkGrey),
+            msg,
+            ResetColor
+        )
     }
 
     fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle {
@@ -321,7 +341,7 @@ fn visible_len(s: &str) -> usize {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
@@ -352,7 +372,7 @@ fn split_cell_ansi(s: &str) -> (&str, &str, &str) {
             }
             while i < bytes.len() {
                 let b = bytes[i];
-                if (b >= 0x41 && b <= 0x5A) || (b >= 0x61 && b <= 0x7A) {
+                if (0x41..=0x5A).contains(&b) || (0x61..=0x7A).contains(&b) {
                     i += 1;
                     break;
                 }
@@ -370,7 +390,11 @@ fn split_cell_ansi(s: &str) -> (&str, &str, &str) {
         suffix_start = prefix_end + s[prefix_end..].len() - 4;
     }
 
-    (&s[..prefix_end], &s[prefix_end..suffix_start], &s[suffix_start..])
+    (
+        &s[..prefix_end],
+        &s[prefix_end..suffix_start],
+        &s[suffix_start..],
+    )
 }
 
 /// Wrap a cell string with ANSI awareness, optionally applying grey row styling.
@@ -599,10 +623,7 @@ mod tests {
 
     #[test]
     fn wrap_text_at_hyphen() {
-        assert_eq!(
-            wrap_text("granite-3.0-8b", 12),
-            vec!["granite-3.0-", "8b"]
-        );
+        assert_eq!(wrap_text("granite-3.0-8b", 12), vec!["granite-3.0-", "8b"]);
     }
 
     #[test]
@@ -612,10 +633,7 @@ mod tests {
 
     #[test]
     fn wrap_text_character_wrap_long_word() {
-        assert_eq!(
-            wrap_text("verylongword", 6),
-            vec!["verylo", "ngword"]
-        );
+        assert_eq!(wrap_text("verylongword", 6), vec!["verylo", "ngword"]);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 use anyhow::Result;
 
 // Local
-use crate::providers::{PROVIDER_REGISTRY, HealthStatus};
+use crate::providers::{HealthStatus, PROVIDER_REGISTRY};
 use crate::utils::prompt_from_schema;
 
 pub struct ProviderCommands;
@@ -11,9 +11,10 @@ impl ProviderCommands {
     pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
         let providers = PROVIDER_REGISTRY.entries();
 
-        let mut rows: Vec<Vec<String>> = providers.iter().map(|(id, p)| {
-            vec![id.to_string(), p.default_endpoint.clone()]
-        }).collect();
+        let mut rows: Vec<Vec<String>> = providers
+            .iter()
+            .map(|(id, p)| vec![id.to_string(), p.default_endpoint.clone()])
+            .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         ctx.ui.table(
@@ -25,13 +26,25 @@ impl ProviderCommands {
     }
 
     pub fn list(ctx: &crate::AppContext) -> Result<()> {
-        let mut rows: Vec<Vec<String>> = ctx.config.providers.iter().map(|(id, cfg)| {
-            let base_url = cfg.config.get("base_url")
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string();
-            vec![id.clone(), cfg.provider_type.clone(), cfg.enabled.to_string(), base_url]
-        }).collect();
+        let mut rows: Vec<Vec<String>> = ctx
+            .config
+            .providers
+            .iter()
+            .map(|(id, cfg)| {
+                let base_url = cfg
+                    .config
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-")
+                    .to_string();
+                vec![
+                    id.clone(),
+                    cfg.provider_type.clone(),
+                    cfg.enabled.to_string(),
+                    base_url,
+                ]
+            })
+            .collect();
         rows.sort_by(|a, b| {
             let type_cmp = a[1].cmp(&b[1]);
             if type_cmp != std::cmp::Ordering::Equal {
@@ -48,7 +61,7 @@ impl ProviderCommands {
         Ok(())
     }
 
-     /// Interactive provider setup wizard.
+    /// Interactive provider setup wizard.
     ///
     /// `provider_type` is the catalog/registry key (e.g. `openai-compatible`).
     /// `instance_id` is this instance's nickname, distinct from its type --
@@ -63,17 +76,31 @@ impl ProviderCommands {
         let provider_def = match PROVIDER_REGISTRY.get(provider_type) {
             Some(def) => def,
             None => {
-                ctx.ui.error(&format!("Provider type '{}' not found in registry.", provider_type));
-                let available: Vec<_> = PROVIDER_REGISTRY.entries().iter().map(|(p_id, p)| format!("{} ({})", p_id, p.name)).collect();
-                ctx.ui.info(&format!("Available provider types: {}", available.join(", ")));
+                ctx.ui.error(&format!(
+                    "Provider type '{}' not found in registry.",
+                    provider_type
+                ));
+                let available: Vec<_> = PROVIDER_REGISTRY
+                    .entries()
+                    .iter()
+                    .map(|(p_id, p)| format!("{} ({})", p_id, p.name))
+                    .collect();
+                ctx.ui.info(&format!(
+                    "Available provider types: {}",
+                    available.join(", ")
+                ));
                 anyhow::bail!("Provider type not found");
             }
         };
 
-        ctx.ui.info(&format!("\nSetting up provider instance: {}", provider_type));
+        ctx.ui.info(&format!(
+            "\nSetting up provider instance: {}",
+            provider_type
+        ));
         ctx.ui.info(&provider_def.description);
         ctx.ui.info("");
-        ctx.ui.info(&format!("Type: {}", provider_def.provider_type));
+        ctx.ui
+            .info(&format!("Type: {}", provider_def.provider_type));
 
         // Get a name for this instance
         let instance_id = match instance_id {
@@ -82,7 +109,12 @@ impl ProviderCommands {
         };
 
         if !provider_def.authentication.is_empty() {
-            let auths = provider_def.authentication.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
+            let auths = provider_def
+                .authentication
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             ctx.ui.info(&format!("Authentication: {}", auths));
         }
 
@@ -90,7 +122,10 @@ impl ProviderCommands {
         let existing_config = ctx.config.get_provider(&instance_id);
         if existing_config.is_some() {
             let overwrite = ctx.ui.confirm(
-                &format!("Provider instance '{}' is already configured. Overwrite?", instance_id),
+                &format!(
+                    "Provider instance '{}' is already configured. Overwrite?",
+                    instance_id
+                ),
                 false,
             )?;
             if !overwrite {
@@ -99,8 +134,14 @@ impl ProviderCommands {
             }
         }
 
-        let schema = PROVIDER_REGISTRY.config_schema(provider_type)
-            .ok_or_else(|| anyhow::anyhow!("No config schema registered for provider type '{}'", provider_type))?;
+        let schema = PROVIDER_REGISTRY
+            .config_schema(provider_type)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No config schema registered for provider type '{}'",
+                    provider_type
+                )
+            })?;
         let defaults = existing_config
             .map(|c| c.config.clone())
             .or_else(|| PROVIDER_REGISTRY.default_config(provider_type))
@@ -116,7 +157,8 @@ impl ProviderCommands {
         };
 
         if let Err(e) = ctx.config.insert_provider(&instance_id, provider_config) {
-            ctx.ui.warn(&format!("failed to save provider config: {}", e));
+            ctx.ui
+                .warn(&format!("failed to save provider config: {}", e));
         }
 
         // Health check
@@ -124,7 +166,8 @@ impl ProviderCommands {
         match Self::check_provider_health(ctx, &instance_id).await {
             Ok(status) => {
                 if status.healthy {
-                    ctx.ui.info(&format!("Provider '{}' is healthy!", instance_id));
+                    ctx.ui
+                        .info(&format!("Provider '{}' is healthy!", instance_id));
                 } else {
                     ctx.ui.warn(&format!("Provider '{}' health check failed. It may need to be started or configured differently.", instance_id));
                 }
@@ -134,13 +177,18 @@ impl ProviderCommands {
             }
         }
 
-        ctx.ui.info(&format!("\nProvider instance '{}' configured successfully!", instance_id));
+        ctx.ui.info(&format!(
+            "\nProvider instance '{}' configured successfully!",
+            instance_id
+        ));
         ctx.ui.info("Supported APIs:");
         for (func, endpoints) in &provider_def.default_function_endpoints {
-            let endpoint_strs: Vec<String> = endpoints.iter()
+            let endpoint_strs: Vec<String> = endpoints
+                .iter()
                 .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
                 .collect();
-            ctx.ui.info(&format!("  - {} -> {}", func, endpoint_strs.join(", ")));
+            ctx.ui
+                .info(&format!("  - {} -> {}", func, endpoint_strs.join(", ")));
         }
 
         Ok(())
@@ -177,9 +225,13 @@ impl ProviderCommands {
         Ok(())
     }
 
-    async fn check_provider_health(ctx: &crate::AppContext, provider_id: &str) -> Result<HealthStatus> {
-        let provider_config = ctx.config.get_provider(provider_id)
-            .ok_or_else(|| anyhow::anyhow!("Provider '{}' not found in configuration", provider_id))?;
+    async fn check_provider_health(
+        ctx: &crate::AppContext,
+        provider_id: &str,
+    ) -> Result<HealthStatus> {
+        let provider_config = ctx.config.get_provider(provider_id).ok_or_else(|| {
+            anyhow::anyhow!("Provider '{}' not found in configuration", provider_id)
+        })?;
 
         let provider = PROVIDER_REGISTRY
             .construct(&provider_config.provider_type, &provider_config.config)
@@ -208,30 +260,45 @@ mod tests {
 
     fn ctx_with_provider(id: &str, url: &str) -> crate::AppContext {
         let mut ctx = test_ctx();
-        ctx.config.providers.insert(id.to_string(), ProviderConfig {
-            provider_id: id.to_string(),
-            provider_type: "openai-compatible".to_string(),
-            config: serde_json::json!({ "base_url": url }),
-            enabled: true,
-        });
+        ctx.config.providers.insert(
+            id.to_string(),
+            ProviderConfig {
+                provider_id: id.to_string(),
+                provider_type: "openai-compatible".to_string(),
+                config: serde_json::json!({ "base_url": url }),
+                enabled: true,
+            },
+        );
         ctx
     }
 
     macro_rules! tables {
         ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().tables.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .tables
+                .borrow()
         };
     }
 
     macro_rules! infos {
         ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().infos.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .infos
+                .borrow()
         };
     }
 
     macro_rules! statuses {
         ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any).downcast_ref::<CaptureUi>().unwrap().statuses.borrow()
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .statuses
+                .borrow()
         };
     }
 
@@ -293,24 +360,33 @@ mod tests {
     #[test]
     fn list_sorted_by_type_then_id() {
         let mut ctx = test_ctx();
-        ctx.config.providers.insert("prod-openai".to_string(), ProviderConfig {
-            provider_id: "prod-openai".to_string(),
-            provider_type: "openai-compatible".to_string(),
-            config: serde_json::json!({ "base_url": "http://prod" }),
-            enabled: true,
-        });
-        ctx.config.providers.insert("local-ollama".to_string(), ProviderConfig {
-            provider_id: "local-ollama".to_string(),
-            provider_type: "ollama".to_string(),
-            config: serde_json::json!({ "base_url": "http://localhost:11434" }),
-            enabled: true,
-        });
-        ctx.config.providers.insert("dev-openai".to_string(), ProviderConfig {
-            provider_id: "dev-openai".to_string(),
-            provider_type: "openai-compatible".to_string(),
-            config: serde_json::json!({ "base_url": "http://dev" }),
-            enabled: true,
-        });
+        ctx.config.providers.insert(
+            "prod-openai".to_string(),
+            ProviderConfig {
+                provider_id: "prod-openai".to_string(),
+                provider_type: "openai-compatible".to_string(),
+                config: serde_json::json!({ "base_url": "http://prod" }),
+                enabled: true,
+            },
+        );
+        ctx.config.providers.insert(
+            "local-ollama".to_string(),
+            ProviderConfig {
+                provider_id: "local-ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({ "base_url": "http://localhost:11434" }),
+                enabled: true,
+            },
+        );
+        ctx.config.providers.insert(
+            "dev-openai".to_string(),
+            ProviderConfig {
+                provider_id: "dev-openai".to_string(),
+                provider_type: "openai-compatible".to_string(),
+                config: serde_json::json!({ "base_url": "http://dev" }),
+                enabled: true,
+            },
+        );
         ProviderCommands::list(&ctx).unwrap();
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];

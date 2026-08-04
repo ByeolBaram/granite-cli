@@ -1,6 +1,6 @@
 // Local
-use anyhow::Result;
 use crate::utils::hardware::detect_hardware;
+use anyhow::Result;
 
 pub struct HardwareCommands;
 
@@ -12,11 +12,23 @@ impl HardwareCommands {
     pub(crate) fn hardware_fields() -> Vec<(&'static str, String)> {
         let profile = detect_hardware();
         vec![
-            ("CPU Cores",             profile.cpu_cores.to_string()),
-            ("CPU Architecture",      profile.cpu_arch.clone()),
-            ("RAM",                   format!("{:.2} GB", profile.ram_gb)),
-            ("GPU Vendor",            profile.gpu_vendor.clone().unwrap_or_else(|| "None".to_string())),
-            ("VRAM",                  profile.vram_gb.map(|v| format!("{:.2} GB", v)).unwrap_or_else(|| "None".to_string())),
+            ("CPU Cores", profile.cpu_cores.to_string()),
+            ("CPU Architecture", profile.cpu_arch.clone()),
+            ("RAM", format!("{:.2} GB", profile.ram_gb)),
+            (
+                "GPU Vendor",
+                profile
+                    .gpu_vendor
+                    .clone()
+                    .unwrap_or_else(|| "None".to_string()),
+            ),
+            (
+                "VRAM",
+                profile
+                    .vram_gb
+                    .map(|v| format!("{:.2} GB", v))
+                    .unwrap_or_else(|| "None".to_string()),
+            ),
         ]
     }
 
@@ -45,7 +57,10 @@ mod tests {
         let ctx = ctx();
         HardwareCommands::show(&ctx).unwrap();
         let details = (&*ctx.ui as &dyn std::any::Any)
-            .downcast_ref::<CaptureUi>().unwrap().details.borrow();
+            .downcast_ref::<CaptureUi>()
+            .unwrap()
+            .details
+            .borrow();
         assert_eq!(details.len(), 1);
     }
 

@@ -33,13 +33,16 @@ mod tests {
     #[test]
     fn test_all_models_registered() {
         let models = MODEL_REGISTRY.entries();
-        assert!(models.len() > 0, "Expected models to be registered");
+        assert!(!models.is_empty(), "Expected models to be registered");
     }
 
     #[test]
     fn test_get_specific_model() {
         let model = MODEL_REGISTRY.get("granite-3.1-8b-instruct");
-        assert!(model.is_some(), "granite-3.1-8b-instruct should be registered");
+        assert!(
+            model.is_some(),
+            "granite-3.1-8b-instruct should be registered"
+        );
 
         let metadata = model.unwrap();
         assert_eq!(metadata.family, "Granite 3.1");
@@ -51,7 +54,10 @@ mod tests {
     #[test]
     fn test_model_variants() {
         let model = MODEL_REGISTRY.get("granite-3.1-8b-instruct").unwrap();
-        assert!(model.variants.len() > 0, "granite-3.1-8b-instruct should have variants");
+        assert!(
+            !model.variants.is_empty(),
+            "granite-3.1-8b-instruct should have variants"
+        );
 
         // Check first variant
         let variant = &model.variants[0];
@@ -84,14 +90,34 @@ mod tests {
     #[test]
     fn test_model_supported_functions() {
         let text_model = MODEL_REGISTRY.get("granite-3.1-8b-instruct").unwrap();
-        assert!(text_model.supported_functions.contains(&ModelFunction::Chat));
+        assert!(
+            text_model
+                .supported_functions
+                .contains(&ModelFunction::Chat)
+        );
 
         let vision_model = MODEL_REGISTRY.get("granite-vision-3.3-2b").unwrap();
-        assert!(vision_model.supported_functions.contains(&ModelFunction::Chat));
-        assert!(vision_model.supported_functions.contains(&ModelFunction::ImageUnderstanding));
+        assert!(
+            vision_model
+                .supported_functions
+                .contains(&ModelFunction::Chat)
+        );
+        assert!(
+            vision_model
+                .supported_functions
+                .contains(&ModelFunction::ImageUnderstanding)
+        );
 
         let speech_model = MODEL_REGISTRY.get("granite-speech-4.1-2b").unwrap();
-        assert!(speech_model.supported_functions.contains(&ModelFunction::Chat));
-        assert!(speech_model.supported_functions.contains(&ModelFunction::Transcription));
+        assert!(
+            speech_model
+                .supported_functions
+                .contains(&ModelFunction::Chat)
+        );
+        assert!(
+            speech_model
+                .supported_functions
+                .contains(&ModelFunction::Transcription)
+        );
     }
 }

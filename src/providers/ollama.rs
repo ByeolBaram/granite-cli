@@ -1,9 +1,8 @@
 use crate::models::huggingface::hf_repo_id;
 use crate::models::{ModelFunction, ModelMetadata, ModelVariant};
 use crate::providers::base::{
-    http_health_check, ApiEndpoint, ApiType, AuthType, HealthStatus,
-    ModelFormat, Provider, ProviderError, ProviderMetadata, ProviderType,
-    HasProviderMetadata,
+    ApiEndpoint, ApiType, AuthType, HasProviderMetadata, HealthStatus, ModelFormat, Provider,
+    ProviderError, ProviderMetadata, ProviderType, http_health_check,
 };
 use crate::registry::{ConfigConstructable, Secret};
 use crate::utils::ui::Ui;
@@ -98,16 +97,19 @@ impl OllamaProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
 
-        map.insert(ModelFunction::Chat, vec![
-            ApiEndpoint::OpenAIChat,
-            ApiEndpoint::OllamaChat,
-            ApiEndpoint::AnthropicMessages,
-        ]);
+        map.insert(
+            ModelFunction::Chat,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
 
-        map.insert(ModelFunction::Embeddings, vec![
-            ApiEndpoint::OpenAIEmbeddings,
-            ApiEndpoint::OllamaEmbeddings,
-        ]);
+        map.insert(
+            ModelFunction::Embeddings,
+            vec![ApiEndpoint::OpenAIEmbeddings, ApiEndpoint::OllamaEmbeddings],
+        );
 
         map
     }
@@ -115,8 +117,7 @@ impl OllamaProvider {
 
 impl ConfigConstructable for OllamaProvider {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: OllamaProviderConfig = serde_json::from_value(cfg.clone())
-            .unwrap_or_default();
+        let config: OllamaProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
@@ -129,7 +130,11 @@ impl ConfigConstructable for OllamaProvider {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { config, client, stream_client }
+        Self {
+            config,
+            client,
+            stream_client,
+        }
     }
 }
 
@@ -161,7 +166,8 @@ impl Provider for OllamaProvider {
             &self.config.base_url,
             &self.config.health_check_endpoint,
             self.config.api_key.as_ref(),
-        ).await
+        )
+        .await
     }
 
     async fn pull_model(
@@ -181,7 +187,10 @@ impl Provider for OllamaProvider {
             )));
         };
 
-        let label = format!("{} ({} {})", model.family, variant.format, variant.precision);
+        let label = format!(
+            "{} ({} {})",
+            model.family, variant.format, variant.precision
+        );
 
         let url = format!("{}/api/pull", self.config.base_url);
         let mut request = self.stream_client.post(&url).json(&serde_json::json!({
@@ -196,7 +205,10 @@ impl Provider for OllamaProvider {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Other(format!("Ollama pull failed ({}): {}", status, body)));
+            return Err(ProviderError::Other(format!(
+                "Ollama pull failed ({}): {}",
+                status, body
+            )));
         }
 
         let handle = ui.pull_start(&label, None);
@@ -254,7 +266,8 @@ impl HasProviderMetadata for OllamaProvider {
     fn metadata() -> ProviderMetadata {
         ProviderMetadata {
             name: "Ollama".to_string(),
-            description: "Local inference server supporting multiple API protocols and GGUF models".to_string(),
+            description: "Local inference server supporting multiple API protocols and GGUF models"
+                .to_string(),
             provider_type: ProviderType::Local,
             default_endpoint: "http://localhost:11434".to_string(),
             supported_api_types: vec![ApiType::OpenAI, ApiType::Ollama, ApiType::Anthropic],
@@ -334,7 +347,10 @@ mod tests {
         assert!(meta.supported_api_types.contains(&ApiType::OpenAI));
         assert!(meta.supported_api_types.contains(&ApiType::Ollama));
         assert!(meta.supported_api_types.contains(&ApiType::Anthropic));
-        assert!(meta.default_function_endpoints.contains_key(&ModelFunction::Chat));
+        assert!(
+            meta.default_function_endpoints
+                .contains_key(&ModelFunction::Chat)
+        );
     }
 
     #[test]
@@ -364,12 +380,20 @@ mod tests {
 
     #[test]
     fn test_ollama_library_ref_parses_library_url() {
-        assert_eq!(ollama_library_ref("https://ollama.com/library/granite4:1b"), Some("granite4:1b"));
+        assert_eq!(
+            ollama_library_ref("https://ollama.com/library/granite4:1b"),
+            Some("granite4:1b")
+        );
     }
 
     #[test]
     fn test_ollama_library_ref_rejects_non_library_url() {
-        assert_eq!(ollama_library_ref("https://huggingface.co/ibm-granite/granite-4.1-30b-GGUF/blob/main/x.gguf"), None);
+        assert_eq!(
+            ollama_library_ref(
+                "https://huggingface.co/ibm-granite/granite-4.1-30b-GGUF/blob/main/x.gguf"
+            ),
+            None
+        );
     }
 
     #[test]
@@ -410,7 +434,10 @@ mod tests {
 
     #[test]
     fn test_pull_outcome_empty_stream() {
-        assert_eq!(process_pull_lines(Vec::<String>::new()), PullOutcome::Incomplete);
+        assert_eq!(
+            process_pull_lines(Vec::<String>::new()),
+            PullOutcome::Incomplete
+        );
     }
 
     #[test]

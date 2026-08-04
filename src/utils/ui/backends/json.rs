@@ -23,13 +23,21 @@ impl JsonOutput {
     pub fn with_capture() -> Self {
         let buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let writer: Box<dyn Write + Send> = Box::new(SharedWriter(Arc::clone(&buf)));
-        Self { writer: Mutex::new(writer), buf: Some(buf) }
+        Self {
+            writer: Mutex::new(writer),
+            buf: Some(buf),
+        }
     }
 
     /// Return all emitted JSON objects in emission order.
     /// Panics if called on a non-capturing instance.
     pub fn captured(&self) -> Vec<serde_json::Value> {
-        let buf = self.buf.as_ref().expect("captured() called on stdout JsonOutput").lock().unwrap();
+        let buf = self
+            .buf
+            .as_ref()
+            .expect("captured() called on stdout JsonOutput")
+            .lock()
+            .unwrap();
         String::from_utf8_lossy(&buf)
             .lines()
             .filter(|l| !l.is_empty())
@@ -52,7 +60,9 @@ impl Write for SharedWriter {
         self.0.lock().unwrap().extend_from_slice(buf);
         Ok(buf.len())
     }
-    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 impl ConfigConstructable for JsonOutput {
@@ -75,7 +85,8 @@ impl Ui for JsonOutput {
     }
 
     fn detail(&self, title: &str, fields: &[(&str, String)]) {
-        let obj: serde_json::Map<String, serde_json::Value> = fields.iter()
+        let obj: serde_json::Map<String, serde_json::Value> = fields
+            .iter()
             .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.clone())))
             .collect();
         self.emit(serde_json::json!({
@@ -126,7 +137,13 @@ impl Ui for JsonOutput {
         base::PullHandle(0)
     }
 
-    fn pull_progress(&self, _handle: base::PullHandle, _downloaded_bytes: u64, _total_bytes: Option<u64>) {}
+    fn pull_progress(
+        &self,
+        _handle: base::PullHandle,
+        _downloaded_bytes: u64,
+        _total_bytes: Option<u64>,
+    ) {
+    }
 
     fn pull_finish(&self, _handle: base::PullHandle, label: &str, error: Option<&str>) {
         self.emit(serde_json::json!({
@@ -153,14 +170,20 @@ impl HasUiMetadata for JsonOutput {
 mod tests {
     use super::*;
 
-    fn make() -> JsonOutput { JsonOutput::with_capture() }
+    fn make() -> JsonOutput {
+        JsonOutput::with_capture()
+    }
 
     crate::output_contract_tests!(make());
 
     #[test]
     fn json_table_output_is_valid_json_with_correct_type() {
         let out = make();
-        out.table("T", &["A", "B"], &[vec!["r1a".to_string(), "r1b".to_string()]]);
+        out.table(
+            "T",
+            &["A", "B"],
+            &[vec!["r1a".to_string(), "r1b".to_string()]],
+        );
         let vals = out.captured();
         assert_eq!(vals.len(), 1);
         assert_eq!(vals[0]["type"], "table");

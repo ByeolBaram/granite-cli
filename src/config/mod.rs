@@ -7,22 +7,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TopLevelConfig {
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
 }
 
-impl Default for TopLevelConfig {
-    fn default() -> Self {
-        Self {
-            routing: RoutingConfig::default(),
-            shell: ShellConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub models: HashMap<String, ModelConfig>,
     pub providers: HashMap<String, ProviderConfig>,
@@ -30,19 +21,6 @@ pub struct Config {
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
     pub tools: HashMap<String, ToolConfig>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            models: HashMap::new(),
-            providers: HashMap::new(),
-            capabilities: HashMap::new(),
-            routing: RoutingConfig::default(),
-            shell: ShellConfig::default(),
-            tools: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,34 +62,16 @@ impl Default for ProviderConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityConfig {
     pub capability_id: String,
     pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
-impl Default for CapabilityConfig {
-    fn default() -> Self {
-        Self {
-            capability_id: String::new(),
-            enabled: false,
-            config: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoutingConfig {
     pub model_routes: HashMap<String, Vec<ProviderRoute>>,
-}
-
-impl Default for RoutingConfig {
-    fn default() -> Self {
-        Self {
-            model_routes: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,29 +118,32 @@ pub struct ConfiguredCapability {
 }
 
 impl Config {
-
     fn config_dir() -> Result<PathBuf> {
         let val_res = std::env::var("GRANITE_CLI_HOME");
 
-        if let Ok(val) = val_res {
-            if !val.is_empty() {
-                let path = PathBuf::from(&val);
+        if let Ok(val) = val_res
+            && !val.is_empty()
+        {
+            let path = PathBuf::from(&val);
 
-                let has_valid_parent = path.parent().map_or(true, |p| p.exists());
+            let has_valid_parent = path.parent().is_none_or(|p| p.exists());
 
-                let valid_dir =
-                    (!path.exists() && has_valid_parent) ||
-                    (path.exists() && path.is_dir());
+            let valid_dir =
+                (!path.exists() && has_valid_parent) || (path.exists() && path.is_dir());
 
-                if !valid_dir {
-                    anyhow::bail!("Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.", val);
-                }
-
-                return Ok(path);
+            if !valid_dir {
+                anyhow::bail!(
+                    "Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.",
+                    val
+                );
             }
+
+            return Ok(path);
         }
 
-        let default_dir = dirs::config_dir().ok_or_else(|| anyhow::Error::msg("Could not determine system configuration directory"))?;
+        let default_dir = dirs::config_dir().ok_or_else(|| {
+            anyhow::Error::msg("Could not determine system configuration directory")
+        })?;
 
         Ok(default_dir.join("granite-cli"))
     }
@@ -226,8 +189,7 @@ impl Config {
     }
 
     fn save_yaml_to_file<T: serde::Serialize>(path: &Path, data: &T) -> Result<()> {
-        let content = serde_yaml::to_string(data)
-            .with_context(|| "Failed to serialize config")?;
+        let content = serde_yaml::to_string(data).with_context(|| "Failed to serialize config")?;
         fs::write(path, content)
             .with_context(|| format!("Failed to write config file: {}", path.display()))?;
         Ok(())
@@ -244,8 +206,9 @@ impl Config {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "yaml") {
-                let file_name = path.file_stem()
+            if path.extension().is_some_and(|ext| ext == "yaml") {
+                let file_name = path
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
                 if let Ok(config) = Self::load_yaml_from_file::<V>(&path) {
@@ -273,22 +236,10 @@ impl Config {
         }
 
         // Load component files
-        config.models = Self::load_dir(
-            &Self::models_dir()?,
-            |s| s.to_string(),
-        )?;
-        config.providers = Self::load_dir(
-            &Self::providers_dir()?,
-            |s| s.to_string(),
-        )?;
-        config.capabilities = Self::load_dir(
-            &Self::capabilities_dir()?,
-            |s| s.to_string(),
-        )?;
-        config.tools = Self::load_dir(
-            &Self::tools_dir()?,
-            |s| s.to_string(),
-        )?;
+        config.models = Self::load_dir(&Self::models_dir()?, |s| s.to_string())?;
+        config.providers = Self::load_dir(&Self::providers_dir()?, |s| s.to_string())?;
+        config.capabilities = Self::load_dir(&Self::capabilities_dir()?, |s| s.to_string())?;
+        config.tools = Self::load_dir(&Self::tools_dir()?, |s| s.to_string())?;
 
         Ok(config)
     }
@@ -416,7 +367,11 @@ impl Config {
         self.save()
     }
 
-    pub fn update_capability(&mut self, id: &str, f: impl FnOnce(&mut CapabilityConfig)) -> Result<()> {
+    pub fn update_capability(
+        &mut self,
+        id: &str,
+        f: impl FnOnce(&mut CapabilityConfig),
+    ) -> Result<()> {
         if let Some(capability) = self.capabilities.get_mut(id) {
             f(capability);
             self.save()

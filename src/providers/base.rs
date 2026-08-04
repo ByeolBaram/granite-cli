@@ -55,8 +55,7 @@ impl ApiEndpoint {
             | ApiEndpoint::OpenAIEmbeddings
             | ApiEndpoint::OpenAIAudioTranscription => ApiType::OpenAI,
 
-            ApiEndpoint::OllamaChat
-            | ApiEndpoint::OllamaEmbeddings => ApiType::Ollama,
+            ApiEndpoint::OllamaChat | ApiEndpoint::OllamaEmbeddings => ApiType::Ollama,
 
             ApiEndpoint::AnthropicMessages => ApiType::Anthropic,
         }
@@ -77,20 +76,19 @@ impl ApiEndpoint {
     /// Returns the model functions this endpoint provides
     pub fn provides_functions(&self) -> Vec<ModelFunction> {
         match self {
-            ApiEndpoint::OpenAIChat
-            | ApiEndpoint::OllamaChat
-            | ApiEndpoint::AnthropicMessages => vec![
-                ModelFunction::Chat,
-                ModelFunction::ToolCalling,
-                ModelFunction::Thinking,
-                ModelFunction::ImageUnderstanding,
-                ModelFunction::Guardian,
-            ],
+            ApiEndpoint::OpenAIChat | ApiEndpoint::OllamaChat | ApiEndpoint::AnthropicMessages => {
+                vec![
+                    ModelFunction::Chat,
+                    ModelFunction::ToolCalling,
+                    ModelFunction::Thinking,
+                    ModelFunction::ImageUnderstanding,
+                    ModelFunction::Guardian,
+                ]
+            }
 
-            ApiEndpoint::OpenAIEmbeddings
-            | ApiEndpoint::OllamaEmbeddings => vec![
-                ModelFunction::Embeddings,
-            ],
+            ApiEndpoint::OpenAIEmbeddings | ApiEndpoint::OllamaEmbeddings => {
+                vec![ModelFunction::Embeddings]
+            }
 
             ApiEndpoint::OpenAIAudioTranscription => vec![
                 ModelFunction::Transcription,
@@ -104,7 +102,9 @@ impl ApiEndpoint {
 
 impl std::fmt::Display for ApiEndpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} ({})",
+        write!(
+            f,
+            "{} {} ({})",
             self.api_type(),
             self.path(),
             self.provides_functions()
@@ -248,7 +248,8 @@ pub async fn http_health_check(
                 Ok(HealthStatus {
                     healthy: false,
                     latency,
-                    error: Some(format!("HTTP {}: {}",
+                    error: Some(format!(
+                        "HTTP {}: {}",
                         response.status(),
                         response.text().await.unwrap_or_default()
                     )),
@@ -366,7 +367,10 @@ mod tests {
     fn test_api_endpoint_paths() {
         assert_eq!(ApiEndpoint::OpenAIChat.path(), "/v1/chat/completions");
         assert_eq!(ApiEndpoint::OpenAIEmbeddings.path(), "/v1/embeddings");
-        assert_eq!(ApiEndpoint::OpenAIAudioTranscription.path(), "/v1/audio/transcriptions");
+        assert_eq!(
+            ApiEndpoint::OpenAIAudioTranscription.path(),
+            "/v1/audio/transcriptions"
+        );
         assert_eq!(ApiEndpoint::OllamaChat.path(), "/api/chat");
         assert_eq!(ApiEndpoint::OllamaEmbeddings.path(), "/api/embeddings");
         assert_eq!(ApiEndpoint::AnthropicMessages.path(), "/v1/messages");
@@ -374,9 +378,18 @@ mod tests {
 
     #[test]
     fn test_api_endpoint_types() {
-        assert!(matches!(ApiEndpoint::OpenAIChat.api_type(), ApiType::OpenAI));
-        assert!(matches!(ApiEndpoint::OllamaChat.api_type(), ApiType::Ollama));
-        assert!(matches!(ApiEndpoint::AnthropicMessages.api_type(), ApiType::Anthropic));
+        assert!(matches!(
+            ApiEndpoint::OpenAIChat.api_type(),
+            ApiType::OpenAI
+        ));
+        assert!(matches!(
+            ApiEndpoint::OllamaChat.api_type(),
+            ApiType::Ollama
+        ));
+        assert!(matches!(
+            ApiEndpoint::AnthropicMessages.api_type(),
+            ApiType::Anthropic
+        ));
     }
 
     #[test]
@@ -395,9 +408,12 @@ mod tests {
 
     #[test]
     fn test_model_function_display() {
-use crate::models::ModelFunction;
+        use crate::models::ModelFunction;
         assert_eq!(ModelFunction::Chat.to_string(), "Chat");
-        assert_eq!(ModelFunction::ImageUnderstanding.to_string(), "Image Understanding");
+        assert_eq!(
+            ModelFunction::ImageUnderstanding.to_string(),
+            "Image Understanding"
+        );
         assert_eq!(ModelFunction::Transcription.to_string(), "Transcription");
     }
 }

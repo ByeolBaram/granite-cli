@@ -120,8 +120,7 @@ impl Exporter {
             return false;
         }
 
-        let content = fs::read_to_string(path)
-            .unwrap_or_default();
+        let content = fs::read_to_string(path).unwrap_or_default();
 
         content.contains(EXPORT_MARKER_START) && content.contains(EXPORT_MARKER_END)
     }
@@ -133,7 +132,12 @@ pub fn detect_shell_profile() -> (String, String) {
     (name, path.to_string_lossy().to_string())
 }
 
-pub fn print_export_instructions(ui: &dyn Ui, vars: &[(&str, &str)], _shell_name: &str, export_file: &str) {
+pub fn print_export_instructions(
+    ui: &dyn Ui,
+    vars: &[(&str, &str)],
+    _shell_name: &str,
+    export_file: &str,
+) {
     ui.info(&format!(
         "\nTo persist these settings, you can export them to your shell profile:\n  Granite CLI will add the following to {}:\n",
         export_file
@@ -222,7 +226,11 @@ mod tests {
         let export_path = export_file.to_string_lossy().to_string();
 
         // Create file with existing content
-        fs::write(&export_file, "# Existing content\nexport OTHER_VAR=\"value\"\n").unwrap();
+        fs::write(
+            &export_file,
+            "# Existing content\nexport OTHER_VAR=\"value\"\n",
+        )
+        .unwrap();
 
         let exporter = Exporter::new(
             "bash".to_string(),
@@ -230,7 +238,9 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
+        exporter
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
+            .unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();
         assert!(content.contains("# Existing content"));
@@ -250,7 +260,9 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
+        exporter
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
+            .unwrap();
 
         let content_after_add = fs::read_to_string(&export_file).unwrap();
         assert!(content_after_add.contains("API_KEY"));
@@ -277,7 +289,9 @@ mod tests {
 
         assert!(!exporter.check_shell_profile_updated());
 
-        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "secret123")]).unwrap();
+        exporter
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "secret123")])
+            .unwrap();
 
         assert!(exporter.check_shell_profile_updated());
     }
@@ -294,8 +308,12 @@ mod tests {
             "export {VAR}=\"{VALUE}\"".to_string(),
         );
 
-        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "old_secret")]).unwrap();
-        exporter.add_exports(&CaptureUi::default(), &vec![("API_KEY", "new_secret")]).unwrap();
+        exporter
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "old_secret")])
+            .unwrap();
+        exporter
+            .add_exports(&CaptureUi::default(), &[("API_KEY", "new_secret")])
+            .unwrap();
 
         let content = fs::read_to_string(&export_file).unwrap();
         assert!(content.contains("new_secret"));
