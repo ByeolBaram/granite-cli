@@ -180,28 +180,56 @@ impl LauncherCommands {
             .or_else(|| LAUNCHER_REGISTRY.default_config(launcher_type))
             .unwrap_or_else(|| serde_json::json!({}));
 
-        let config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
+        let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Validate that the binary exists before saving anything.
-        // A launcher with no reachable binary is not useful, so we fail hard
-        // with an actionable message rather than silently saving dead config.
+        // Try to validate the binary. If it isn't found on PATH, ask the user
+        // for an explicit path override right now (rather than burying that
+        // option inside the schema prompt, which is easy to skip past).
+        // We retry once after they provide a path; if it still fails we bail.
         let launcher = LAUNCHER_REGISTRY
             .construct(launcher_type, &config)
             .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
 
         match launcher.validate_command() {
-            Ok(path) => ctx
-                .ui
-                .info(&format!("  Binary found: {}", path.display())),
-            Err(e) => {
-                anyhow::bail!(
-                    "Binary '{}' not found: {}.\n\
-                     Install the tool first, or re-run with a custom path:\n\
-                     granite-cli launcher setup {} --id <name>  (then set command_path when prompted)",
-                    launcher.command_name(),
-                    e,
-                    launcher_type,
-                );
+            Ok(path) => {
+                ctx.ui
+                    .info(&format!("  Binary found: {}", path.display()));
+            }
+            Err(_) => {
+                // Binary not on PATH — ask for an explicit path
+                ctx.ui.warn(&format!(
+                    "  '{}' not found on PATH.",
+                    launcher_def.default_command
+                ));
+                let explicit = ctx.ui.text(
+                    "  Enter the full path to the binary (e.g. /usr/local/bin/claude): ",
+                    "",
+                )?;
+                if explicit.trim().is_empty() {
+                    anyhow::bail!(
+                        "No path provided and '{}' is not on PATH. \
+                         Install the tool and re-run setup.",
+                        launcher_def.default_command
+                    );
+                }
+                // Patch the config with the explicit path and re-validate
+                config["command_path"] = serde_json::Value::String(explicit.trim().to_string());
+                let launcher2 = LAUNCHER_REGISTRY
+                    .construct(launcher_type, &config)
+                    .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
+                match launcher2.validate_command() {
+                    Ok(path) => {
+                        ctx.ui
+                            .info(&format!("  Binary found: {}", path.display()));
+                    }
+                    Err(e) => {
+                        anyhow::bail!(
+                            "Path '{}' does not exist: {}",
+                            config["command_path"].as_str().unwrap_or(""),
+                            e
+                        );
+                    }
+                }
             }
         }
 
