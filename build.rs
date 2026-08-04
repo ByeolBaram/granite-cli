@@ -48,20 +48,18 @@ fn generate_model_struct(model: &YamlModel) -> String {
     let mut s = String::new();
 
     // Empty struct
-    s.push_str(&format!("pub struct {} {{}}\n\n", struct_name));
+    s.push_str(&format!("pub struct {struct_name} {{}}\n\n"));
 
     // ConfigConstructable implementation
     s.push_str(&format!(
-        "impl crate::registry::ConfigConstructable for {} {{\n",
-        struct_name
+        "impl crate::registry::ConfigConstructable for {struct_name} {{\n"
     ));
     s.push_str("    fn new(_cfg: &serde_json::Value) -> Self { Self {} }\n");
     s.push_str("}\n\n");
 
     // Model trait implementation
     s.push_str(&format!(
-        "impl crate::models::base::Model for {} {{\n",
-        struct_name
+        "impl crate::models::base::Model for {struct_name} {{\n"
     ));
     s.push_str(&format!(
         "    fn family(&self) -> &str {{ {:?} }}\n",
@@ -124,7 +122,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
     // Description
     s.push_str("    fn description(&self) -> Option<&str> {\n");
     if let Some(ref desc) = model.description {
-        s.push_str(&format!("        Some({:?})\n", desc));
+        s.push_str(&format!("        Some({desc:?})\n"));
     } else {
         s.push_str("        None\n");
     }
@@ -134,7 +132,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("    fn tags(&self) -> &[String] {\n");
     s.push_str("        static TAGS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| vec![\n");
     for tag in &model.tags {
-        s.push_str(&format!("            {:?}.to_string(),\n", tag));
+        s.push_str(&format!("            {tag:?}.to_string(),\n"));
     }
     s.push_str("        ]);\n");
     s.push_str("        &TAGS\n");
@@ -145,8 +143,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str("        static FUNCS: std::sync::LazyLock<Vec<crate::models::base::ModelFunction>> = std::sync::LazyLock::new(|| vec![\n");
     for func in &model.supported_functions {
         s.push_str(&format!(
-            "            crate::models::base::ModelFunction::{},\n",
-            func
+            "            crate::models::base::ModelFunction::{func},\n"
         ));
     }
     s.push_str("        ]);\n");
@@ -156,8 +153,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
 
     // HasModelMetadata implementation
     s.push_str(&format!(
-        "impl crate::models::base::HasModelMetadata for {} {{\n",
-        struct_name
+        "impl crate::models::base::HasModelMetadata for {struct_name} {{\n"
     ));
     s.push_str("    fn metadata() -> crate::models::base::ModelMetadata {\n");
     s.push_str(&generate_metadata_literal(model));
@@ -226,8 +222,7 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     // Description
     if let Some(ref desc) = model.description {
         s.push_str(&format!(
-            "            description: Some({:?}.to_string()),\n",
-            desc
+            "            description: Some({desc:?}.to_string()),\n"
         ));
     } else {
         s.push_str("            description: None,\n");
@@ -236,7 +231,7 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     // Tags
     s.push_str("            tags: vec![\n");
     for tag in &model.tags {
-        s.push_str(&format!("                {:?}.to_string(),\n", tag));
+        s.push_str(&format!("                {tag:?}.to_string(),\n"));
     }
     s.push_str("            ],\n");
 
@@ -244,8 +239,7 @@ fn generate_metadata_literal(model: &YamlModel) -> String {
     s.push_str("            supported_functions: vec![\n");
     for func in &model.supported_functions {
         s.push_str(&format!(
-            "                crate::models::base::ModelFunction::{},\n",
-            func
+            "                crate::models::base::ModelFunction::{func},\n"
         ));
     }
     s.push_str("            ],\n");
@@ -293,10 +287,7 @@ fn generate_layer_kind_literal(ltc: &YamlLayerTypeCount) -> String {
             let window = ltc
                 .window
                 .unwrap_or_else(|| panic!("sliding_attention layer_type missing `window` field"));
-            format!(
-                "crate::models::base::LayerKind::SlidingAttention {{ window: {} }}",
-                window
-            )
+            format!("crate::models::base::LayerKind::SlidingAttention {{ window: {window} }}")
         }
         "recurrent" => {
             let mamba = ltc
@@ -308,13 +299,13 @@ fn generate_layer_kind_literal(ltc: &YamlLayerTypeCount) -> String {
                 mamba.d_conv, mamba.d_state, mamba.d_inner, mamba.n_groups
             )
         }
-        other => panic!("Unknown layer_types kind: {:?}", other),
+        other => panic!("Unknown layer_types kind: {other:?}"),
     }
 }
 
 fn format_float(value: f64) -> String {
     if value.fract() == 0.0 {
-        format!("{:.1}", value)
+        format!("{value:.1}")
     } else {
         value.to_string()
     }
