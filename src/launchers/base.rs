@@ -150,17 +150,10 @@ pub(crate) mod tests {
                 if p.exists() {
                     return Ok(p.clone());
                 }
-                anyhow::bail!(
-                    "explicit path '{}' does not exist",
-                    p.display()
-                );
+                anyhow::bail!("explicit path '{}' does not exist", p.display());
             }
-            which::which(&self.command_name).map_err(|_| {
-                anyhow::anyhow!(
-                    "command '{}' not found on PATH",
-                    self.command_name
-                )
-            })
+            which::which(&self.command_name)
+                .map_err(|_| anyhow::anyhow!("command '{}' not found on PATH", self.command_name))
         }
     }
 

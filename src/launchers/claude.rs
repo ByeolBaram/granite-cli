@@ -20,8 +20,7 @@ pub struct ClaudeLauncher {
 
 impl ConfigConstructable for ClaudeLauncher {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: ClaudeLauncherConfig =
-            serde_json::from_value(cfg.clone()).unwrap_or_default();
+        let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self { config }
     }
 }
@@ -33,10 +32,7 @@ impl Launcher for ClaudeLauncher {
     }
 
     fn command_name(&self) -> &str {
-        self.config
-            .command_path
-            .as_deref()
-            .unwrap_or("claude")
+        self.config.command_path.as_deref().unwrap_or("claude")
     }
 
     fn supported_capabilities(&self) -> Vec<String> {
@@ -51,8 +47,7 @@ impl Launcher for ClaudeLauncher {
             }
             anyhow::bail!("explicit path '{}' does not exist", p.display());
         }
-        which::which("claude")
-            .map_err(|_| anyhow::anyhow!("'claude' not found on PATH"))
+        which::which("claude").map_err(|_| anyhow::anyhow!("'claude' not found on PATH"))
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {

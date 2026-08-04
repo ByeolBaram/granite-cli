@@ -473,11 +473,7 @@ impl Config {
         self.save()
     }
 
-    pub fn update_launcher(
-        &mut self,
-        id: &str,
-        f: impl FnOnce(&mut LauncherConfig),
-    ) -> Result<()> {
+    pub fn update_launcher(&mut self, id: &str, f: impl FnOnce(&mut LauncherConfig)) -> Result<()> {
         if let Some(launcher) = self.launchers.get_mut(id) {
             f(launcher);
             self.save()

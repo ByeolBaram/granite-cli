@@ -106,8 +106,10 @@ impl LauncherCommands {
         ctx.ui
             .info(&format!("\nSetting up launcher: {}", launcher_type));
         ctx.ui.info(&launcher_def.description);
-        ctx.ui
-            .info(&format!("Default command: {}", launcher_def.default_command));
+        ctx.ui.info(&format!(
+            "Default command: {}",
+            launcher_def.default_command
+        ));
 
         // Resolve instance id (prompt only when not passed as arg)
         let instance_id = match instance_id {
@@ -192,8 +194,7 @@ impl LauncherCommands {
 
         match launcher.validate_command() {
             Ok(path) => {
-                ctx.ui
-                    .info(&format!("  Binary found: {}", path.display()));
+                ctx.ui.info(&format!("  Binary found: {}", path.display()));
             }
             Err(_) => {
                 // Binary not on PATH — ask for an explicit path
@@ -219,8 +220,7 @@ impl LauncherCommands {
                     .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
                 match launcher2.validate_command() {
                     Ok(path) => {
-                        ctx.ui
-                            .info(&format!("  Binary found: {}", path.display()));
+                        ctx.ui.info(&format!("  Binary found: {}", path.display()));
                     }
                     Err(e) => {
                         anyhow::bail!(
@@ -279,8 +279,7 @@ impl LauncherCommands {
 
         match launcher.validate_command() {
             Ok(path) => {
-                ctx.ui
-                    .status(launcher_id, true, &path.to_string_lossy());
+                ctx.ui.status(launcher_id, true, &path.to_string_lossy());
                 Ok(())
             }
             Err(e) => {
@@ -304,8 +303,7 @@ impl LauncherCommands {
         }
 
         ctx.config.remove_launcher(launcher_id)?;
-        ctx.ui
-            .info(&format!("Launcher '{}' removed.", launcher_id));
+        ctx.ui.info(&format!("Launcher '{}' removed.", launcher_id));
         Ok(())
     }
 }
@@ -431,7 +429,11 @@ mod tests {
     #[test]
     fn list_sorted_by_type_then_id() {
         let mut ctx = test_ctx();
-        for (id, t) in [("z-claude", "claude"), ("a-claude", "claude"), ("my-bob", "bob")] {
+        for (id, t) in [
+            ("z-claude", "claude"),
+            ("a-claude", "claude"),
+            ("my-bob", "bob"),
+        ] {
             ctx.config.launchers.insert(
                 id.to_string(),
                 LauncherConfig {
@@ -507,7 +509,11 @@ mod tests {
 
         assert!(ctx.config.get_launcher("my-claude").is_none());
         let infos = infos!(ctx);
-        assert!(infos.iter().any(|m| m.contains("my-claude") && m.contains("removed")));
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains("my-claude") && m.contains("removed"))
+        );
     }
 
     #[test]
@@ -515,7 +521,12 @@ mod tests {
         let mut ctx = test_ctx();
         let result = LauncherCommands::remove(&mut ctx, "doesnt-exist");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Nothing to remove"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Nothing to remove")
+        );
     }
 
     #[test]

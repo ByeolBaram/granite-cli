@@ -307,9 +307,7 @@ impl App {
                 let count = match s {
                     Section::Models => MODEL_REGISTRY.entries().len(),
                     Section::Providers => PROVIDER_REGISTRY.entries().len(),
-                    Section::Launchers => {
-                        crate::launchers::LAUNCHER_REGISTRY.entries().len()
-                    }
+                    Section::Launchers => crate::launchers::LAUNCHER_REGISTRY.entries().len(),
                     Section::Capabilities => {
                         crate::capabilities::CAPABILITY_REGISTRY.entries().len()
                     }
@@ -465,8 +463,10 @@ impl App {
             }
             Section::Launchers => {
                 let all_entries: Vec<_> = {
-                    let mut v: Vec<_> =
-                        crate::launchers::LAUNCHER_REGISTRY.entries().into_iter().collect();
+                    let mut v: Vec<_> = crate::launchers::LAUNCHER_REGISTRY
+                        .entries()
+                        .into_iter()
+                        .collect();
                     v.sort_by(|a, b| a.0.cmp(b.0));
                     v
                 };

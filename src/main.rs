@@ -13,7 +13,9 @@ pub mod providers;
 use clap::{Parser, Subcommand};
 
 // Local
-use commands::{CapabilityCommands, HardwareCommands, LauncherCommands, ModelCommands, ProviderCommands};
+use commands::{
+    CapabilityCommands, HardwareCommands, LauncherCommands, ModelCommands, ProviderCommands,
+};
 use utils::ui::{UI_REGISTRY, Ui, run_interactive_tui};
 
 // Hoist paste macro for use in our own macros
@@ -468,9 +470,7 @@ async fn run_launcher_command(
         LauncherSubcommands::Validate { launcher_id } => {
             LauncherCommands::validate(ctx, &launcher_id)
         }
-        LauncherSubcommands::Remove { launcher_id } => {
-            LauncherCommands::remove(ctx, &launcher_id)
-        }
+        LauncherSubcommands::Remove { launcher_id } => LauncherCommands::remove(ctx, &launcher_id),
     }
 }
 
@@ -480,8 +480,8 @@ async fn run_launch(
     args: &[String],
     dry_run: bool,
 ) -> anyhow::Result<()> {
-    use crate::launchers::LaunchContext;
     use crate::launchers::LAUNCHER_REGISTRY;
+    use crate::launchers::LaunchContext;
 
     // Load config fresh so we always pick up the latest saved state.
     let config = crate::config::Config::new()?;

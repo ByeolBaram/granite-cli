@@ -20,8 +20,7 @@ pub struct BobLauncher {
 
 impl ConfigConstructable for BobLauncher {
     fn new(cfg: &serde_json::Value) -> Self {
-        let config: BobLauncherConfig =
-            serde_json::from_value(cfg.clone()).unwrap_or_default();
+        let config: BobLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self { config }
     }
 }
@@ -33,10 +32,7 @@ impl Launcher for BobLauncher {
     }
 
     fn command_name(&self) -> &str {
-        self.config
-            .command_path
-            .as_deref()
-            .unwrap_or("bob")
+        self.config.command_path.as_deref().unwrap_or("bob")
     }
 
     fn supported_capabilities(&self) -> Vec<String> {
@@ -51,8 +47,7 @@ impl Launcher for BobLauncher {
             }
             anyhow::bail!("explicit path '{}' does not exist", p.display());
         }
-        which::which("bob")
-            .map_err(|_| anyhow::anyhow!("'bob' not found on PATH"))
+        which::which("bob").map_err(|_| anyhow::anyhow!("'bob' not found on PATH"))
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
