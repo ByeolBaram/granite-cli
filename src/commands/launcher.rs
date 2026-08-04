@@ -289,7 +289,9 @@ impl LauncherCommands {
             anyhow::bail!("No launcher configured with id '{launcher_id}'. Nothing to remove.");
         }
 
-        ctx.config.remove_launcher(launcher_id)?;
+        if let Err(e) = ctx.config.remove_launcher(launcher_id) {
+            ctx.ui.warn(&format!("failed to persist launcher removal: {e}"));
+        }
         ctx.ui.info(&format!("Launcher '{launcher_id}' removed."));
         Ok(())
     }
