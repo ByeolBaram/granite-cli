@@ -3,6 +3,7 @@ name = "granite-cli"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.88.0"
+license = "Apache 2.0"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
