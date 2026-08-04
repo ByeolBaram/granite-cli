@@ -5,7 +5,9 @@ pub mod dependency;
 pub mod models;
 pub mod registry;
 pub mod utils;
-pub mod version;
+pub mod version {
+    include!(concat!(env!("OUT_DIR"), "/version.rs"));
+}
 // TODO: Re-enable once rewritten -- pub mod di;
 pub mod providers;
 

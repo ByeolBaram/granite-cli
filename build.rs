@@ -21,10 +21,11 @@ fn main() {
 
     fs::write(&dest_path, code).expect("Failed to write generated code");
 
-    // Generate version module
+    // Generate version module to OUT_DIR (same pattern as generated_models.rs)
     let version_info = get_version_info();
     let version_code = generate_version_module(&version_info);
-    fs::write("src/version.rs", version_code).expect("Failed to write version.rs");
+    let version_path = Path::new(&out_dir).join("version.rs");
+    fs::write(&version_path, version_code).expect("Failed to write version.rs");
 }
 
 fn generate_models_code(models: &[YamlModel]) -> String {
