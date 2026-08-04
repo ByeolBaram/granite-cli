@@ -5,6 +5,8 @@ use anyhow::Result;
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::utils::prompt_from_schema;
 
+/*-- public --*/
+
 pub struct LauncherCommands;
 
 impl LauncherCommands {
@@ -180,8 +182,9 @@ impl LauncherCommands {
 
         let config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Validate the binary exists — warn rather than fail so the user can
-        // configure first and install the tool later.
+        // Validate that the binary exists before saving anything.
+        // A launcher with no reachable binary is not useful, so we fail hard
+        // with an actionable message rather than silently saving dead config.
         let launcher = LAUNCHER_REGISTRY
             .construct(launcher_type, &config)
             .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {}", e))?;
@@ -190,10 +193,16 @@ impl LauncherCommands {
             Ok(path) => ctx
                 .ui
                 .info(&format!("  Binary found: {}", path.display())),
-            Err(e) => ctx.ui.warn(&format!(
-                "  Binary not found ({}). Install the tool or set command_path.",
-                e
-            )),
+            Err(e) => {
+                anyhow::bail!(
+                    "Binary '{}' not found: {}.\n\
+                     Install the tool first, or re-run with a custom path:\n\
+                     granite-cli launcher setup {} --id <name>  (then set command_path when prompted)",
+                    launcher.command_name(),
+                    e,
+                    launcher_type,
+                );
+            }
         }
 
         let launcher_config = crate::config::LauncherConfig {
@@ -251,6 +260,25 @@ impl LauncherCommands {
                 anyhow::bail!("Binary not found: {}", e)
             }
         }
+    }
+
+    /// Remove a configured launcher instance by ID.
+    ///
+    /// Deletes the launcher's config file and removes it from the in-memory
+    /// config. After this call `launcher list` will no longer show the entry
+    /// and `granite-cli launch <id>` will return an error.
+    pub fn remove(ctx: &mut crate::AppContext, launcher_id: &str) -> Result<()> {
+        if ctx.config.get_launcher(launcher_id).is_none() {
+            anyhow::bail!(
+                "No launcher configured with id '{}'. Nothing to remove.",
+                launcher_id
+            );
+        }
+
+        ctx.config.remove_launcher(launcher_id)?;
+        ctx.ui
+            .info(&format!("Launcher '{}' removed.", launcher_id));
+        Ok(())
     }
 }
 
@@ -421,10 +449,10 @@ mod tests {
     async fn setup_warns_on_same_type_existing_instance() {
         // Pre-populate a "claude" instance named "claude-old"
         let mut ctx = ctx_with_launcher("claude-old", "claude");
-        // CaptureUi confirm always returns false → user declines update,
-        // proceeds with new name, then declines overwrite (doesn't exist yet).
-        // The important assertion is that the info message about the clash
-        // was emitted before the wizard bailed.
+        // CaptureUi confirm always returns false → user declines update and
+        // proceeds with the new name. The wizard then fails at binary
+        // validation (claude not on PATH in CI), but by that point the clash
+        // info message must already have been emitted.
         let _ = LauncherCommands::setup(&mut ctx, "claude", Some("claude-new")).await;
         let infos = infos!(ctx);
         assert!(
@@ -438,5 +466,37 @@ mod tests {
         let mut ctx = test_ctx();
         let result = LauncherCommands::setup(&mut ctx, "no-such-type", Some("test")).await;
         assert!(result.is_err());
+    }
+
+    // -- remove ----------------------------------------------------------------
+
+    #[test]
+    fn remove_existing_launcher_succeeds_and_disappears_from_list() {
+        let mut ctx = ctx_with_launcher("my-claude", "claude");
+        assert!(ctx.config.get_launcher("my-claude").is_some());
+
+        LauncherCommands::remove(&mut ctx, "my-claude").unwrap();
+
+        assert!(ctx.config.get_launcher("my-claude").is_none());
+        let infos = infos!(ctx);
+        assert!(infos.iter().any(|m| m.contains("my-claude") && m.contains("removed")));
+    }
+
+    #[test]
+    fn remove_nonexistent_launcher_returns_err() {
+        let mut ctx = test_ctx();
+        let result = LauncherCommands::remove(&mut ctx, "doesnt-exist");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Nothing to remove"));
+    }
+
+    #[test]
+    fn list_does_not_show_removed_launcher() {
+        let mut ctx = ctx_with_launcher("my-claude", "claude");
+        LauncherCommands::remove(&mut ctx, "my-claude").unwrap();
+        LauncherCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert!(rows.is_empty());
     }
 }

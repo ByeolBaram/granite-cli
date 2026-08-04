@@ -250,6 +250,12 @@ enum LauncherSubcommands {
         /// Configured launcher instance ID to validate
         launcher_id: String,
     },
+
+    /// Remove a configured launcher instance
+    Remove {
+        /// Configured launcher instance ID to remove
+        launcher_id: String,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -461,6 +467,9 @@ async fn run_launcher_command(
         } => LauncherCommands::setup(ctx, &launcher_type, instance_id.as_deref()).await,
         LauncherSubcommands::Validate { launcher_id } => {
             LauncherCommands::validate(ctx, &launcher_id)
+        }
+        LauncherSubcommands::Remove { launcher_id } => {
+            LauncherCommands::remove(ctx, &launcher_id)
         }
     }
 }
