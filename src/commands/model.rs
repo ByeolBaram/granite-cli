@@ -111,8 +111,7 @@ impl ModelCommands {
     pub fn search(ctx: &crate::AppContext, query: &str) -> Result<()> {
         let rows = Self::search_rows(query);
         if rows.is_empty() {
-            ctx.ui
-                .info(&format!("No models found matching '{}'.", query));
+            ctx.ui.info(&format!("No models found matching '{query}'."));
             return Ok(());
         }
         ctx.ui.table(
@@ -357,7 +356,7 @@ impl ModelCommands {
                 "No models found{}.",
                 filter_type
                     .as_ref()
-                    .map(|t| format!(" matching type: {}", t))
+                    .map(|t| format!(" matching type: {t}"))
                     .unwrap_or_default()
             ));
             return Ok(());
@@ -455,7 +454,7 @@ impl ModelCommands {
             }
             None => {
                 ctx.ui
-                    .error(&format!("Model '{}' not found in registry.", model_id));
+                    .error(&format!("Model '{model_id}' not found in registry."));
                 let available: Vec<_> = MODEL_REGISTRY
                     .entries()
                     .keys()
@@ -471,7 +470,7 @@ impl ModelCommands {
     pub async fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
         match MODEL_REGISTRY.get(model_id) {
             Some(model) => {
-                ctx.ui.info(&format!("\nSetting up model: {}", model_id));
+                ctx.ui.info(&format!("\nSetting up model: {model_id}"));
                 ctx.ui.info(
                     model
                         .description
@@ -507,7 +506,7 @@ impl ModelCommands {
                     && existing.enabled
                 {
                     let overwrite = ctx.ui.confirm(
-                        &format!("Model '{}' is already configured. Overwrite?", model_id),
+                        &format!("Model '{model_id}' is already configured. Overwrite?"),
                         false,
                     )?;
                     if !overwrite {
@@ -536,11 +535,11 @@ impl ModelCommands {
                 };
 
                 if let Err(e) = ctx.config.insert_model(model_id, model_config) {
-                    ctx.ui.warn(&format!("failed to save model config: {}", e));
+                    ctx.ui.warn(&format!("failed to save model config: {e}"));
                 }
 
                 ctx.ui
-                    .info(&format!("\nModel '{}' configured successfully!", model_id));
+                    .info(&format!("\nModel '{model_id}' configured successfully!"));
 
                 if let Some(pid) = &provider_id {
                     let is_local = ctx
@@ -571,8 +570,7 @@ impl ModelCommands {
                                     .await?;
                                 }
                                 None => ctx.ui.warn(&format!(
-                                    "Provider '{}' is not available; skipping pull.",
-                                    pid
+                                    "Provider '{pid}' is not available; skipping pull."
                                 )),
                             }
                         }
@@ -583,7 +581,7 @@ impl ModelCommands {
             }
             None => {
                 ctx.ui
-                    .error(&format!("Model '{}' not found in registry.", model_id));
+                    .error(&format!("Model '{model_id}' not found in registry."));
                 let available: Vec<_> = MODEL_REGISTRY
                     .entries()
                     .keys()
@@ -601,7 +599,7 @@ impl ModelCommands {
             Some(model) => model,
             None => {
                 ctx.ui
-                    .error(&format!("Model '{}' not found in registry.", model_id));
+                    .error(&format!("Model '{model_id}' not found in registry."));
                 let available: Vec<_> = MODEL_REGISTRY
                     .entries()
                     .keys()
@@ -620,19 +618,13 @@ impl ModelCommands {
             }
             _ => {
                 anyhow::bail!(
-                    "Model '{}' is not configured yet. Run `model setup {}` first.",
-                    model_id,
-                    model_id
+                    "Model '{model_id}' is not configured yet. Run `model setup {model_id}` first."
                 );
             }
         };
 
         let (format, precision) = variant_str.split_once('/').ok_or_else(|| {
-            anyhow::anyhow!(
-                "Invalid stored variant '{}' for model '{}'.",
-                variant_str,
-                model_id
-            )
+            anyhow::anyhow!("Invalid stored variant '{variant_str}' for model '{model_id}'.")
         })?;
 
         let variant: &ModelVariant = model
@@ -641,10 +633,7 @@ impl ModelCommands {
             .find(|v| v.format == format && v.precision == precision)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Variant '{}/{}' is no longer available for model '{}'.",
-                    format,
-                    precision,
-                    model_id
+                    "Variant '{format}/{precision}' is no longer available for model '{model_id}'."
                 )
             })?;
 
@@ -656,8 +645,7 @@ impl ModelCommands {
             .map(|(_, p)| *p)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Provider '{}' is not configured or enabled. Run `provider setup` first.",
-                    provider_id
+                    "Provider '{provider_id}' is not configured or enabled. Run `provider setup` first."
                 )
             })?;
 
@@ -678,8 +666,8 @@ impl ModelCommands {
                 ctx.ui.warn(&message);
             }
             Err(e) => {
-                ctx.ui.error(&format!("Failed to pull model: {}", e));
-                anyhow::bail!("Pull failed: {}", e);
+                ctx.ui.error(&format!("Failed to pull model: {e}"));
+                anyhow::bail!("Pull failed: {e}");
             }
         }
 

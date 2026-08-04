@@ -85,7 +85,7 @@ impl std::fmt::Display for Dependency {
                 name,
                 check_command,
             } => {
-                write!(f, "ExternalTool: {} ({})", name, check_command)
+                write!(f, "ExternalTool: {name} ({check_command})")
             }
             Dependency::Capability { id, required } => {
                 write!(

@@ -71,7 +71,7 @@ impl Exporter {
         if path.exists() {
             let backup = format!("{}.granite-cli-backup", self.export_file);
             if let Err(e) = fs::write(&backup, &existing) {
-                ui.warn(&format!("Could not create backup at {}: {}", backup, e));
+                ui.warn(&format!("Could not create backup at {backup}: {e}"));
             }
         }
 
@@ -139,8 +139,7 @@ pub fn print_export_instructions(
     export_file: &str,
 ) {
     ui.info(&format!(
-        "\nTo persist these settings, you can export them to your shell profile:\n  Granite CLI will add the following to {}:\n",
-        export_file
+        "\nTo persist these settings, you can export them to your shell profile:\n  Granite CLI will add the following to {export_file}:\n"
     ));
     for (var, value) in vars {
         let masked = if value.len() > 8 {
@@ -148,7 +147,7 @@ pub fn print_export_instructions(
         } else {
             "****".to_string()
         };
-        ui.info(&format!("  export {}=\"{}\"", var, masked));
+        ui.info(&format!("  export {var}=\"{masked}\""));
     }
     ui.info("\nRun: granite-cli configure --export to write these to your shell profile.");
 }

@@ -441,8 +441,8 @@ pub(crate) mod tests {
     fn ui_metadata_has_non_empty_name_and_description() {
         for name in &["terminal", "plain", "json", "markdown"] {
             let meta = UI_REGISTRY.get(name).unwrap();
-            assert!(!meta.name.is_empty(), "{} name empty", name);
-            assert!(!meta.description.is_empty(), "{} description empty", name);
+            assert!(!meta.name.is_empty(), "{name} name empty");
+            assert!(!meta.description.is_empty(), "{name} description empty");
         }
     }
 

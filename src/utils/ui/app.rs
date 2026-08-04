@@ -529,7 +529,7 @@ impl App {
                 // Hardware is a single static detail pane — no rows to browse
                 let content = HardwareCommands::hardware_fields()
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .map(|(k, v)| format!("{k}: {v}"))
                     .collect::<Vec<_>>()
                     .join("\n");
                 let para = Paragraph::new(content)
@@ -546,7 +546,7 @@ impl App {
 
         // Render the search bar when in search mode
         if let Some(bar_area) = search_area {
-            let display = format!(" / {}", query);
+            let display = format!(" / {query}");
             let bar = Paragraph::new(display).block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -564,10 +564,10 @@ impl App {
                 match ModelCommands::info_fields(id) {
                     Some(fields) => fields
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k, v))
+                        .map(|(k, v)| format!("{k}: {v}"))
                         .collect::<Vec<_>>()
                         .join("\n"),
-                    None => format!("Model '{}' not found.", id),
+                    None => format!("Model '{id}' not found."),
                 }
             }
             Section::Providers => {
@@ -577,23 +577,23 @@ impl App {
                         id, p.name, p.provider_type, p.default_endpoint, p.description
                     )
                 } else {
-                    format!("Provider '{}' not found.", id)
+                    format!("Provider '{id}' not found.")
                 }
             }
-            Section::Capabilities => format!("Capability: {}", id),
+            Section::Capabilities => format!("Capability: {id}"),
             // Recommend detail reuses the Model info_fields
             Section::Recommend => match ModelCommands::info_fields(id) {
                 Some(fields) => fields
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .map(|(k, v)| format!("{k}: {v}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
-                None => format!("Model '{}' not found.", id),
+                None => format!("Model '{id}' not found."),
             },
             // Hardware has no per-row detail — render the full profile
             Section::Hardware => HardwareCommands::hardware_fields()
                 .iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
+                .map(|(k, v)| format!("{k}: {v}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
         };
@@ -602,7 +602,7 @@ impl App {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!(" {} — Detail ", id)),
+                    .title(format!(" {id} — Detail ")),
             )
             .wrap(ratatui::widgets::Wrap { trim: false })
             .scroll((self.detail_scroll as u16, 0));

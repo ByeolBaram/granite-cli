@@ -206,8 +206,7 @@ impl Provider for OllamaProvider {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::Other(format!(
-                "Ollama pull failed ({}): {}",
-                status, body
+                "Ollama pull failed ({status}): {body}"
             )));
         }
 
@@ -449,7 +448,7 @@ mod tests {
         if let PullOutcome::Error(msg) = result {
             assert_eq!(msg, "disk full");
         } else {
-            panic!("expected PullOutcome::Error, got {:?}", result);
+            panic!("expected PullOutcome::Error, got {result:?}");
         }
     }
 
@@ -495,7 +494,7 @@ mod tests {
         if let PullOutcome::Error(msg) = result {
             assert_eq!(msg, "connection reset");
         } else {
-            panic!("expected PullOutcome::Error, got {:?}", result);
+            panic!("expected PullOutcome::Error, got {result:?}");
         }
     }
 }

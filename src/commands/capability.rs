@@ -75,7 +75,7 @@ impl CapabilityCommands {
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
                     fields.push(("Config: Enabled", configured.enabled.to_string()));
                     for (k, v) in &configured.config {
-                        fields.push(("Config", format!("{} = {}", k, v)));
+                        fields.push(("Config", format!("{k} = {v}")));
                     }
                 }
 
@@ -95,8 +95,7 @@ impl CapabilityCommands {
                     Ok(())
                 } else {
                     ctx.ui.error(&format!(
-                        "Capability '{}' not found in registry.",
-                        capability_id
+                        "Capability '{capability_id}' not found in registry."
                     ));
                     anyhow::bail!("Capability not found");
                 }
@@ -108,7 +107,7 @@ impl CapabilityCommands {
         match CAPABILITY_REGISTRY.get(capability_id) {
             Some(cap) => {
                 ctx.ui
-                    .info(&format!("\nSetting up capability: {}", capability_id));
+                    .info(&format!("\nSetting up capability: {capability_id}"));
                 ctx.ui.info(&format!("Name: {}", cap.name));
                 ctx.ui.info(&format!("Description: {}", cap.description));
                 ctx.ui.info("");
@@ -198,12 +197,11 @@ impl CapabilityCommands {
                     .insert_capability(capability_id, capability_config)
                 {
                     ctx.ui
-                        .warn(&format!("failed to save capability config: {}", e));
+                        .warn(&format!("failed to save capability config: {e}"));
                 }
 
                 ctx.ui.info(&format!(
-                    "\nCapability '{}' configured successfully!",
-                    capability_id
+                    "\nCapability '{capability_id}' configured successfully!"
                 ));
 
                 Ok(())
@@ -211,12 +209,12 @@ impl CapabilityCommands {
             None => {
                 // Check if it's a configured-only capability
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    ctx.ui.info(&format!("\nCapability: {}", capability_id));
+                    ctx.ui.info(&format!("\nCapability: {capability_id}"));
                     ctx.ui.info(&format!("Enabled: {}", configured.enabled));
                     if !configured.config.is_empty() {
                         ctx.ui.info("\nCurrent Settings:");
                         for (k, v) in &configured.config {
-                            ctx.ui.info(&format!("  {} = {}", k, v));
+                            ctx.ui.info(&format!("  {k} = {v}"));
                         }
                     }
                     ctx.ui.info("\nNote: This capability is configured but not found in the bundled registry.");
@@ -225,18 +223,15 @@ impl CapabilityCommands {
 
                     if overwrite {
                         ctx.ui.info("\nPlease remove the existing config first:");
-                        ctx.ui.info(&format!(
-                            "  granite-cli capability remove {}",
-                            capability_id
-                        ));
+                        ctx.ui
+                            .info(&format!("  granite-cli capability remove {capability_id}"));
                         ctx.ui.info("Then run setup again.");
                     }
 
                     Ok(())
                 } else {
                     ctx.ui.error(&format!(
-                        "Capability '{}' not found in registry.",
-                        capability_id
+                        "Capability '{capability_id}' not found in registry."
                     ));
                     let available: Vec<_> = CAPABILITY_REGISTRY
                         .entries()

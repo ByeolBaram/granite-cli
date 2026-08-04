@@ -15,7 +15,7 @@ impl ConfigConstructable for PlainOutput {
 
 impl Ui for PlainOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
-        println!("\n{}", title);
+        println!("\n{title}");
         let col_count = headers.len();
         let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
         for row in rows {
@@ -28,52 +28,52 @@ impl Ui for PlainOutput {
         let header_line: String = headers
             .iter()
             .zip(widths.iter())
-            .map(|(h, w)| format!("{:<width$}", h, width = w))
+            .map(|(h, w)| format!("{h:<w$}"))
             .collect::<Vec<_>>()
             .join("  ");
-        println!("{}", header_line);
+        println!("{header_line}");
         let sep: String = widths
             .iter()
             .map(|w| "-".repeat(*w))
             .collect::<Vec<_>>()
             .join("  ");
-        println!("{}", sep);
+        println!("{sep}");
         for row in rows {
             let line: String = row
                 .iter()
                 .zip(widths.iter())
-                .map(|(c, w)| format!("{:<width$}", c, width = w))
+                .map(|(c, w)| format!("{c:<w$}"))
                 .collect::<Vec<_>>()
                 .join("  ");
-            println!("{}", line);
+            println!("{line}");
         }
     }
 
     fn detail(&self, title: &str, fields: &[(&str, String)]) {
-        println!("\n{}", title);
+        println!("\n{title}");
         let key_width = fields.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
         for (k, v) in fields {
-            println!("  {:<width$}  {}", k, v, width = key_width);
+            println!("  {k:<key_width$}  {v}");
         }
     }
 
     fn status(&self, label: &str, ok: bool, detail: &str) {
         let mark = if ok { "[OK]  " } else { "[FAIL]" };
         if detail.is_empty() {
-            println!("{} {}", mark, label);
+            println!("{mark} {label}");
         } else {
-            println!("{} {}  {}", mark, label, detail);
+            println!("{mark} {label}  {detail}");
         }
     }
 
     fn info(&self, msg: &str) {
-        println!("{}", msg);
+        println!("{msg}");
     }
     fn warn(&self, msg: &str) {
-        println!("Warning: {}", msg);
+        println!("Warning: {msg}");
     }
     fn error(&self, msg: &str) {
-        eprintln!("Error: {}", msg);
+        eprintln!("Error: {msg}");
     }
 
     fn pull_start(
@@ -82,8 +82,8 @@ impl Ui for PlainOutput {
         total_bytes: Option<u64>,
     ) -> crate::utils::ui::base::PullHandle {
         match total_bytes {
-            Some(total) => println!("Pulling {} ({} bytes total)...", label, total),
-            None => println!("Pulling {}...", label),
+            Some(total) => println!("Pulling {label} ({total} bytes total)..."),
+            None => println!("Pulling {label}..."),
         }
         crate::utils::ui::base::PullHandle(0)
     }
@@ -98,9 +98,9 @@ impl Ui for PlainOutput {
             Some(total) if total > 0 => {
                 let pct =
                     ((downloaded_bytes as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32;
-                println!("  {}%", pct);
+                println!("  {pct}%");
             }
-            _ => println!("  {} bytes", downloaded_bytes),
+            _ => println!("  {downloaded_bytes} bytes"),
         }
     }
 
@@ -111,8 +111,8 @@ impl Ui for PlainOutput {
         error: Option<&str>,
     ) {
         match error {
-            Some(e) => println!("{}: failed: {}", label, e),
-            None => println!("{}: done", label),
+            Some(e) => println!("{label}: failed: {e}"),
+            None => println!("{label}: done"),
         }
     }
 }

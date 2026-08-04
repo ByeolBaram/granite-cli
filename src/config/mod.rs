@@ -133,8 +133,7 @@ impl Config {
 
             if !valid_dir {
                 anyhow::bail!(
-                    "Invalid GRANITE_CLI_HOME: '{}' parent does not exist or is not a directory.",
-                    val
+                    "Invalid GRANITE_CLI_HOME: '{val}' parent does not exist or is not a directory."
                 );
             }
 
@@ -255,25 +254,25 @@ impl Config {
 
         // Save individual model files
         for (id, model) in &self.models {
-            let path = Self::models_dir()?.join(format!("{}.yaml", id));
+            let path = Self::models_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, model)?;
         }
 
         // Save individual provider files
         for (id, provider) in &self.providers {
-            let path = Self::providers_dir()?.join(format!("{}.yaml", id));
+            let path = Self::providers_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, provider)?;
         }
 
         // Save individual capability files
         for (id, capability) in &self.capabilities {
-            let path = Self::capabilities_dir()?.join(format!("{}.yaml", id));
+            let path = Self::capabilities_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, capability)?;
         }
 
         // Save individual tool files
         for (id, tool) in &self.tools {
-            let path = Self::tools_dir()?.join(format!("{}.yaml", id));
+            let path = Self::tools_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, tool)?;
         }
 
@@ -294,7 +293,7 @@ impl Config {
     pub fn remove_model(&mut self, id: &str) -> Result<()> {
         self.models.remove(id);
         let path = Self::models_dir().ok().and_then(|d| {
-            let p = d.join(format!("{}.yaml", id));
+            let p = d.join(format!("{id}.yaml"));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -326,7 +325,7 @@ impl Config {
     pub fn remove_provider(&mut self, id: &str) -> Result<()> {
         self.providers.remove(id);
         let path = Self::providers_dir().ok().and_then(|d| {
-            let p = d.join(format!("{}.yaml", id));
+            let p = d.join(format!("{id}.yaml"));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -358,7 +357,7 @@ impl Config {
     pub fn remove_capability(&mut self, id: &str) -> Result<()> {
         self.capabilities.remove(id);
         let path = Self::capabilities_dir().ok().and_then(|d| {
-            let p = d.join(format!("{}.yaml", id));
+            let p = d.join(format!("{id}.yaml"));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -394,7 +393,7 @@ impl Config {
     pub fn remove_tool(&mut self, id: &str) -> Result<()> {
         self.tools.remove(id);
         let path = Self::tools_dir().ok().and_then(|d| {
-            let p = d.join(format!("{}.yaml", id));
+            let p = d.join(format!("{id}.yaml"));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {

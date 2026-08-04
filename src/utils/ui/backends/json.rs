@@ -47,7 +47,7 @@ impl JsonOutput {
 
     fn emit(&self, value: serde_json::Value) {
         let mut w = self.writer.lock().unwrap();
-        let _ = writeln!(w, "{}", value);
+        let _ = writeln!(w, "{value}");
     }
 }
 

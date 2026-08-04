@@ -237,10 +237,7 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
     UI_REGISTRY
         .construct(output, &serde_json::json!({}))
         .unwrap_or_else(|_| {
-            eprintln!(
-                "Unknown output format '{}'. Valid: terminal, plain, json, markdown",
-                output
-            );
+            eprintln!("Unknown output format '{output}'. Valid: terminal, plain, json, markdown");
             std::process::exit(1);
         })
 }
@@ -248,7 +245,7 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
 fn construct_context(output: &str) -> AppContext {
     let ui = construct_ui(output);
     let config = config::Config::new().unwrap_or_else(|e| {
-        ui.error(&format!("Failed to load config: {}", e));
+        ui.error(&format!("Failed to load config: {e}"));
         std::process::exit(1);
     });
     AppContext { config, ui }
@@ -298,7 +295,7 @@ async fn main() {
             let ctx = construct_context("terminal");
             run_interactive_tui(ctx)
                 .await
-                .map_err(|e| eprintln!("Error: {}", e))
+                .map_err(|e| eprintln!("Error: {e}"))
         }
     };
 
@@ -317,8 +314,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 Some("embedding") => Some(models::ModelType::Embedding),
                 Some(t) => {
                     anyhow::bail!(
-                        "Unknown model type: {}. Valid types: text, vision, speech, embedding",
-                        t
+                        "Unknown model type: {t}. Valid types: text, vision, speech, embedding"
                     );
                 }
                 None => None,
@@ -333,8 +329,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 Some("embedding") => Some(models::ModelType::Embedding),
                 Some(t) => {
                     anyhow::bail!(
-                        "Unknown model type: {}. Valid types: text, vision, speech, embedding",
-                        t
+                        "Unknown model type: {t}. Valid types: text, vision, speech, embedding"
                     );
                 }
                 None => None,
@@ -354,8 +349,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
                 Some("embedding") => Some(models::ModelType::Embedding),
                 Some(t) => {
                     anyhow::bail!(
-                        "Unknown model type: {}. Valid types: text, vision, speech, embedding",
-                        t
+                        "Unknown model type: {t}. Valid types: text, vision, speech, embedding"
                     );
                 }
                 None => None,

@@ -238,10 +238,7 @@ impl LlamaCppProvider {
             if !response.status().is_success() {
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                let err = format!(
-                    "llama.cpp models status check failed ({}): {}",
-                    status, body
-                );
+                let err = format!("llama.cpp models status check failed ({status}): {body}");
                 ui.pull_finish(handle, label, Some(&err));
                 return Err(ProviderError::Other(err));
             }
@@ -351,12 +348,11 @@ impl Provider for LlamaCppProvider {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             if status == reqwest::StatusCode::BAD_REQUEST && body.contains("already exists") {
-                ui.info(&format!("{} is already downloaded.", label));
+                ui.info(&format!("{label} is already downloaded."));
                 return Ok(crate::providers::PullResult::Success);
             }
             return Err(ProviderError::Other(format!(
-                "llama.cpp model pull request failed ({}): {}",
-                status, body
+                "llama.cpp model pull request failed ({status}): {body}"
             )));
         }
 

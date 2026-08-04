@@ -26,7 +26,7 @@ impl HardwareCommands {
                 "VRAM",
                 profile
                     .vram_gb
-                    .map(|v| format!("{:.2} GB", v))
+                    .map(|v| format!("{v:.2} GB"))
                     .unwrap_or_else(|| "None".to_string()),
             ),
         ]

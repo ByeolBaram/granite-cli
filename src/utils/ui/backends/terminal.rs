@@ -77,7 +77,7 @@ impl Ui for TerminalOutput {
         let header_line: String = headers
             .iter()
             .zip(widths.iter())
-            .map(|(h, w)| format!("{:<width$}", h, width = w))
+            .map(|(h, w)| format!("{h:<w$}"))
             .collect::<Vec<_>>()
             .join("  ");
         println!(
@@ -164,7 +164,7 @@ impl Ui for TerminalOutput {
         if !self.is_tty {
             return PlainOutput.info(msg);
         }
-        println!("{}", msg);
+        println!("{msg}");
     }
 
     fn warn(&self, msg: &str) {
@@ -304,12 +304,12 @@ impl Ui for TerminalOutput {
 
         match self.active_pulls.lock().unwrap().remove(&handle.0) {
             Some(bar) => match error {
-                Some(e) => bar.abandon_with_message(format!("{}: failed: {}", label, e)),
-                None => bar.finish_with_message(format!("{}: done", label)),
+                Some(e) => bar.abandon_with_message(format!("{label}: failed: {e}")),
+                None => bar.finish_with_message(format!("{label}: done")),
             },
             None => match error {
-                Some(e) => self.error(&format!("{}: failed: {}", label, e)),
-                None => self.info(&format!("{}: done", label)),
+                Some(e) => self.error(&format!("{label}: failed: {e}")),
+                None => self.info(&format!("{label}: done")),
             },
         }
     }
@@ -417,7 +417,7 @@ fn wrap_ansi_cell(s: &str, max_width: usize, is_grey_row: bool) -> Vec<String> {
                     ResetColor
                 )
             } else {
-                format!("{}{}{}", prefix, padded, suffix)
+                format!("{prefix}{padded}{suffix}")
             }
         })
         .collect()
@@ -596,7 +596,7 @@ fn render_rows_with_wrapping(rows: &[Vec<String>], widths: &[usize]) {
                 })
                 .collect();
             let line = line_parts.join("  ");
-            println!("{}", line);
+            println!("{line}");
         }
     }
 }

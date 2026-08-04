@@ -15,7 +15,7 @@ impl ConfigConstructable for MarkdownOutput {
 
 impl Ui for MarkdownOutput {
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]) {
-        println!("\n## {}\n", title);
+        println!("\n## {title}\n");
         let header_line = format!("| {} |", headers.join(" | "));
         let sep_line = format!(
             "| {} |",
@@ -25,39 +25,39 @@ impl Ui for MarkdownOutput {
                 .collect::<Vec<_>>()
                 .join(" | ")
         );
-        println!("{}", header_line);
-        println!("{}", sep_line);
+        println!("{header_line}");
+        println!("{sep_line}");
         for row in rows {
             println!("| {} |", row.join(" | "));
         }
     }
 
     fn detail(&self, title: &str, fields: &[(&str, String)]) {
-        println!("\n## {}\n", title);
+        println!("\n## {title}\n");
         println!("| Field | Value |");
         println!("|-------|-------|");
         for (k, v) in fields {
-            println!("| {} | {} |", k, v);
+            println!("| {k} | {v} |");
         }
     }
 
     fn status(&self, label: &str, ok: bool, detail: &str) {
         let mark = if ok { "✓" } else { "✗" };
         if detail.is_empty() {
-            println!("{} {}", mark, label);
+            println!("{mark} {label}");
         } else {
-            println!("{} {}  {}", mark, label, detail);
+            println!("{mark} {label}  {detail}");
         }
     }
 
     fn info(&self, msg: &str) {
-        println!("{}", msg);
+        println!("{msg}");
     }
     fn warn(&self, msg: &str) {
-        println!("Warning: {}", msg);
+        println!("Warning: {msg}");
     }
     fn error(&self, msg: &str) {
-        eprintln!("Error: {}", msg);
+        eprintln!("Error: {msg}");
     }
 
     fn select(&self, _prompt: &str, _items: &[String], _default: usize) -> anyhow::Result<usize> {
@@ -90,8 +90,8 @@ impl Ui for MarkdownOutput {
 
     fn pull_finish(&self, _handle: base::PullHandle, label: &str, error: Option<&str>) {
         match error {
-            Some(e) => println!("- Pulled **{}**: failed ({})", label, e),
-            None => println!("- Pulled **{}**: done", label),
+            Some(e) => println!("- Pulled **{label}**: failed ({e})"),
+            None => println!("- Pulled **{label}**: done"),
         }
     }
 }

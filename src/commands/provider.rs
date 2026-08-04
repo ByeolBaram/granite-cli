@@ -77,8 +77,7 @@ impl ProviderCommands {
             Some(def) => def,
             None => {
                 ctx.ui.error(&format!(
-                    "Provider type '{}' not found in registry.",
-                    provider_type
+                    "Provider type '{provider_type}' not found in registry."
                 ));
                 let available: Vec<_> = PROVIDER_REGISTRY
                     .entries()
@@ -93,10 +92,8 @@ impl ProviderCommands {
             }
         };
 
-        ctx.ui.info(&format!(
-            "\nSetting up provider instance: {}",
-            provider_type
-        ));
+        ctx.ui
+            .info(&format!("\nSetting up provider instance: {provider_type}"));
         ctx.ui.info(&provider_def.description);
         ctx.ui.info("");
         ctx.ui
@@ -115,17 +112,14 @@ impl ProviderCommands {
                 .map(|a| a.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            ctx.ui.info(&format!("Authentication: {}", auths));
+            ctx.ui.info(&format!("Authentication: {auths}"));
         }
 
         // Check if this instance is already configured
         let existing_config = ctx.config.get_provider(&instance_id);
         if existing_config.is_some() {
             let overwrite = ctx.ui.confirm(
-                &format!(
-                    "Provider instance '{}' is already configured. Overwrite?",
-                    instance_id
-                ),
+                &format!("Provider instance '{instance_id}' is already configured. Overwrite?"),
                 false,
             )?;
             if !overwrite {
@@ -137,10 +131,7 @@ impl ProviderCommands {
         let schema = PROVIDER_REGISTRY
             .config_schema(provider_type)
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No config schema registered for provider type '{}'",
-                    provider_type
-                )
+                anyhow::anyhow!("No config schema registered for provider type '{provider_type}'")
             })?;
         let defaults = existing_config
             .map(|c| c.config.clone())
@@ -157,8 +148,7 @@ impl ProviderCommands {
         };
 
         if let Err(e) = ctx.config.insert_provider(&instance_id, provider_config) {
-            ctx.ui
-                .warn(&format!("failed to save provider config: {}", e));
+            ctx.ui.warn(&format!("failed to save provider config: {e}"));
         }
 
         // Health check
@@ -167,19 +157,18 @@ impl ProviderCommands {
             Ok(status) => {
                 if status.healthy {
                     ctx.ui
-                        .info(&format!("Provider '{}' is healthy!", instance_id));
+                        .info(&format!("Provider '{instance_id}' is healthy!"));
                 } else {
-                    ctx.ui.warn(&format!("Provider '{}' health check failed. It may need to be started or configured differently.", instance_id));
+                    ctx.ui.warn(&format!("Provider '{instance_id}' health check failed. It may need to be started or configured differently."));
                 }
             }
             Err(e) => {
-                ctx.ui.warn(&format!("Could not run health check: {}", e));
+                ctx.ui.warn(&format!("Could not run health check: {e}"));
             }
         }
 
         ctx.ui.info(&format!(
-            "\nProvider instance '{}' configured successfully!",
-            instance_id
+            "\nProvider instance '{instance_id}' configured successfully!"
         ));
         ctx.ui.info("Supported APIs:");
         for (func, endpoints) in &provider_def.default_function_endpoints {
@@ -230,12 +219,12 @@ impl ProviderCommands {
         provider_id: &str,
     ) -> Result<HealthStatus> {
         let provider_config = ctx.config.get_provider(provider_id).ok_or_else(|| {
-            anyhow::anyhow!("Provider '{}' not found in configuration", provider_id)
+            anyhow::anyhow!("Provider '{provider_id}' not found in configuration")
         })?;
 
         let provider = PROVIDER_REGISTRY
             .construct(&provider_config.provider_type, &provider_config.config)
-            .map_err(|e| anyhow::anyhow!("Failed to create provider: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to create provider: {e}"))?;
 
         let status = provider.health_check().await?;
 

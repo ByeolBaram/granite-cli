@@ -171,7 +171,7 @@ impl Provider for OpenAIProvider {
                 Ok(HealthStatus {
                     healthy: false,
                     latency,
-                    error: Some(format!("Connection failed: {}", e)),
+                    error: Some(format!("Connection failed: {e}")),
                 })
             }
         }

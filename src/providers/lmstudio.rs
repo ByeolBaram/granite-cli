@@ -194,8 +194,7 @@ impl Provider for LMStudioProvider {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::Other(format!(
-                "LM Studio download request failed ({}): {}",
-                status, body
+                "LM Studio download request failed ({status}): {body}"
             )));
         }
         let started: LMStudioDownloadResponse = response.json().await?;
@@ -231,7 +230,7 @@ impl Provider for LMStudioProvider {
             if !status_response.status().is_success() {
                 let status = status_response.status();
                 let body = status_response.text().await.unwrap_or_default();
-                let err = format!("LM Studio status check failed ({}): {}", status, body);
+                let err = format!("LM Studio status check failed ({status}): {body}");
                 ui.pull_finish(handle, &label, Some(&err));
                 return Err(ProviderError::Other(err));
             }

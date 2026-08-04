@@ -226,7 +226,7 @@ pub async fn http_health_check(
     use std::time::Instant;
 
     let start = Instant::now();
-    let url = format!("{}{}", base_url, health_endpoint);
+    let url = format!("{base_url}{health_endpoint}");
 
     let mut request = client.get(&url);
 
@@ -261,7 +261,7 @@ pub async fn http_health_check(
             Ok(HealthStatus {
                 healthy: false,
                 latency,
-                error: Some(format!("Connection failed: {}", e)),
+                error: Some(format!("Connection failed: {e}")),
             })
         }
     }

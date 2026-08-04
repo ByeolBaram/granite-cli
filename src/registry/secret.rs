@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn secret_debug_never_leaks_the_value() {
         let secret = Secret("super-sensitive-value".to_string());
-        let debug_str = format!("{:?}", secret);
+        let debug_str = format!("{secret:?}");
         assert!(!debug_str.contains("super-sensitive-value"));
         assert!(debug_str.contains("****"));
     }
