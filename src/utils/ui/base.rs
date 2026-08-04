@@ -5,6 +5,11 @@ use crate::registry::ConfigConstructable;
 
 /*-- public --*/
 
+pub type TableRow = Vec<String>;
+pub type TableEntry = (String, Vec<String>, Vec<TableRow>);
+pub type DetailField = (String, String);
+pub type DetailEntry = (String, Vec<DetailField>);
+
 /// Metadata describing a registered UI backend.
 #[derive(Debug, Clone)]
 pub struct UiMetadata {
@@ -228,9 +233,9 @@ pub(crate) mod tests {
     #[derive(Default)]
     pub struct CaptureUi {
         /// (title, headers, rows) for each table() call
-        pub tables: RefCell<Vec<(String, Vec<String>, Vec<Vec<String>>)>>,
+        pub tables: RefCell<Vec<TableEntry>>,
         /// (title, fields) for each detail() call
-        pub details: RefCell<Vec<(String, Vec<(String, String)>)>>,
+        pub details: RefCell<Vec<DetailEntry>>,
         /// (label, ok, detail) for each status() call
         pub statuses: RefCell<Vec<(String, bool, String)>>,
         pub infos: RefCell<Vec<String>>,
