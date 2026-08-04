@@ -31,7 +31,7 @@ done
 # ---------- validate current state ----------
 
 # Ensure working tree is clean
-if ! git diff --quiet; then
+if ! git diff --quiet && [[ "$FORCE" -eq 0 ]]; then
     die "working tree is not clean — commit or stash changes first"
 fi
 
@@ -61,7 +61,7 @@ echo "version: $VERSION  tag: $TAG"
 trap 'git checkout HEAD -- Cargo.toml Cargo.lock"; echo "restored Cargo.toml"; exit' INT TERM EXIT
 
 # Replace version = "0.0.0" (the sentinel value) with the real version
-sed -i '' "s/^version = \"0\.0\.0\"/version = \"${VERSION}\"/" "Cargo.toml"
+sed -i.bak "s/^version = \"0\.0\.0\"/version = \"${VERSION}\"/" "Cargo.toml" && rm "Cargo.toml.bak"
 
 echo "updated Cargo.toml version to ${VERSION}"
 
