@@ -2,6 +2,7 @@ pub mod capabilities;
 pub mod commands;
 pub mod config;
 pub mod dependency;
+pub mod launchers;
 pub mod models;
 pub mod registry;
 pub mod utils;
