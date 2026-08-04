@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-#DEBUG
-# set -x
-
 # Run from the repo root
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
