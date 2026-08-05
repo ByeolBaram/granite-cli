@@ -45,7 +45,7 @@ mod tests {
         );
 
         let metadata = model.unwrap();
-        assert_eq!(metadata.family, "Granite 3.1");
+        assert_eq!(metadata.family, "Granite Language");
         assert_eq!(metadata.version, "3.1");
         assert_eq!(metadata.context_length, 131072);
         assert_eq!(metadata.model_type, ModelType::Text);
