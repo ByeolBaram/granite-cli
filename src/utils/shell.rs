@@ -25,7 +25,7 @@ pub fn resolve_shell_command(
 ) -> anyhow::Result<PathBuf> {
     let Some(explicit) = command_path else {
         return which::which(default_command)
-            .map_err(|_| anyhow::anyhow!("'{}' not found on PATH", default_command));
+            .map_err(|_| anyhow::anyhow!("'{default_command}' not found on PATH"));
     };
 
     let p = PathBuf::from(explicit);
@@ -47,8 +47,7 @@ pub fn resolve_shell_command(
 
     which::which(explicit).map_err(|_| {
         anyhow::anyhow!(
-            "command '{}' not found on PATH (explicit path did not exist either)",
-            explicit
+            "command '{explicit}' not found on PATH (explicit path did not exist either)"
         )
     })
 }
