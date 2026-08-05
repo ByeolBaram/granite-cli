@@ -1,8 +1,14 @@
-use crate::registry::ConfigConstructable;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+// Standard
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+// Third Party
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+// Local
+use crate::registry::ConfigConstructable;
+use crate::define_factory;
 
 /*-- public --*/
 
@@ -98,8 +104,6 @@ pub struct EnvBinding {
 }
 
 /*-- private --*/
-
-use crate::define_factory;
 
 define_factory!(Launcher, LauncherMetadata, LauncherFactory);
 
