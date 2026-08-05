@@ -42,34 +42,39 @@ log() {
 log "Starting model update workflow..."
 
 # Step 1: List collections
-log "Step 1/5: Listing HuggingFace collections..."
+log "Step 1/6: Listing HuggingFace collections..."
 "${SCRIPTS_DIR}/01-list-collections.sh" > "${DATA_DIR}/collections.json"
 COLLECTION_COUNT=$(jq 'length' "${DATA_DIR}/collections.json")
 log "Found ${COLLECTION_COUNT} collections"
 
 # Step 2: Fetch all models
-log "Step 2/5: Fetching model metadata..."
+log "Step 2/6: Fetching model metadata..."
 "${SCRIPTS_DIR}/02-fetch-all-models.sh" "${DATA_DIR}/collections.json" > "${DATA_DIR}/models.json"
 MODEL_COUNT=$(jq 'length' "${DATA_DIR}/models.json")
 log "Found ${MODEL_COUNT} models"
 
 # Step 3: Fetch quantized variants
-log "Step 3/5: Cross-referencing quantized variants..."
+log "Step 3/6: Cross-referencing quantized variants..."
 "${SCRIPTS_DIR}/03-fetch-quantized.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-variants.json"
 mv "${DATA_DIR}/models-with-variants.json" "${DATA_DIR}/models.json"
 
 # Step 4: Query Ollama
-log "Step 4/5: Querying Ollama registry..."
+log "Step 4/6: Querying Ollama registry..."
 "${SCRIPTS_DIR}/04-query-ollama.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-ollama.json"
 mv "${DATA_DIR}/models-with-ollama.json" "${DATA_DIR}/models.json"
 
-# Step 5: Generate YAML
-log "Step 5/5: Generating YAML..."
-"${SCRIPTS_DIR}/05-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
+# Step 5: Query LM Studio
+log "Step 5/6: Querying LM Studio catalog..."
+"${SCRIPTS_DIR}/05-query-lmstudio.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-lmstudio.json"
+mv "${DATA_DIR}/models-with-lmstudio.json" "${DATA_DIR}/models.json"
+
+# Step 6: Generate YAML
+log "Step 6/6: Generating YAML..."
+"${SCRIPTS_DIR}/06-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
 
 # Validate
 log "Validating generated YAML..."
-"${SCRIPTS_DIR}/06-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
+"${SCRIPTS_DIR}/07-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
 
 if [ "$DRY_RUN" = true ]; then
     log "Dry run complete. Generated file: ${ROOT_DIR}/${DATA_DIR}/models-new.yaml"
