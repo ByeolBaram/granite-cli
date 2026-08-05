@@ -247,12 +247,6 @@ enum LauncherSubcommands {
         instance_id: Option<String>,
     },
 
-    /// Validate that the launcher's binary is reachable
-    Validate {
-        /// Configured launcher instance ID to validate
-        launcher_id: String,
-    },
-
     /// Remove a configured launcher instance
     Remove {
         /// Configured launcher instance ID to remove
@@ -467,9 +461,6 @@ async fn run_launcher_command(
             launcher_type,
             instance_id,
         } => LauncherCommands::setup(ctx, &launcher_type, instance_id.as_deref()).await,
-        LauncherSubcommands::Validate { launcher_id } => {
-            LauncherCommands::validate(ctx, &launcher_id)
-        }
         LauncherSubcommands::Remove { launcher_id } => LauncherCommands::remove(ctx, &launcher_id),
     }
 }
@@ -492,10 +483,6 @@ async fn run_launch(
              Run `granite-cli launcher setup {launcher_id}` first."
         )
     })?;
-
-    if !lc.enabled {
-        anyhow::bail!("Launcher '{launcher_id}' is disabled.");
-    }
 
     let launcher = LAUNCHER_REGISTRY
         .construct(&lc.launcher_type, &lc.config)

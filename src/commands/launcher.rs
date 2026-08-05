@@ -36,16 +36,12 @@ impl LauncherCommands {
             .iter()
             .map(|(id, cfg)| {
                 let command = cfg
-                    .command_path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "(PATH)".to_string());
-                vec![
-                    id.clone(),
-                    cfg.launcher_type.clone(),
-                    cfg.enabled.to_string(),
-                    command,
-                ]
+                    .config
+                    .get("command_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(PATH)")
+                    .to_string();
+                vec![id.clone(), cfg.launcher_type.clone(), command]
             })
             .collect();
         rows.sort_by(|a, b| {
@@ -58,7 +54,7 @@ impl LauncherCommands {
 
         ctx.ui.table(
             &format!("Configured Launchers ({} launchers)", rows.len()),
-            &["ID", "TYPE", "ENABLED", "COMMAND"],
+            &["ID", "TYPE", "COMMAND"],
             &rows,
         );
         Ok(())
@@ -106,7 +102,7 @@ impl LauncherCommands {
             .info(&format!("\nSetting up launcher: {launcher_type}"));
         ctx.ui.info(&launcher_def.description);
         ctx.ui.info(&format!(
-            "Default command: {}",
+            "Default command: {} (leave command_path blank to use PATH lookup)",
             launcher_def.default_command
         ));
 
@@ -162,7 +158,8 @@ impl LauncherCommands {
             }
         }
 
-        // Prompt for type-specific config via schema
+        // Prompt for type-specific config via schema.
+        // Existing config (for overwrites) takes precedence over registry defaults.
         let schema = LAUNCHER_REGISTRY
             .config_schema(launcher_type)
             .ok_or_else(|| {
@@ -177,10 +174,16 @@ impl LauncherCommands {
 
         let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Try to validate the binary. If it isn't found on PATH, ask the user
-        // for an explicit path override right now (rather than burying that
-        // option inside the schema prompt, which is easy to skip past).
-        // We retry once after they provide a path; if it still fails we bail.
+        // Normalise: an empty string for command_path means "use PATH" — treat
+        // it the same as absent so validate_command does a PATH lookup.
+        if config.get("command_path").and_then(|v| v.as_str()) == Some("") {
+            config
+                .as_object_mut()
+                .map(|m| m.insert("command_path".to_string(), serde_json::Value::Null));
+        }
+
+        // Validate the binary now so the user gets immediate feedback.
+        // validate_command respects command_path when set; falls back to PATH.
         let launcher = LAUNCHER_REGISTRY
             .construct(launcher_type, &config)
             .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
@@ -189,50 +192,20 @@ impl LauncherCommands {
             Ok(path) => {
                 ctx.ui.info(&format!("  Binary found: {}", path.display()));
             }
-            Err(_) => {
-                // Binary not on PATH — ask for an explicit path
-                ctx.ui.warn(&format!(
-                    "  '{}' not found on PATH.",
-                    launcher_def.default_command
-                ));
-                let explicit = ctx.ui.text(
-                    "  Enter the full path to the binary (e.g. /usr/local/bin/claude): ",
-                    "",
-                )?;
-                if explicit.trim().is_empty() {
-                    anyhow::bail!(
-                        "No path provided and '{}' is not on PATH. \
-                         Install the tool and re-run setup.",
-                        launcher_def.default_command
-                    );
-                }
-                // Patch the config with the explicit path and re-validate
-                config["command_path"] = serde_json::Value::String(explicit.trim().to_string());
-                let launcher2 = LAUNCHER_REGISTRY
-                    .construct(launcher_type, &config)
-                    .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
-                match launcher2.validate_command() {
-                    Ok(path) => {
-                        ctx.ui.info(&format!("  Binary found: {}", path.display()));
-                    }
-                    Err(e) => {
-                        anyhow::bail!(
-                            "Path '{}' does not exist: {}",
-                            config["command_path"].as_str().unwrap_or(""),
-                            e
-                        );
-                    }
-                }
+            Err(e) => {
+                // command_path was explicitly set but invalid, or binary not on PATH.
+                anyhow::bail!(
+                    "Binary validation failed: {e}\n\
+                     Set command_path to the full path of the binary and re-run setup."
+                );
             }
         }
 
         let launcher_config = crate::config::LauncherConfig {
             launcher_id: instance_id.clone(),
             launcher_type: launcher_type.to_string(),
-            command_path: None,
             enabled_capabilities: vec![],
             config,
-            enabled: true,
         };
 
         if let Err(e) = ctx.config.insert_launcher(&instance_id, launcher_config) {
@@ -250,33 +223,6 @@ impl LauncherCommands {
         }
 
         Ok(())
-    }
-
-    /// Validate that the configured launcher's binary is reachable.
-    ///
-    /// Prints the resolved absolute path on success, or a clear error message
-    /// on failure. Useful for diagnosing non-PATH installs.
-    pub fn validate(ctx: &crate::AppContext, launcher_id: &str) -> Result<()> {
-        let lc = ctx.config.get_launcher(launcher_id).ok_or_else(|| {
-            anyhow::anyhow!(
-                "No launcher configured with id '{launcher_id}'. Run `granite-cli launcher setup` first."
-            )
-        })?;
-
-        let launcher = LAUNCHER_REGISTRY
-            .construct(&lc.launcher_type, &lc.config)
-            .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
-
-        match launcher.validate_command() {
-            Ok(path) => {
-                ctx.ui.status(launcher_id, true, &path.to_string_lossy());
-                Ok(())
-            }
-            Err(e) => {
-                ctx.ui.status(launcher_id, false, &e.to_string());
-                anyhow::bail!("Binary not found: {e}")
-            }
-        }
     }
 
     /// Remove a configured launcher instance by ID.
@@ -320,10 +266,7 @@ mod tests {
             LauncherConfig {
                 launcher_id: id.to_string(),
                 launcher_type: launcher_type.to_string(),
-                command_path: None,
-                enabled_capabilities: vec![],
-                config: serde_json::json!({}),
-                enabled: true,
+                ..LauncherConfig::default()
             },
         );
         ctx
@@ -345,16 +288,6 @@ mod tests {
                 .downcast_ref::<CaptureUi>()
                 .unwrap()
                 .infos
-                .borrow()
-        };
-    }
-
-    macro_rules! statuses {
-        ($ctx:expr) => {
-            (&*($ctx.ui) as &dyn std::any::Any)
-                .downcast_ref::<CaptureUi>()
-                .unwrap()
-                .statuses
                 .borrow()
         };
     }
@@ -405,14 +338,14 @@ mod tests {
     }
 
     #[test]
-    fn list_columns_are_id_type_enabled_command() {
+    fn list_columns_are_id_type_command() {
         let ctx = ctx_with_launcher("my-claude", "claude");
         LauncherCommands::list(&ctx).unwrap();
         let tables = tables!(ctx);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
         assert!(headers.contains(&"TYPE".to_string()));
-        assert!(headers.contains(&"ENABLED".to_string()));
+        assert!(!headers.contains(&"ENABLED".to_string()));
         assert!(headers.contains(&"COMMAND".to_string()));
     }
 
@@ -439,28 +372,6 @@ mod tests {
         assert_eq!(rows[0][1], "bob");
         assert_eq!(rows[1][0], "a-claude");
         assert_eq!(rows[2][0], "z-claude");
-    }
-
-    // -- validate --------------------------------------------------------------
-
-    #[test]
-    fn validate_unknown_id_returns_err() {
-        let ctx = test_ctx();
-        let result = LauncherCommands::validate(&ctx, "nonexistent");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("launcher setup"));
-    }
-
-    #[test]
-    fn validate_known_id_missing_binary_emits_status_false() {
-        // Claude not installed in CI → validate should report unhealthy, not panic
-        let ctx = ctx_with_launcher("claude", "claude");
-        // We don't assert Ok/Err because the binary may or may not be present;
-        // we only verify the status row is emitted.
-        let _ = LauncherCommands::validate(&ctx, "claude");
-        let statuses = statuses!(ctx);
-        assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].0, "claude");
     }
 
     // -- setup (type-aware clash detection) ------------------------------------
