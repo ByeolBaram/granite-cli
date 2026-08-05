@@ -5,6 +5,9 @@ pub mod dependency;
 pub mod models;
 pub mod registry;
 pub mod utils;
+pub mod version {
+    include!(concat!(env!("OUT_DIR"), "/version.rs"));
+}
 // TODO: Re-enable once rewritten -- pub mod di;
 pub mod providers;
 
@@ -103,6 +106,9 @@ enum Commands {
 
     /// Launch a tool with Granite overlay
     Launch(LaunchWithOutput),
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Subcommand, Debug)]
@@ -287,6 +293,10 @@ async fn main() {
         Some(Commands::Launch(wrapper)) => {
             let ui = construct_ui(&wrapper.output);
             ui.info("Tool launching will be available in Phase 3.");
+            Ok(())
+        }
+        Some(Commands::Version) => {
+            println!("{}", version::version_string());
             Ok(())
         }
         None => {
