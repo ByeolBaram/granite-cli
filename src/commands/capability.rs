@@ -214,6 +214,25 @@ impl CapabilityCommands {
         }
     }
 
+    /// Remove a configured capability instance by ID.
+    ///
+    /// Deletes the capability's config file and removes it from the
+    /// in-memory config. After this call `capability list` will no longer
+    /// show the entry.
+    pub fn remove(ctx: &mut crate::AppContext, capability_id: &str) -> Result<()> {
+        if ctx.config.get_capability(capability_id).is_none() {
+            anyhow::bail!("No capability configured with id '{capability_id}'. Nothing to remove.");
+        }
+
+        if let Err(e) = ctx.config.remove_capability(capability_id) {
+            ctx.ui
+                .warn(&format!("failed to persist capability removal: {e}"));
+        }
+        ctx.ui
+            .info(&format!("Capability '{capability_id}' removed."));
+        Ok(())
+    }
+
     // TODO: Use generic dependency checking
     // fn check_dep_status(ctx: &crate::AppContext, dep: &crate::registry::CapabilityDependency) -> &'static str {
     //     match dep {
@@ -314,6 +333,16 @@ mod tests {
         };
     }
 
+    macro_rules! infos {
+        ($ctx:expr) => {
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+                .infos
+                .borrow()
+        };
+    }
+
     // -- catalog --------------------------------------------------------------
 
     #[test]
@@ -364,5 +393,46 @@ mod tests {
         let result = CapabilityCommands::info(&ctx, "custom-cap");
         assert!(result.is_ok());
         assert!(!details!(ctx).is_empty());
+    }
+
+    // -- remove -----------------------------------------------------------------
+
+    #[test]
+    fn remove_existing_capability_succeeds_and_disappears_from_list() {
+        let mut ctx = ctx_with_capability("my-cap");
+        assert!(ctx.config.get_capability("my-cap").is_some());
+
+        CapabilityCommands::remove(&mut ctx, "my-cap").unwrap();
+
+        assert!(ctx.config.get_capability("my-cap").is_none());
+        let infos = infos!(ctx);
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains("my-cap") && m.contains("removed"))
+        );
+    }
+
+    #[test]
+    fn remove_nonexistent_capability_returns_err() {
+        let mut ctx = test_ctx();
+        let result = CapabilityCommands::remove(&mut ctx, "doesnt-exist");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Nothing to remove")
+        );
+    }
+
+    #[test]
+    fn list_does_not_show_removed_capability() {
+        let mut ctx = ctx_with_capability("my-cap");
+        CapabilityCommands::remove(&mut ctx, "my-cap").unwrap();
+        CapabilityCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert!(rows.is_empty());
     }
 }

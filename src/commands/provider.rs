@@ -208,6 +208,23 @@ impl ProviderCommands {
         Ok(())
     }
 
+    /// Remove a configured provider instance by ID.
+    ///
+    /// Deletes the provider's config file and removes it from the in-memory
+    /// config. After this call `provider list` will no longer show the entry.
+    pub fn remove(ctx: &mut crate::AppContext, provider_id: &str) -> Result<()> {
+        if ctx.config.get_provider(provider_id).is_none() {
+            anyhow::bail!("No provider configured with id '{provider_id}'. Nothing to remove.");
+        }
+
+        if let Err(e) = ctx.config.remove_provider(provider_id) {
+            ctx.ui
+                .warn(&format!("failed to persist provider removal: {e}"));
+        }
+        ctx.ui.info(&format!("Provider '{provider_id}' removed."));
+        Ok(())
+    }
+
     async fn check_provider_health(
         ctx: &crate::AppContext,
         provider_id: &str,
@@ -374,5 +391,46 @@ mod tests {
         ProviderCommands::health(&mut ctx, None).await.unwrap();
         assert!(!infos!(ctx).is_empty());
         assert!(statuses!(ctx).is_empty());
+    }
+
+    // -- remove -----------------------------------------------------------------
+
+    #[test]
+    fn remove_existing_provider_succeeds_and_disappears_from_list() {
+        let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
+        assert!(ctx.config.get_provider("my-ollama").is_some());
+
+        ProviderCommands::remove(&mut ctx, "my-ollama").unwrap();
+
+        assert!(ctx.config.get_provider("my-ollama").is_none());
+        let infos = infos!(ctx);
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains("my-ollama") && m.contains("removed"))
+        );
+    }
+
+    #[test]
+    fn remove_nonexistent_provider_returns_err() {
+        let mut ctx = test_ctx();
+        let result = ProviderCommands::remove(&mut ctx, "doesnt-exist");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Nothing to remove")
+        );
+    }
+
+    #[test]
+    fn list_does_not_show_removed_provider() {
+        let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
+        ProviderCommands::remove(&mut ctx, "my-ollama").unwrap();
+        ProviderCommands::list(&ctx).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert!(rows.is_empty());
     }
 }
