@@ -1,5 +1,6 @@
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
+use crate::utils::resolve_shell_command;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -40,14 +41,7 @@ impl Launcher for BobLauncher {
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
-        if let Some(ref explicit) = self.config.command_path {
-            let p = PathBuf::from(explicit);
-            if p.exists() {
-                return Ok(p);
-            }
-            anyhow::bail!("explicit path '{}' does not exist", p.display());
-        }
-        which::which("bob").map_err(|_| anyhow::anyhow!("'bob' not found on PATH"))
+        resolve_shell_command(&self.config.command_path, "bob")
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
@@ -105,6 +99,14 @@ mod tests {
             "command_path": "/no/such/path/bob"
         }));
         assert!(l.validate_command().is_err());
+    }
+
+    #[test]
+    fn validate_command_falls_back_to_path_for_bare_command_name() {
+        let l = BobLauncher::new(&serde_json::json!({
+            "command_path": "ls"
+        }));
+        assert!(l.validate_command().is_ok());
     }
 
     #[test]

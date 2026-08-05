@@ -150,14 +150,10 @@ pub(crate) mod tests {
         }
 
         fn validate_command(&self) -> anyhow::Result<PathBuf> {
-            if let Some(ref p) = self.command_path {
-                if p.exists() {
-                    return Ok(p.clone());
-                }
-                anyhow::bail!("explicit path '{}' does not exist", p.display());
-            }
-            which::which(&self.command_name)
-                .map_err(|_| anyhow::anyhow!("command '{}' not found on PATH", self.command_name))
+            crate::utils::resolve_shell_command(
+                &self.command_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+                &self.command_name,
+            )
         }
     }
 
@@ -188,6 +184,14 @@ pub(crate) mod tests {
             "command_path": "/this/path/does/not/exist/fake"
         }));
         assert!(launcher.validate_command().is_err());
+    }
+
+    #[test]
+    fn validate_command_falls_back_to_path_for_bare_command_name() {
+        let launcher = FakeLauncher::new(&serde_json::json!({
+            "command_path": "ls"
+        }));
+        assert!(launcher.validate_command().is_ok());
     }
 
     #[tokio::test]
