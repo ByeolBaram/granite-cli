@@ -27,7 +27,6 @@ impl LauncherSource {
         let constructed = config
             .launchers
             .values()
-            .filter(|lc| lc.enabled)
             .filter_map(|lc| {
                 LAUNCHER_REGISTRY
                     .construct(&lc.launcher_type, &lc.config)
@@ -74,17 +73,14 @@ mod tests {
     use crate::config::{Config, LauncherConfig};
     use crate::dependency::Configured;
 
-    fn config_with_launcher(id: &str, launcher_type: &str, enabled: bool) -> Config {
+    fn config_with_launcher(id: &str, launcher_type: &str) -> Config {
         let mut config = Config::default();
         config.launchers.insert(
             id.to_string(),
             LauncherConfig {
                 launcher_id: id.to_string(),
                 launcher_type: launcher_type.to_string(),
-                command_path: None,
-                enabled_capabilities: vec![],
-                config: serde_json::json!({}),
-                enabled,
+                ..LauncherConfig::default()
             },
         );
         config
@@ -98,14 +94,13 @@ mod tests {
     }
 
     #[test]
-    fn launcher_source_constructs_enabled_launchers_only() {
+    fn launcher_source_constructs_all_launchers() {
         let mut config = Config::default();
         config.launchers.insert(
             "my-claude".to_string(),
             LauncherConfig {
                 launcher_id: "my-claude".to_string(),
                 launcher_type: "claude".to_string(),
-                enabled: true,
                 ..LauncherConfig::default()
             },
         );
@@ -114,19 +109,18 @@ mod tests {
             LauncherConfig {
                 launcher_id: "my-bob".to_string(),
                 launcher_type: "bob".to_string(),
-                enabled: false,
                 ..LauncherConfig::default()
             },
         );
 
         let source = LauncherSource::from_config(&config);
         let ids: Vec<String> = source.instances().into_iter().map(|(id, _)| id).collect();
-        assert_eq!(ids, vec!["my-claude".to_string()]);
+        assert_eq!(ids.len(), 2);
     }
 
     #[test]
     fn launcher_source_skips_unknown_types() {
-        let config = config_with_launcher("mystery", "no-such-type", true);
+        let config = config_with_launcher("mystery", "no-such-type");
         let source = LauncherSource::from_config(&config);
         assert!(source.instances().is_empty());
     }

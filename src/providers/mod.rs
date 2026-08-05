@@ -29,7 +29,6 @@ impl ProviderSource {
         let constructed = config
             .providers
             .values()
-            .filter(|provider_config| provider_config.enabled)
             .filter_map(|provider_config| {
                 PROVIDER_REGISTRY
                     .construct(&provider_config.provider_type, &provider_config.config)
@@ -91,7 +90,6 @@ mod tests {
             provider_id: id.to_string(),
             provider_type: "openai-compatible".to_string(),
             config: serde_json::json!({ "base_url": base_url }),
-            enabled: true,
         }
     }
 
@@ -116,16 +114,6 @@ mod tests {
         let mut ids: Vec<String> = source.instances().into_iter().map(|(id, _)| id).collect();
         ids.sort();
         assert_eq!(ids, vec!["llama-cpp".to_string(), "ollama".to_string()]);
-    }
-
-    #[test]
-    fn provider_source_skips_disabled_providers() {
-        let mut config = config_with_two_named_instances();
-        config.providers.get_mut("ollama").unwrap().enabled = false;
-
-        let source = ProviderSource::from_config(&config);
-        let ids: Vec<String> = source.instances().into_iter().map(|(id, _)| id).collect();
-        assert_eq!(ids, vec!["llama-cpp".to_string()]);
     }
 
     struct AnyGguf;

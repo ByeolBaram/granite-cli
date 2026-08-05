@@ -24,23 +24,11 @@ pub struct Config {
     pub tools: HashMap<String, ToolConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelConfig {
     pub model_id: String,
     pub provider_id: Option<String>,
     pub variant: Option<String>,
-    pub enabled: bool,
-}
-
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            model_id: String::new(),
-            provider_id: None,
-            variant: None,
-            enabled: true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +37,6 @@ pub struct ProviderConfig {
     #[serde(rename = "type")]
     pub provider_type: String,
     pub config: serde_json::Value,
-    pub enabled: bool,
 }
 
 impl Default for ProviderConfig {
@@ -58,7 +45,6 @@ impl Default for ProviderConfig {
             provider_id: String::new(),
             provider_type: String::new(),
             config: serde_json::Value::Object(serde_json::Map::new()),
-            enabled: true,
         }
     }
 }
@@ -66,7 +52,6 @@ impl Default for ProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityConfig {
     pub capability_id: String,
-    pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
@@ -114,7 +99,6 @@ pub struct ToolConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfiguredCapability {
     pub capability_id: String,
-    pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
@@ -123,13 +107,10 @@ pub struct LauncherConfig {
     pub launcher_id: String,
     #[serde(rename = "type")]
     pub launcher_type: String,
-    /// Absolute path to the binary for non-PATH installs. `None` means use PATH.
-    pub command_path: Option<PathBuf>,
     /// Capability IDs enabled for this launcher instance.
     pub enabled_capabilities: Vec<String>,
     /// Launcher-type-specific config passed to `ConfigConstructable::new`.
     pub config: serde_json::Value,
-    pub enabled: bool,
 }
 
 impl Default for LauncherConfig {
@@ -137,10 +118,8 @@ impl Default for LauncherConfig {
         Self {
             launcher_id: String::new(),
             launcher_type: String::new(),
-            command_path: None,
             enabled_capabilities: vec![],
             config: serde_json::Value::Object(serde_json::Map::new()),
-            enabled: true,
         }
     }
 }
@@ -502,8 +481,6 @@ mod tests {
         let deserialized: LauncherConfig = serde_yaml::from_str(&serialized).unwrap();
         assert_eq!(deserialized.launcher_id, original.launcher_id);
         assert_eq!(deserialized.launcher_type, original.launcher_type);
-        assert_eq!(deserialized.enabled, original.enabled);
-        assert!(deserialized.command_path.is_none());
         assert!(deserialized.enabled_capabilities.is_empty());
     }
 
@@ -529,10 +506,8 @@ mod tests {
         let lc = LauncherConfig {
             launcher_id: "claude".to_string(),
             launcher_type: "claude".to_string(),
-            command_path: None,
             enabled_capabilities: vec![],
             config: serde_json::json!({}),
-            enabled: true,
         };
         config.insert_launcher("claude", lc).unwrap();
         assert!(config.get_launcher("claude").is_some());
