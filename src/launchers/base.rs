@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 // Local
-use crate::registry::ConfigConstructable;
 use crate::define_factory;
+use crate::registry::ConfigConstructable;
 
 /*-- public --*/
 
