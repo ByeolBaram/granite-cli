@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 // Local
 use crate::define_factory;
 use crate::registry::ConfigConstructable;
+use crate::utils::ui::Ui;
 
 /*-- public --*/
 
@@ -47,25 +48,76 @@ pub trait Launcher: ConfigConstructable + Send + Sync {
 
     /// Exec the tool as a subprocess with the env overlay applied.
     ///
-    /// The default implementation covers the common case: resolve binary,
-    /// build overlay, merge with current process env, spawn, wait.
-    /// Concrete launchers override only when they need non-standard behaviour.
+    /// The default implementation resolves the binary and env overlay, then
+    /// delegates to `run_command` so that dry_run and execution share
+    /// an identical code path.  Concrete launchers override only when they need
+    /// non-standard behaviour (e.g. a TUI-based launcher that doesn't spawn a
+    /// subprocess at all).
     async fn launch(
         &self,
         args: &[String],
         ctx: &LaunchContext,
+        ui: &dyn Ui,
     ) -> anyhow::Result<std::process::ExitStatus> {
         let binary = self.validate_command()?;
         let overlay = self.env_overlay(ctx).await?;
-
-        let mut cmd = std::process::Command::new(&binary);
-        cmd.args(args);
-        for binding in &overlay {
-            cmd.env(&binding.key, &binding.value);
-        }
-
-        Ok(cmd.spawn()?.wait()?)
+        run_command(binary, &overlay, args, ctx, ui).await
     }
+}
+
+/// Resolve a command and run it, handling dry_run and exit status.
+///
+/// This is the shared utility that both the default `Launcher::launch` and
+/// any custom launcher implementations should use when spawning a subprocess.
+/// If `ctx.dry_run` is true the resolved binary, args, and env overlay are
+/// printed to the UI without executing. Otherwise the command is spawned as a
+/// subprocess with the overlay applied and a non-success exit status is turned
+/// into an error.
+pub(crate) async fn run_command(
+    binary: PathBuf,
+    overlay: &[EnvBinding],
+    args: &[String],
+    ctx: &LaunchContext,
+    ui: &dyn Ui,
+) -> anyhow::Result<std::process::ExitStatus> {
+    if ctx.dry_run {
+        ui.info(&format!("Would exec: {}", binary.display()));
+        ui.info(&format!(
+            "  args: {}",
+            if args.is_empty() {
+                "(none)".to_string()
+            } else {
+                args.join(" ")
+            }
+        ));
+        if overlay.is_empty() {
+            ui.info("  env overlay: (none)");
+        } else {
+            for binding in overlay {
+                ui.info(&format!("  env: {}={}", binding.key, binding.value));
+            }
+        }
+        // Return a dummy success status so callers don't need to special-case
+        // dry_run.  The exit status is meaningless in this mode anyway.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            return Ok(std::process::ExitStatus::from_raw(0));
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            return Ok(std::process::ExitStatus::from_raw(0));
+        }
+    }
+
+    let mut cmd = std::process::Command::new(&binary);
+    cmd.args(args);
+    for binding in overlay {
+        cmd.env(&binding.key, &binding.value);
+    }
+
+    Ok(cmd.spawn()?.wait()?)
 }
 
 /// Metadata describing a launcher implementation (type-level, catalog entry).
@@ -95,6 +147,8 @@ pub struct LaunchContext {
     /// Env vars already resolved (e.g. provider URL, model ID) before any
     /// capability bindings are merged on top.
     pub base_env: HashMap<String, String>,
+    /// If true, only display what would be launched without executing.
+    pub dry_run: bool,
 }
 
 /// A single environment variable binding contributed to the subprocess overlay.
@@ -208,6 +262,7 @@ pub(crate) mod tests {
             launcher_id: "test".to_string(),
             working_dir: PathBuf::from("/tmp"),
             base_env: HashMap::new(),
+            dry_run: false,
         };
         let overlay = launcher.env_overlay(&ctx).await.unwrap();
         assert!(overlay.is_empty());
@@ -239,5 +294,49 @@ pub(crate) mod tests {
             tags: vec![],
         };
         assert_eq!(meta.to_string(), "A test launcher");
+    }
+
+    #[tokio::test]
+    async fn run_command_dry_run_returns_success() {
+        use crate::utils::ui::backends::plain::PlainOutput;
+        let ui = PlainOutput;
+        let ctx = LaunchContext {
+            launcher_id: "test".to_string(),
+            working_dir: PathBuf::from("/tmp"),
+            base_env: HashMap::new(),
+            dry_run: true,
+        };
+        let status = run_command(
+            PathBuf::from("/usr/bin/echo"),
+            &[],
+            &["hello".to_string()],
+            &ctx,
+            &ui,
+        )
+        .await
+        .unwrap();
+        assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn run_command_non_dry_run_executes() {
+        use crate::utils::ui::backends::plain::PlainOutput;
+        let ui = PlainOutput;
+        let ctx = LaunchContext {
+            launcher_id: "test".to_string(),
+            working_dir: PathBuf::from("/tmp"),
+            base_env: HashMap::new(),
+            dry_run: false,
+        };
+        let status = run_command(
+            PathBuf::from("/bin/echo"),
+            &[],
+            &["hello".to_string()],
+            &ctx,
+            &ui,
+        )
+        .await
+        .unwrap();
+        assert!(status.success());
     }
 }

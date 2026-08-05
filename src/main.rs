@@ -334,10 +334,10 @@ async fn main() {
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Launch(wrapper)) => {
-            let ui = construct_ui(&wrapper.output);
-            run_launch(&*ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
+            let ctx = construct_context(&wrapper.output);
+            run_launch(&*ctx.ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
                 .await
-                .map_err(|e| ui.error(&e.to_string()))
+                .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         None => {
             // `ctx` (and its `ui`) is consumed by value into the TUI `App`
@@ -488,42 +488,14 @@ async fn run_launch(
         .construct(&lc.launcher_type, &lc.config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
-    let binary = launcher.validate_command().map_err(|e| {
-        anyhow::anyhow!(
-            "Cannot launch '{launcher_id}': {e}. \
-             Use `granite-cli launcher setup --id {launcher_id}` to set a custom command_path."
-        )
-    })?;
-
-    let ctx = LaunchContext {
+    let launch_ctx = LaunchContext {
         launcher_id: launcher_id.to_string(),
         working_dir: std::env::current_dir()?,
         base_env: std::collections::HashMap::new(),
+        dry_run,
     };
 
-    let overlay = launcher.env_overlay(&ctx).await?;
-
-    if dry_run {
-        ui.info(&format!("Would exec: {}", binary.display()));
-        ui.info(&format!(
-            "  args: {}",
-            if args.is_empty() {
-                "(none)".to_string()
-            } else {
-                args.join(" ")
-            }
-        ));
-        if overlay.is_empty() {
-            ui.info("  env overlay: (none)");
-        } else {
-            for binding in &overlay {
-                ui.info(&format!("  env: {}={}", binding.key, binding.value));
-            }
-        }
-        return Ok(());
-    }
-
-    let status = launcher.launch(args, &ctx).await?;
+    let status = launcher.launch(args, &launch_ctx, ui).await?;
     if !status.success() {
         anyhow::bail!(
             "'{}' exited with status {}",
