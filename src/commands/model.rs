@@ -917,10 +917,10 @@ mod tests {
         assert_eq!(
             sorted,
             vec![
-                "granite-3.0-8b-instruct",
-                "granite-3.0-2b-instruct",
                 "granite-3.1-8b-instruct",
                 "granite-3.1-2b-instruct",
+                "granite-3.0-8b-instruct",
+                "granite-3.0-2b-instruct",
             ]
         );
     }

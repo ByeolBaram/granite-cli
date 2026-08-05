@@ -48,16 +48,23 @@ echo "Step 3: Querying Ollama..."
 mv "${DATA_DIR}/test-models-ollama.json" "${DATA_DIR}/test-models.json"
 echo "  ✓ Ollama info added"
 
-# Step 4: Generate YAML
+# Step 4: Query LM Studio
 echo ""
-echo "Step 4: Generating YAML..."
-"${SCRIPTS_DIR}/05-generate-yaml.sh" "${DATA_DIR}/test-models.json" > "${DATA_DIR}/test-models.yaml"
+echo "Step 4: Querying LM Studio..."
+"${SCRIPTS_DIR}/05-query-lmstudio.sh" "${DATA_DIR}/test-models.json" > "${DATA_DIR}/test-models-lmstudio.json"
+mv "${DATA_DIR}/test-models-lmstudio.json" "${DATA_DIR}/test-models.json"
+echo "  ✓ LM Studio info added"
+
+# Step 5: Generate YAML
+echo ""
+echo "Step 5: Generating YAML..."
+"${SCRIPTS_DIR}/06-generate-yaml.sh" "${DATA_DIR}/test-models.json" > "${DATA_DIR}/test-models.yaml"
 echo "  ✓ YAML generated"
 
-# Step 5: Validate
+# Step 6: Validate
 echo ""
-echo "Step 5: Validating YAML..."
-"${SCRIPTS_DIR}/06-validate-yaml.sh" "${DATA_DIR}/test-models.yaml"
+echo "Step 6: Validating YAML..."
+"${SCRIPTS_DIR}/07-validate-yaml.sh" "${DATA_DIR}/test-models.yaml"
 
 echo ""
 echo "================================"

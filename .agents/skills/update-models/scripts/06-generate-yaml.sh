@@ -42,6 +42,12 @@ generate_model_entry() {
             else
                 []
             end
+        ) + (
+            if .lmstudio_info and (.lmstudio_info | length > 0) then
+                [.lmstudio_info[] | {format: "LMStudio", url: .url, precision: .precision, size_gb: .size_gb}]
+            else
+                []
+            end
         )
     ')
 
@@ -88,7 +94,7 @@ EOF
     cat <<EOF
   variants:
 EOF
-    echo "$variants" | jq -r '.[] | "    - format: \(.format)" + (if .precision then "\n      precision: \(.precision)" else "" end) + (if .size_gb then "\n      size_gb: \(.size_gb)" else "" end) + "\n      url: \"\(.url)\""'
+    echo "$variants" | jq -r '.[] | "    - format: \(.format)\n      precision: \(.precision // null)\n      size_gb: \(.size_gb // null)\n      url: \"\(.url)\""'
     cat <<EOF
   description: |
 ${description}

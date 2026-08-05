@@ -1,5 +1,5 @@
 # Granite Models Catalog
-# Generated: 2026-07-31 18:52:35 UTC
+# Generated: 2026-08-05 20:29:08 UTC
 # Source: HuggingFace ibm-granite organization
 
 - id: granite-speech-4.1-2b
@@ -376,6 +376,10 @@
       precision: Q4_K_M
       size_gb: 17
       url: "https://ollama.com/library/granite4.1:30b"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 17.5
+      url: "https://lmstudio.ai/models/ibm/granite-4.1-30b"
   description: |
     Granite-4.1-30B is a 30B parameter long-context instruct model finetuned from *Granite-4.1-30B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -470,6 +474,10 @@
       precision: Q4_K_M
       size_gb: 5.3
       url: "https://ollama.com/library/granite4.1:8b"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 5.3
+      url: "https://lmstudio.ai/models/ibm/granite-4.1-8b"
   description: |
     Granite-4.1-8B is a 8B parameter long-context instruct model finetuned from *Granite-4.1-8B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -564,6 +572,10 @@
       precision: Q4_K_M
       size_gb: 2.1
       url: "https://ollama.com/library/granite4.1:3b"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 2.1
+      url: "https://lmstudio.ai/models/ibm/granite-4.1-3b"
   description: |
     Granite-4.1-3B is a 3B parameter long-context instruct model finetuned from *Granite-4.1-3B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -1118,6 +1130,10 @@
       precision: Q4_K_M
       size_gb: 2.1
       url: "https://ollama.com/library/granite4:micro"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 2.255
+      url: "https://lmstudio.ai/models/ibm/granite-4-micro"
   description: |
     Granite-4.0-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1215,6 +1231,10 @@
       precision: Q4_K_M
       size_gb: 1.9
       url: "https://ollama.com/library/granite4:micro-h"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 2.083
+      url: "https://lmstudio.ai/models/ibm/granite-4-h-micro"
   description: |
     Granite-4.0-H-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-H-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1312,6 +1332,10 @@
       precision: Q4_K_M
       size_gb: 4.2
       url: "https://ollama.com/library/granite4:tiny-h"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 4.542
+      url: "https://lmstudio.ai/models/ibm/granite-4-h-tiny"
   description: |
     Granite-4.0-H-Tiny is a 7B parameter long-context instruct model finetuned from *Granite-4.0-H-Tiny-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1409,6 +1433,10 @@
       precision: Q4_K_M
       size_gb: 19
       url: "https://ollama.com/library/granite4:small-h"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 20.938
+      url: "https://lmstudio.ai/models/ibm/granite-4-h-small"
   description: |
     Granite-4.0-H-Small is a 32B parameter long-context instruct model finetuned from *Granite-4.0-H-Small-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1509,7 +1537,7 @@
     - text
 
 - id: granite-3.3-2b-instruct
-  family: "Granite 3.3"
+  family: "Granite Language"
   version: "3.3"
   size: 2533539840
   context_length: 131072
@@ -1604,7 +1632,7 @@
     - text
 
 - id: granite-3.3-8b-instruct
-  family: "Granite 3.3"
+  family: "Granite Language"
   version: "3.3"
   size: 8170864640
   context_length: 131072
@@ -1883,6 +1911,10 @@
       precision: Q4_K_M
       size_gb: 2.4
       url: "https://ollama.com/library/granite3.2-vision:2b"
+    - format: LMStudio
+      precision: GGUF
+      size_gb: 1.7
+      url: "https://lmstudio.ai/models/ibm/granite-vision-3.2-2b"
   description: |
     granite-vision-3.2-2b is a compact and efficient vision-language model, specifically designed for visual document understanding, enabling automated content extraction from tables, charts, infographics, plots, diagrams, and more. The model was trained on a meticulously curated instruction-following dataset, comprising diverse public datasets and synthetic datasets tailored to support a wide range of document understanding and general image tasks. It was trained by fine-tuning a Granite large language model with both image and text modalities.
   tags:
@@ -1963,7 +1995,7 @@
     - vision
 
 - id: granite-3.2-2b-instruct
-  family: "Granite 3.2"
+  family: "Granite Language"
   version: "3.2"
   size: 2533531648
   context_length: 131072
@@ -1998,7 +2030,7 @@
     - text
 
 - id: granite-3.2-8b-instruct
-  family: "Granite 3.2"
+  family: "Granite Language"
   version: "3.2"
   size: 8170848256
   context_length: 131072
@@ -2033,7 +2065,7 @@
     - text
 
 - id: granite-3.2-8b-instruct-preview
-  family: "Granite 3.2"
+  family: "Granite Language"
   version: "3.2"
   size: 8170848256
   context_length: 131072
@@ -2068,7 +2100,7 @@
     - text
 
 - id: granite-3.1-8b-instruct
-  family: "Granite 3.1"
+  family: "Granite Language"
   version: "3.1"
   size: 8170848256
   context_length: 131072
@@ -2103,7 +2135,7 @@
     - text
 
 - id: granite-3.1-2b-instruct
-  family: "Granite 3.1"
+  family: "Granite Language"
   version: "3.1"
   size: 2533531648
   context_length: 131072
@@ -2138,7 +2170,7 @@
     - text
 
 - id: granite-3.1-3b-a800m-instruct
-  family: "Granite 3.1"
+  family: "Granite Language"
   version: "3.1"
   size: 3298793472
   context_length: 131072
@@ -2173,7 +2205,7 @@
     - text
 
 - id: granite-3.1-1b-a400m-instruct
-  family: "Granite 3.1"
+  family: "Granite Language"
   version: "3.1"
   size: 1334628352
   context_length: 131072
@@ -2503,7 +2535,7 @@
     - retrieval
 
 - id: granite-3.0-8b-instruct
-  family: "Granite 3.0"
+  family: "Granite Language"
   version: "3.0"
   size: 8170848256
   context_length: 4096
@@ -2538,7 +2570,7 @@
     - text
 
 - id: granite-3.0-2b-instruct
-  family: "Granite 3.0"
+  family: "Granite Language"
   version: "3.0"
   size: 2634201088
   context_length: 4096
@@ -2573,7 +2605,7 @@
     - text
 
 - id: granite-3.0-3b-a800m-instruct
-  family: "Granite 3.0"
+  family: "Granite Language"
   version: "3.0"
   size: 3374295552
   context_length: 4096
@@ -2608,7 +2640,7 @@
     - text
 
 - id: granite-3.0-1b-a400m-instruct
-  family: "Granite 3.0"
+  family: "Granite Language"
   version: "3.0"
   size: 1334628352
   context_length: 4096

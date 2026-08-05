@@ -5,7 +5,7 @@ description: Use this skill any time you need to update the set of models surfac
 
 # Update Models Skill
 
-This skill automates the process of updating `resources/models.yaml` with the latest Granite models from HuggingFace and Ollama. It combines automated data collection with manual review to ensure accuracy and completeness.
+This skill automates the process of updating `resources/models.yaml` with the latest Granite models from HuggingFace, Ollama, and LM Studio. It combines automated data collection with manual review to ensure accuracy and completeness.
 
 ## When to Use This Skill
 
@@ -13,14 +13,16 @@ This skill automates the process of updating `resources/models.yaml` with the la
 - New model families are added to the IBM Granite organization
 - Quantized variants are published
 - Ollama adds new Granite model support
+- LM Studio adds new Granite model support
 - Model metadata needs to be updated or corrected
 
 ## Prerequisites
 
 - `curl` - for HTTP requests
 - `jq` - for JSON parsing
+- `python3` - for parsing LM Studio's embedded model.yaml manifests and deep YAML validation
 - Standard Unix tools: `grep`, `sed`, `awk`
-- Internet connection to access HuggingFace and Ollama APIs
+- Internet connection to access HuggingFace, Ollama, and LM Studio
 
 ## Quick Start
 
@@ -113,7 +115,7 @@ If you encounter rate limits there are two things to try:
 ### Validation Failures
 ```bash
 # Validate generated YAML
-./scripts/06-validate-yaml.sh data/models-new.yaml
+./scripts/07-validate-yaml.sh data/models-new.yaml
 
 # Common issues:
 # - Duplicate IDs: Rename with qualifier
@@ -126,13 +128,13 @@ If you encounter rate limits there are two things to try:
 ### Dry Run (No File Changes)
 ```bash
 # Generate YAML without overwriting
-./scripts/05-generate-yaml.sh data/models.json | tee data/models-preview.yaml
+./scripts/06-generate-yaml.sh data/models.json | tee data/models-preview.yaml
 ```
 
 ### Incremental Update
 ```bash
 # Merge new models with existing ones
-./scripts/07-merge-yaml.sh resources/models.yaml data/models-new.yaml > data/models-merged.yaml
+./scripts/08-merge-yaml.sh resources/models.yaml data/models-new.yaml > data/models-merged.yaml
 ```
 
 ## Troubleshooting
@@ -146,8 +148,11 @@ If you encounter rate limits there are two things to try:
 ### Issue: Ollama search returns no results
 **Solution:** Model may not be on Ollama yet. Skip Ollama integration for that model.
 
+### Issue: LM Studio search returns no results
+**Solution:** Model may not be in LM Studio's catalog yet (coverage is currently limited to the newest generations). Skip LM Studio integration for that model.
+
 ### Issue: Generated YAML has syntax errors
-**Solution:** Run `./scripts/06-validate-yaml.sh` to identify issues. Common causes:
+**Solution:** Run `./scripts/07-validate-yaml.sh` to identify issues. Common causes:
 - Unescaped special characters in descriptions
 - Missing quotes around strings with colons
 - Incorrect indentation
@@ -162,9 +167,10 @@ If you encounter rate limits there are two things to try:
 | `02-fetch-all-models.sh` | Fetch model metadata | `collections.json` | `models.json` |
 | `03-fetch-quantized.sh` | Add quantized variants | `models.json` | Enriched `models.json` |
 | `04-query-ollama.sh` | Add Ollama info | `models.json` | Enriched `models.json` |
-| `05-generate-yaml.sh` | Generate YAML | `models.json` | `models-new.yaml` |
-| `06-validate-yaml.sh` | Validate YAML | `models-new.yaml` | Validation report |
-| `07-merge-yaml.sh` | Merge YAML files | Two YAML files | Merged YAML |
+| `05-query-lmstudio.sh` | Add LM Studio info | `models.json` | Enriched `models.json` |
+| `06-generate-yaml.sh` | Generate YAML | `models.json` | `models-new.yaml` |
+| `07-validate-yaml.sh` | Validate YAML | `models-new.yaml` | Validation report |
+| `08-merge-yaml.sh` | Merge YAML files | Two YAML files | Merged YAML |
 
 ### Utility Scripts
 
@@ -200,7 +206,7 @@ To support new model types (e.g., "Granite Audio"):
 1. Add to collection category mapping in `01-list-collections.sh`
 2. Add ModelType variant in `src/models/base.rs`
 3. Add ModelFunction variant in `src/models/base.rs`
-4. Update field mapping rules in `05-generate-yaml.sh` and `infer-functions.sh`
+4. Update field mapping rules in `06-generate-yaml.sh` and `infer-functions.sh`
 5. Update this documentation
 
 ## Related Documentation
