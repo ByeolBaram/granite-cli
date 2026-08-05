@@ -183,20 +183,14 @@ fn is_secret_schema(node: &Value) -> bool {
 /// 2. `"type": ["string", "null"]` — type array (some schemars versions)
 /// 3. `anyOf` with a single non-null variant — unresolved ref inside anyOf
 fn get_promptable_type(node: &Value) -> Option<String> {
-    let promptable_types = [
-        "object",
-        "array",
-        "string",
-        "integer",
-        "number",
-        "boolean",
-    ];
+    let promptable_types = ["object", "array", "string", "integer", "number", "boolean"];
 
     // Case 1: `type` is a single string (e.g. `"string"`).
     if let Some(t) = node.get("type").and_then(Value::as_str)
-        && promptable_types.contains(&t) {
-            return Some(t.to_string());
-        }
+        && promptable_types.contains(&t)
+    {
+        return Some(t.to_string());
+    }
 
     // Case 2: `type` is an array of strings (e.g. `["string", "null"]`).
     if let Some(types) = node.get("type").and_then(Value::as_array) {
@@ -300,14 +294,35 @@ mod tests {
 
     #[test]
     fn promptable_types_are_object_array_and_scalars() {
-        assert_eq!(get_promptable_type(&json!({"type": "object"})), Some("object".to_string()));
-        assert_eq!(get_promptable_type(&json!({"type": "array"})), Some("array".to_string()));
-        assert_eq!(get_promptable_type(&json!({"type": "string"})), Some("string".to_string()));
-        assert_eq!(get_promptable_type(&json!({"type": "integer"})), Some("integer".to_string()));
-        assert_eq!(get_promptable_type(&json!({"type": "number"})), Some("number".to_string()));
-        assert_eq!(get_promptable_type(&json!({"type": "boolean"})), Some("boolean".to_string()));
+        assert_eq!(
+            get_promptable_type(&json!({"type": "object"})),
+            Some("object".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "array"})),
+            Some("array".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "string"})),
+            Some("string".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "integer"})),
+            Some("integer".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "number"})),
+            Some("number".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "boolean"})),
+            Some("boolean".to_string())
+        );
         assert_eq!(get_promptable_type(&json!({})), None);
-        assert_eq!(get_promptable_type(&json!({"$ref": "#/$defs/Unresolved"})), None);
+        assert_eq!(
+            get_promptable_type(&json!({"$ref": "#/$defs/Unresolved"})),
+            None
+        );
     }
 
     #[test]
@@ -341,12 +356,16 @@ mod tests {
         );
         // Multiple non-null variants are NOT promptable.
         assert_eq!(
-            get_promptable_type(&json!({"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]})),
+            get_promptable_type(
+                &json!({"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]})
+            ),
             None
         );
         // anyOf without a type marker in variants is NOT promptable.
         assert_eq!(
-            get_promptable_type(&json!({"anyOf": [{"$ref": "#/$defs/Unresolved"}, {"type": "null"}]})),
+            get_promptable_type(
+                &json!({"anyOf": [{"$ref": "#/$defs/Unresolved"}, {"type": "null"}]})
+            ),
             None
         );
     }
@@ -454,7 +473,13 @@ mod tests {
         assert_eq!(zero_value_for(&json!({"type": "array"})), json!([]));
         assert_eq!(zero_value_for(&json!({"type": "object"})), json!({}));
         // Also works with array-style type (Option<T>).
-        assert_eq!(zero_value_for(&json!({"type": ["string", "null"]})), json!(""));
-        assert_eq!(zero_value_for(&json!({"type": ["integer", "null"]})), json!(0));
+        assert_eq!(
+            zero_value_for(&json!({"type": ["string", "null"]})),
+            json!("")
+        );
+        assert_eq!(
+            zero_value_for(&json!({"type": ["integer", "null"]})),
+            json!(0)
+        );
     }
 }

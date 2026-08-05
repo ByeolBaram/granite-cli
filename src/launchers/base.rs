@@ -151,7 +151,10 @@ pub(crate) mod tests {
 
         fn validate_command(&self) -> anyhow::Result<PathBuf> {
             crate::utils::resolve_shell_command(
-                &self.command_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+                &self
+                    .command_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
                 &self.command_name,
             )
         }
