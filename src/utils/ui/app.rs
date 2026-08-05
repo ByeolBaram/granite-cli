@@ -49,6 +49,7 @@ fn strip_ansi(input: &str) -> String {
 pub enum Section {
     Models,
     Providers,
+    Launchers,
     Capabilities,
     Recommend,
     Hardware,
@@ -58,7 +59,8 @@ impl Section {
     fn next(&self) -> Self {
         match self {
             Section::Models => Section::Providers,
-            Section::Providers => Section::Capabilities,
+            Section::Providers => Section::Launchers,
+            Section::Launchers => Section::Capabilities,
             Section::Capabilities => Section::Recommend,
             Section::Recommend => Section::Hardware,
             Section::Hardware => Section::Models,
@@ -69,6 +71,7 @@ impl Section {
         match self {
             Section::Models => "Models",
             Section::Providers => "Providers",
+            Section::Launchers => "Launchers",
             Section::Capabilities => "Capabilities",
             Section::Recommend => "Recommend",
             Section::Hardware => "Hardware",
@@ -241,6 +244,11 @@ impl App {
                 .keys()
                 .map(|k| k.to_string())
                 .collect(),
+            Section::Launchers => crate::launchers::LAUNCHER_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect(),
             Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY
                 .entries()
                 .keys()
@@ -288,6 +296,7 @@ impl App {
         let sections = [
             Section::Models,
             Section::Providers,
+            Section::Launchers,
             Section::Capabilities,
             Section::Recommend,
             Section::Hardware,
@@ -298,6 +307,7 @@ impl App {
                 let count = match s {
                     Section::Models => MODEL_REGISTRY.entries().len(),
                     Section::Providers => PROVIDER_REGISTRY.entries().len(),
+                    Section::Launchers => crate::launchers::LAUNCHER_REGISTRY.entries().len(),
                     Section::Capabilities => {
                         crate::capabilities::CAPABILITY_REGISTRY.entries().len()
                     }
@@ -451,6 +461,54 @@ impl App {
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
+            Section::Launchers => {
+                let all_entries: Vec<_> = {
+                    let mut v: Vec<_> = crate::launchers::LAUNCHER_REGISTRY
+                        .entries()
+                        .into_iter()
+                        .collect();
+                    v.sort_by(|a, b| a.0.cmp(b.0));
+                    v
+                };
+
+                let filtered_ids = self.filtered_ids(query);
+                let entries: Vec<_> = all_entries
+                    .into_iter()
+                    .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
+                    .collect();
+
+                let header = Row::new(vec!["ID", "DEFAULT COMMAND"]).style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
+
+                let rows: Vec<Row> = entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (id, l))| {
+                        let style = if i == self.row {
+                            Style::default().bg(Color::DarkGray)
+                        } else {
+                            Style::default()
+                        };
+                        Row::new(vec![
+                            Cell::from(id.to_string()),
+                            Cell::from(l.default_command.clone()),
+                        ])
+                        .style(style)
+                    })
+                    .collect();
+
+                let table = Table::new(
+                    rows,
+                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                )
+                .header(header)
+                .block(Block::default().borders(Borders::ALL).title(" Launchers "));
+
+                frame.render_stateful_widget(table, table_area, &mut self.table_state);
+            }
             Section::Capabilities => {
                 let text = Paragraph::new("No capabilities registered yet.").block(
                     Block::default()
@@ -580,6 +638,22 @@ impl App {
                     format!("Provider '{id}' not found.")
                 }
             }
+            Section::Launchers => {
+                if let Some(l) = crate::launchers::LAUNCHER_REGISTRY.get(id) {
+                    format!(
+                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}",
+                        l.default_command,
+                        l.description,
+                        if l.supported_capabilities.is_empty() {
+                            "(none yet)".to_string()
+                        } else {
+                            l.supported_capabilities.join(", ")
+                        }
+                    )
+                } else {
+                    format!("Launcher '{id}' not found.")
+                }
+            }
             Section::Capabilities => format!("Capability: {id}"),
             // Recommend detail reuses the Model info_fields
             Section::Recommend => match ModelCommands::info_fields(id) {
@@ -681,18 +755,20 @@ mod tests {
     }
 
     #[test]
-    fn app_tab_cycles_through_all_three_sections() {
+    fn app_tab_reaches_launchers_on_second_press() {
+        // Models →(1) Providers →(2) Launchers
         let mut a = app();
-        for _ in 0..3 {
+        for _ in 0..2 {
             a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         }
-        assert_eq!(a.section, Section::Recommend);
+        assert_eq!(a.section, Section::Launchers);
     }
 
     #[test]
-    fn app_tab_cycles_through_all_five_sections() {
+    fn app_tab_cycles_through_all_six_sections() {
+        // Six sections: Models → Providers → Launchers → Capabilities → Recommend → Hardware → Models
         let mut a = app();
-        for _ in 0..5 {
+        for _ in 0..6 {
             a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
         }
         assert_eq!(a.section, Section::Models);

@@ -39,20 +39,20 @@ impl CapabilityCommands {
         let mut rows: Vec<Vec<String>> = ctx
             .config
             .capabilities
-            .iter()
-            .map(|(id, cfg)| {
+            .keys()
+            .map(|id| {
                 let name = CAPABILITY_REGISTRY
                     .get(id)
                     .map(|c| c.name.clone())
                     .unwrap_or_else(|| id.clone());
-                vec![id.clone(), name, cfg.enabled.to_string()]
+                vec![id.clone(), name]
             })
             .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
         ctx.ui.table(
             &format!("Configured Capabilities ({} capabilities)", rows.len()),
-            &["ID", "NAME", "ENABLED"],
+            &["ID", "NAME"],
             &rows,
         );
         Ok(())
@@ -73,7 +73,6 @@ impl CapabilityCommands {
                 fields.push(("Execution Hooks", "on_setup, on_configure, on_pre_launch, on_post_launch, on_shutdown, runtime_bindings".to_string()));
 
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    fields.push(("Config: Enabled", configured.enabled.to_string()));
                     for (k, v) in &configured.config {
                         fields.push(("Config", format!("{k} = {v}")));
                     }
@@ -83,14 +82,11 @@ impl CapabilityCommands {
                 Ok(())
             }
             None => {
-                if let Some(configured) = ctx.config.get_capability(capability_id) {
-                    let fields: Vec<(&str, String)> = vec![
-                        ("Enabled", configured.enabled.to_string()),
-                        (
-                            "Note",
-                            "Configured but not found in bundled registry.".to_string(),
-                        ),
-                    ];
+                if let Some(_configured) = ctx.config.get_capability(capability_id) {
+                    let fields: Vec<(&str, String)> = vec![(
+                        "Note",
+                        "Configured but not found in bundled registry.".to_string(),
+                    )];
                     ctx.ui.detail(capability_id, &fields);
                     Ok(())
                 } else {
@@ -153,42 +149,15 @@ impl CapabilityCommands {
                 // }
 
                 // Prompt for capability-specific configuration
-                let mut config_map = HashMap::new();
+                let config_map = HashMap::new();
 
-                let enabled = ctx
-                    .ui
-                    .confirm(&format!("Enable '{}' capability?", cap.name), true)?;
-
-                if enabled {
-                    ctx.ui.info(&format!(
-                        "\nCapability {} will be available at tool launch time.",
-                        cap.name
-                    ));
-                    config_map.insert("enabled".to_string(), "true".to_string());
-
-                    // Get runtime bindings to show what will be injected
-                    // TODO: Resolve runtime bindings?
-                    // if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
-                    //     let bindings = capability.runtime_bindings();
-                    //     if !bindings.is_empty() {
-                    //         println!("\nRuntime bindings (environment variables at launch):");
-                    //         for binding in &bindings {
-                    //             println!("  {}={}", binding.key, binding.value);
-                    //         }
-                    //     }
-                    // }
-                } else {
-                    ctx.ui
-                        .info(&format!("\nCapability {} is disabled.", cap.name));
-                    config_map.insert("enabled".to_string(), "false".to_string());
-                }
+                ctx.ui.info(&format!(
+                    "\nCapability {} will be available at tool launch time.",
+                    cap.name
+                ));
 
                 let capability_config = crate::config::CapabilityConfig {
                     capability_id: capability_id.to_string(),
-                    enabled: config_map
-                        .get("enabled")
-                        .map(|v| v == "true")
-                        .unwrap_or(true),
                     config: config_map,
                 };
 
@@ -210,7 +179,6 @@ impl CapabilityCommands {
                 // Check if it's a configured-only capability
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
                     ctx.ui.info(&format!("\nCapability: {capability_id}"));
-                    ctx.ui.info(&format!("Enabled: {}", configured.enabled));
                     if !configured.config.is_empty() {
                         ctx.ui.info("\nCurrent Settings:");
                         for (k, v) in &configured.config {
@@ -314,13 +282,12 @@ mod tests {
         }
     }
 
-    fn ctx_with_capability(id: &str, enabled: bool) -> crate::AppContext {
+    fn ctx_with_capability(id: &str) -> crate::AppContext {
         let mut ctx = test_ctx();
         ctx.config.capabilities.insert(
             id.to_string(),
             CapabilityConfig {
                 capability_id: id.to_string(),
-                enabled,
                 config: std::collections::HashMap::new(),
             },
         );
@@ -373,13 +340,13 @@ mod tests {
     }
 
     #[test]
-    fn list_configured_capability_shows_enabled_state() {
-        let ctx = ctx_with_capability("my-cap", true);
+    fn list_configured_capability_shows_row() {
+        let ctx = ctx_with_capability("my-cap");
         CapabilityCommands::list(&ctx).unwrap();
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].iter().any(|c| c == "true"));
+        assert_eq!(rows[0][0], "my-cap");
     }
 
     // -- info -----------------------------------------------------------------
@@ -393,7 +360,7 @@ mod tests {
 
     #[test]
     fn info_configured_only_capability_renders_detail_not_err() {
-        let ctx = ctx_with_capability("custom-cap", false);
+        let ctx = ctx_with_capability("custom-cap");
         let result = CapabilityCommands::info(&ctx, "custom-cap");
         assert!(result.is_ok());
         assert!(!details!(ctx).is_empty());

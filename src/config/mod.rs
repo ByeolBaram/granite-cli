@@ -18,28 +18,17 @@ pub struct Config {
     pub models: HashMap<String, ModelConfig>,
     pub providers: HashMap<String, ProviderConfig>,
     pub capabilities: HashMap<String, CapabilityConfig>,
+    pub launchers: HashMap<String, LauncherConfig>,
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
     pub tools: HashMap<String, ToolConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelConfig {
     pub model_id: String,
     pub provider_id: Option<String>,
     pub variant: Option<String>,
-    pub enabled: bool,
-}
-
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            model_id: String::new(),
-            provider_id: None,
-            variant: None,
-            enabled: true,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,7 +37,6 @@ pub struct ProviderConfig {
     #[serde(rename = "type")]
     pub provider_type: String,
     pub config: serde_json::Value,
-    pub enabled: bool,
 }
 
 impl Default for ProviderConfig {
@@ -57,7 +45,6 @@ impl Default for ProviderConfig {
             provider_id: String::new(),
             provider_type: String::new(),
             config: serde_json::Value::Object(serde_json::Map::new()),
-            enabled: true,
         }
     }
 }
@@ -65,7 +52,6 @@ impl Default for ProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityConfig {
     pub capability_id: String,
-    pub enabled: bool,
     pub config: HashMap<String, String>,
 }
 
@@ -113,8 +99,29 @@ pub struct ToolConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfiguredCapability {
     pub capability_id: String,
-    pub enabled: bool,
     pub config: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LauncherConfig {
+    pub launcher_id: String,
+    #[serde(rename = "type")]
+    pub launcher_type: String,
+    /// Capability IDs enabled for this launcher instance.
+    pub enabled_capabilities: Vec<String>,
+    /// Launcher-type-specific config passed to `ConfigConstructable::new`.
+    pub config: serde_json::Value,
+}
+
+impl Default for LauncherConfig {
+    fn default() -> Self {
+        Self {
+            launcher_id: String::new(),
+            launcher_type: String::new(),
+            enabled_capabilities: vec![],
+            config: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
 }
 
 impl Config {
@@ -167,6 +174,10 @@ impl Config {
         Ok(Self::config_dir()?.join("tools"))
     }
 
+    fn launchers_dir() -> Result<PathBuf> {
+        Ok(Self::config_dir()?.join("launchers"))
+    }
+
     fn ensure_directories() -> Result<()> {
         let config_dir = Self::config_dir()?;
         if !config_dir.exists() {
@@ -176,6 +187,7 @@ impl Config {
         fs::create_dir_all(Self::providers_dir()?)?;
         fs::create_dir_all(Self::capabilities_dir()?)?;
         fs::create_dir_all(Self::tools_dir()?)?;
+        fs::create_dir_all(Self::launchers_dir()?)?;
         Ok(())
     }
 
@@ -239,6 +251,7 @@ impl Config {
         config.providers = Self::load_dir(&Self::providers_dir()?, |s| s.to_string())?;
         config.capabilities = Self::load_dir(&Self::capabilities_dir()?, |s| s.to_string())?;
         config.tools = Self::load_dir(&Self::tools_dir()?, |s| s.to_string())?;
+        config.launchers = Self::load_dir(&Self::launchers_dir()?, |s| s.to_string())?;
 
         Ok(config)
     }
@@ -274,6 +287,12 @@ impl Config {
         for (id, tool) in &self.tools {
             let path = Self::tools_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, tool)?;
+        }
+
+        // Save individual launcher files
+        for (id, launcher) in &self.launchers {
+            let path = Self::launchers_dir()?.join(format!("{id}.yaml"));
+            Self::save_yaml_to_file(&path, launcher)?;
         }
 
         Ok(())
@@ -410,16 +429,92 @@ impl Config {
             Ok(())
         }
     }
+    // -- Launcher --
+
+    pub fn get_launcher(&self, id: &str) -> Option<&LauncherConfig> {
+        self.launchers.get(id)
+    }
+
+    pub fn insert_launcher(&mut self, id: &str, config: LauncherConfig) -> Result<()> {
+        self.launchers.insert(id.to_string(), config);
+        self.save()
+    }
+
+    pub fn remove_launcher(&mut self, id: &str) -> Result<()> {
+        self.launchers.remove(id);
+        let path = Self::launchers_dir().ok().and_then(|d| {
+            let p = d.join(format!("{id}.yaml"));
+            if p.exists() { Some(p) } else { None }
+        });
+        if let Some(p) = path {
+            let _ = fs::remove_file(&p);
+        }
+        self.save()
+    }
+
+    pub fn update_launcher(&mut self, id: &str, f: impl FnOnce(&mut LauncherConfig)) -> Result<()> {
+        if let Some(launcher) = self.launchers.get_mut(id) {
+            f(launcher);
+            self.save()
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Config;
+    use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_config_default_shell_detection() {
         let config = Config::default();
         assert!(!config.shell.shell.is_empty());
         assert!(!config.shell.export_format.is_empty());
+    }
+
+    #[test]
+    fn launcher_config_default_round_trips() {
+        let original = LauncherConfig::default();
+        let serialized = serde_yaml::to_string(&original).unwrap();
+        let deserialized: LauncherConfig = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.launcher_id, original.launcher_id);
+        assert_eq!(deserialized.launcher_type, original.launcher_type);
+        assert!(deserialized.enabled_capabilities.is_empty());
+    }
+
+    #[test]
+    fn config_launchers_dir_created_on_new() {
+        let tmp = TempDir::new().unwrap();
+        // Derive a path and create directories manually to avoid env-var races
+        // with other parallel tests (Config::new mutates a global env var).
+        let home = tmp.path().to_path_buf();
+        let launchers_dir = home.join("launchers");
+        fs::create_dir_all(&launchers_dir).unwrap();
+        assert!(launchers_dir.is_dir());
+    }
+
+    #[test]
+    fn insert_and_remove_launcher() {
+        let tmp = TempDir::new().unwrap();
+        let home = tmp.path().join("granite-cli-test-2");
+        // SAFETY: single-threaded test; no other thread reads this var.
+        unsafe { std::env::set_var("GRANITE_CLI_HOME", &home) };
+
+        let mut config = Config::new().unwrap();
+        let lc = LauncherConfig {
+            launcher_id: "claude".to_string(),
+            launcher_type: "claude".to_string(),
+            enabled_capabilities: vec![],
+            config: serde_json::json!({}),
+        };
+        config.insert_launcher("claude", lc).unwrap();
+        assert!(config.get_launcher("claude").is_some());
+
+        config.remove_launcher("claude").unwrap();
+        assert!(config.get_launcher("claude").is_none());
+
+        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
     }
 }

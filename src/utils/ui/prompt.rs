@@ -29,7 +29,7 @@ fn prompt_value(
     label: &str,
 ) -> anyhow::Result<Value> {
     let node = resolve_ref(root, node);
-    match node.get("type").and_then(Value::as_str) {
+    match get_promptable_type(node).as_deref() {
         Some("object") => prompt_object(ui, root, node, default, indent, label),
         Some("array") => prompt_array(ui, root, node, default, indent, label),
         Some("string") => Ok(prompt_string(ui, node, default, indent, label)?),
@@ -56,7 +56,7 @@ fn prompt_object(
         let child_indent = format!("{indent}  ");
         for (name, prop_schema) in properties {
             let prop_schema = resolve_ref(root, prop_schema);
-            if !is_promptable(prop_schema) {
+            if get_promptable_type(prop_schema).is_none() {
                 // Untyped / enum-keyed map / unresolved $ref -- no generic UI
                 // for these; leave absent so serde falls back to the config
                 // struct's own defaults.
@@ -134,7 +134,7 @@ fn prompt_number(
     indent: &str,
     label: &str,
 ) -> anyhow::Result<Value> {
-    let is_integer = node.get("type").and_then(Value::as_str) == Some("integer");
+    let is_integer = get_promptable_type(node).as_deref() == Some("integer");
     let default_str = default
         .as_number()
         .map(|n| n.to_string())
@@ -174,19 +174,50 @@ fn is_secret_schema(node: &Value) -> bool {
     node.get("format").and_then(Value::as_str) == Some("password")
 }
 
-/// True when this schema node is one the generic prompt UI knows how to
-/// render: object, array, or a scalar. Anything else (untyped, enum-keyed
-/// maps, unresolved `$ref`) is left for the config struct's own defaults.
-fn is_promptable(node: &Value) -> bool {
-    matches!(
-        node.get("type").and_then(Value::as_str),
-        Some("object")
-            | Some("array")
-            | Some("string")
-            | Some("integer")
-            | Some("number")
-            | Some("boolean")
-    )
+/// Extract the promptable type from a schema node. Returns the concrete type
+/// string (`"object"`, `"array"`, `"string"`, `"integer"`, `"number"`,
+/// `"boolean"`) when the schema represents one, or `None` when it doesn't.
+///
+/// Handles three schemars representations of `Option<T>`:
+/// 1. `"type": "string"` — direct type after `resolve_ref` unwrapping
+/// 2. `"type": ["string", "null"]` — type array (some schemars versions)
+/// 3. `anyOf` with a single non-null variant — unresolved ref inside anyOf
+fn get_promptable_type(node: &Value) -> Option<String> {
+    let promptable_types = ["object", "array", "string", "integer", "number", "boolean"];
+
+    // Case 1: `type` is a single string (e.g. `"string"`).
+    if let Some(t) = node.get("type").and_then(Value::as_str)
+        && promptable_types.contains(&t)
+    {
+        return Some(t.to_string());
+    }
+
+    // Case 2: `type` is an array of strings (e.g. `["string", "null"]`).
+    if let Some(types) = node.get("type").and_then(Value::as_array) {
+        let non_null: Vec<&str> = types
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|t| *t != "null")
+            .collect();
+        if non_null.len() == 1 && promptable_types.contains(&non_null[0]) {
+            return Some(non_null[0].to_string());
+        }
+    }
+
+    // Case 3: `anyOf` with exactly one non-null variant means schemars
+    // represented an Option<T> and resolve_ref may not have fully
+    // unwrapped it (e.g. unresolved $ref inside anyOf).
+    if let Some(variants) = node.get("anyOf").and_then(Value::as_array) {
+        let mut non_null = variants.iter().filter(|v| {
+            v.get("type").and_then(Value::as_str) != Some("null")
+                && v.get("type").and_then(Value::as_str).is_some()
+        });
+        if let (Some(only), None) = (non_null.next(), non_null.next()) {
+            return get_promptable_type(only);
+        }
+    }
+
+    None
 }
 
 /// Resolve a schema node to the concrete (object/array/scalar) schema it
@@ -232,7 +263,7 @@ fn resolve_ref<'a>(root: &'a Value, node: &'a Value) -> &'a Value {
 /// A type-appropriate empty value, used to seed a fresh array item when no
 /// default item remains to prefill it with.
 fn zero_value_for(schema: &Value) -> Value {
-    match schema.get("type").and_then(Value::as_str) {
+    match get_promptable_type(schema).as_deref() {
         Some("object") => Value::Object(serde_json::Map::new()),
         Some("array") => Value::Array(vec![]),
         Some("string") => Value::String(String::new()),
@@ -263,14 +294,117 @@ mod tests {
 
     #[test]
     fn promptable_types_are_object_array_and_scalars() {
-        assert!(is_promptable(&json!({"type": "object"})));
-        assert!(is_promptable(&json!({"type": "array"})));
-        assert!(is_promptable(&json!({"type": "string"})));
-        assert!(is_promptable(&json!({"type": "integer"})));
-        assert!(is_promptable(&json!({"type": "number"})));
-        assert!(is_promptable(&json!({"type": "boolean"})));
-        assert!(!is_promptable(&json!({})));
-        assert!(!is_promptable(&json!({"$ref": "#/$defs/Unresolved"})));
+        assert_eq!(
+            get_promptable_type(&json!({"type": "object"})),
+            Some("object".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "array"})),
+            Some("array".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "string"})),
+            Some("string".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "integer"})),
+            Some("integer".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "number"})),
+            Some("number".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": "boolean"})),
+            Some("boolean".to_string())
+        );
+        assert_eq!(get_promptable_type(&json!({})), None);
+        assert_eq!(
+            get_promptable_type(&json!({"$ref": "#/$defs/Unresolved"})),
+            None
+        );
+    }
+
+    #[test]
+    fn promptable_type_falls_back_to_any_of_for_option_types() {
+        // When resolve_ref cannot fully unwrap anyOf (e.g. unresolved $ref
+        // inside the non-null variant), get_promptable_type still extracts
+        // the single-variant anyOf type.
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "string"}, {"type": "null"}]})),
+            Some("string".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "integer"}, {"type": "null"}]})),
+            Some("integer".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "boolean"}, {"type": "null"}]})),
+            Some("boolean".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "object"}, {"type": "null"}]})),
+            Some("object".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "array"}, {"type": "null"}]})),
+            Some("array".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"anyOf": [{"type": "number"}, {"type": "null"}]})),
+            Some("number".to_string())
+        );
+        // Multiple non-null variants are NOT promptable.
+        assert_eq!(
+            get_promptable_type(
+                &json!({"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]})
+            ),
+            None
+        );
+        // anyOf without a type marker in variants is NOT promptable.
+        assert_eq!(
+            get_promptable_type(
+                &json!({"anyOf": [{"$ref": "#/$defs/Unresolved"}, {"type": "null"}]})
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn promptable_type_handles_type_as_array_for_option() {
+        // Some schemars versions represent Option<T> as `"type": ["string", "null"]`
+        // rather than using anyOf.
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["string", "null"]})),
+            Some("string".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["integer", "null"]})),
+            Some("integer".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["boolean", "null"]})),
+            Some("boolean".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["number", "null"]})),
+            Some("number".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["array", "null"]})),
+            Some("array".to_string())
+        );
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["object", "null"]})),
+            Some("object".to_string())
+        );
+        // Null-only is NOT promptable.
+        assert_eq!(get_promptable_type(&json!({"type": ["null"]})), None);
+        // Multiple non-null types are NOT promptable.
+        assert_eq!(
+            get_promptable_type(&json!({"type": ["string", "integer", "null"]})),
+            None
+        );
     }
 
     #[test]
@@ -328,7 +462,7 @@ mod tests {
         let resolved = resolve_ref(&root, &node);
         assert_eq!(resolved.get("type").and_then(Value::as_str), Some("string"));
         assert!(is_secret_schema(resolved));
-        assert!(is_promptable(resolved));
+        assert_eq!(get_promptable_type(resolved), Some("string".to_string()));
     }
 
     #[test]
@@ -338,5 +472,14 @@ mod tests {
         assert_eq!(zero_value_for(&json!({"type": "boolean"})), json!(false));
         assert_eq!(zero_value_for(&json!({"type": "array"})), json!([]));
         assert_eq!(zero_value_for(&json!({"type": "object"})), json!({}));
+        // Also works with array-style type (Option<T>).
+        assert_eq!(
+            zero_value_for(&json!({"type": ["string", "null"]})),
+            json!("")
+        );
+        assert_eq!(
+            zero_value_for(&json!({"type": ["integer", "null"]})),
+            json!(0)
+        );
     }
 }

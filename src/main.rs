@@ -2,6 +2,7 @@ pub mod capabilities;
 pub mod commands;
 pub mod config;
 pub mod dependency;
+pub mod launchers;
 pub mod models;
 pub mod registry;
 pub mod utils;
@@ -15,7 +16,9 @@ pub mod providers;
 use clap::{Parser, Subcommand};
 
 // Local
-use commands::{CapabilityCommands, HardwareCommands, ModelCommands, ProviderCommands};
+use commands::{
+    CapabilityCommands, HardwareCommands, LauncherCommands, ModelCommands, ProviderCommands,
+};
 use utils::ui::{UI_REGISTRY, Ui, run_interactive_tui};
 
 // Hoist paste macro for use in our own macros
@@ -87,6 +90,16 @@ struct LaunchWithOutput {
     args: Vec<String>,
 }
 
+#[derive(clap::Args, Debug)]
+struct LauncherWithOutput {
+    /// Output format: terminal (default), plain, json, markdown
+    #[arg(short, long, global = true, default_value = "terminal")]
+    output: String,
+
+    #[command(subcommand)]
+    subcommand: LauncherSubcommands,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Model management commands
@@ -97,6 +110,9 @@ enum Commands {
 
     /// Provider management commands
     Provider(ProviderWithOutput),
+
+    /// Launcher management commands
+    Launcher(LauncherWithOutput),
 
     /// Show hardware profile and recommended precision
     Hardware,
@@ -217,6 +233,33 @@ enum ProviderSubcommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum LauncherSubcommands {
+    /// Show the catalog of all available launcher types
+    Catalog,
+
+    /// List all configured launcher instances
+    List,
+
+    /// Interactive launcher setup wizard
+    Setup {
+        /// Catalog launcher type to set up (e.g. `claude`)
+        launcher_type: String,
+
+        /// Nickname for this launcher instance. Defaults to `launcher_type`;
+        /// pass a distinct value to configure multiple named instances of
+        /// the same catalog type (e.g. `--id claude-local`).
+        #[arg(long = "id")]
+        instance_id: Option<String>,
+    },
+
+    /// Remove a configured launcher instance
+    Remove {
+        /// Configured launcher instance ID to remove
+        launcher_id: String,
+    },
+}
+
 #[derive(clap::Args, Debug)]
 struct ConfigureArgs {
     /// Tool ID to configure
@@ -290,10 +333,17 @@ async fn main() {
                 .await
                 .map_err(|e| ui.error(&e.to_string()))
         }
+        Some(Commands::Launcher(wrapper)) => {
+            let mut ctx = construct_context(&wrapper.output);
+            run_launcher_command(&mut ctx, wrapper.subcommand)
+                .await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
+        }
         Some(Commands::Launch(wrapper)) => {
-            let ui = construct_ui(&wrapper.output);
-            ui.info("Tool launching will be available in Phase 3.");
-            Ok(())
+            let ctx = construct_context(&wrapper.output);
+            run_launch(&*ctx.ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
+                .await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
             println!("{}", version::version_string());
@@ -407,5 +457,61 @@ async fn run_provider_command(
 
 async fn run_configure(ui: &dyn Ui, _args: ConfigureArgs) -> anyhow::Result<()> {
     ui.info("Tool configuration wizard will be available in Phase 3.");
+    Ok(())
+}
+
+async fn run_launcher_command(
+    ctx: &mut AppContext,
+    subcmd: LauncherSubcommands,
+) -> anyhow::Result<()> {
+    match subcmd {
+        LauncherSubcommands::Catalog => LauncherCommands::catalog(ctx),
+        LauncherSubcommands::List => LauncherCommands::list(ctx),
+        LauncherSubcommands::Setup {
+            launcher_type,
+            instance_id,
+        } => LauncherCommands::setup(ctx, &launcher_type, instance_id.as_deref()).await,
+        LauncherSubcommands::Remove { launcher_id } => LauncherCommands::remove(ctx, &launcher_id),
+    }
+}
+
+async fn run_launch(
+    ui: &dyn Ui,
+    launcher_id: &str,
+    args: &[String],
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    use crate::launchers::LAUNCHER_REGISTRY;
+    use crate::launchers::LaunchContext;
+
+    // Load config fresh so we always pick up the latest saved state.
+    let config = crate::config::Config::new()?;
+
+    let lc = config.get_launcher(launcher_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "No launcher configured with id '{launcher_id}'. \
+             Run `granite-cli launcher setup {launcher_id}` first."
+        )
+    })?;
+
+    let launcher = LAUNCHER_REGISTRY
+        .construct(&lc.launcher_type, &lc.config)
+        .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
+
+    let launch_ctx = LaunchContext {
+        launcher_id: launcher_id.to_string(),
+        working_dir: std::env::current_dir()?,
+        base_env: std::collections::HashMap::new(),
+        dry_run,
+    };
+
+    let status = launcher.launch(args, &launch_ctx, ui).await?;
+    if !status.success() {
+        anyhow::bail!(
+            "'{}' exited with status {}",
+            launcher_id,
+            status.code().unwrap_or(-1)
+        );
+    }
     Ok(())
 }

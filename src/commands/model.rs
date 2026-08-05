@@ -446,7 +446,6 @@ impl ModelCommands {
                 if let Some(configured) = ctx.config.get_model(model_id) {
                     fields.push(("Config: Provider", format!("{:?}", configured.provider_id)));
                     fields.push(("Config: Variant", format!("{:?}", configured.variant)));
-                    fields.push(("Config: Enabled", configured.enabled.to_string()));
                 }
 
                 ctx.ui.detail(model_id, &fields);
@@ -502,9 +501,7 @@ impl ModelCommands {
                     selected_variant.format, selected_variant.precision
                 ));
 
-                if let Some(existing) = ctx.config.get_model(model_id)
-                    && existing.enabled
-                {
+                if ctx.config.get_model(model_id).is_some() {
                     let overwrite = ctx.ui.confirm(
                         &format!("Model '{model_id}' is already configured. Overwrite?"),
                         false,
@@ -531,7 +528,6 @@ impl ModelCommands {
                         "{}/{}",
                         selected_variant.format, selected_variant.precision
                     )),
-                    enabled: true,
                 };
 
                 if let Err(e) = ctx.config.insert_model(model_id, model_config) {
@@ -806,7 +802,6 @@ mod tests {
                 model_id: id.to_string(),
                 provider_id: provider_id.map(String::from),
                 variant: None,
-                enabled: true,
             },
         );
         ctx
@@ -826,7 +821,6 @@ mod tests {
                 model_id: model_id.to_string(),
                 provider_id: Some(provider_id.to_string()),
                 variant: Some(variant.to_string()),
-                enabled: true,
             },
         );
         ctx_with_config(config)
@@ -1151,7 +1145,6 @@ mod tests {
                 provider_id: id.to_string(),
                 provider_type: provider_type.to_string(),
                 config,
-                enabled: true,
             },
         );
         config_obj
@@ -1314,7 +1307,6 @@ mod tests {
                 provider_id: "openai".to_string(),
                 provider_type: "openai-compatible".to_string(),
                 config: serde_json::json!({ "base_url": "http://localhost:8080" }),
-                enabled: true,
             },
         );
         let ctx = ctx_with_config(config);

@@ -37,12 +37,7 @@ impl ProviderCommands {
                     .and_then(|v| v.as_str())
                     .unwrap_or("-")
                     .to_string();
-                vec![
-                    id.clone(),
-                    cfg.provider_type.clone(),
-                    cfg.enabled.to_string(),
-                    base_url,
-                ]
+                vec![id.clone(), cfg.provider_type.clone(), base_url]
             })
             .collect();
         rows.sort_by(|a, b| {
@@ -55,7 +50,7 @@ impl ProviderCommands {
 
         ctx.ui.table(
             &format!("Configured Providers ({} providers)", rows.len()),
-            &["ID", "TYPE", "ENABLED", "BASE URL"],
+            &["ID", "TYPE", "BASE URL"],
             &rows,
         );
         Ok(())
@@ -144,7 +139,6 @@ impl ProviderCommands {
             provider_id: instance_id.clone(),
             provider_type: provider_type.to_string(),
             config,
-            enabled: true,
         };
 
         if let Err(e) = ctx.config.insert_provider(&instance_id, provider_config) {
@@ -255,7 +249,6 @@ mod tests {
                 provider_id: id.to_string(),
                 provider_type: "openai-compatible".to_string(),
                 config: serde_json::json!({ "base_url": url }),
-                enabled: true,
             },
         );
         ctx
@@ -336,17 +329,6 @@ mod tests {
     }
 
     #[test]
-    fn list_disabled_provider_still_appears() {
-        let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
-        ctx.config.providers.get_mut("my-ollama").unwrap().enabled = false;
-        ProviderCommands::list(&ctx).unwrap();
-        let tables = tables!(ctx);
-        let (_, _, rows) = &tables[0];
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].iter().any(|c| c == "false"));
-    }
-
-    #[test]
     fn list_sorted_by_type_then_id() {
         let mut ctx = test_ctx();
         ctx.config.providers.insert(
@@ -355,7 +337,6 @@ mod tests {
                 provider_id: "prod-openai".to_string(),
                 provider_type: "openai-compatible".to_string(),
                 config: serde_json::json!({ "base_url": "http://prod" }),
-                enabled: true,
             },
         );
         ctx.config.providers.insert(
@@ -364,7 +345,6 @@ mod tests {
                 provider_id: "local-ollama".to_string(),
                 provider_type: "ollama".to_string(),
                 config: serde_json::json!({ "base_url": "http://localhost:11434" }),
-                enabled: true,
             },
         );
         ctx.config.providers.insert(
@@ -373,7 +353,6 @@ mod tests {
                 provider_id: "dev-openai".to_string(),
                 provider_type: "openai-compatible".to_string(),
                 config: serde_json::json!({ "base_url": "http://dev" }),
-                enabled: true,
             },
         );
         ProviderCommands::list(&ctx).unwrap();
