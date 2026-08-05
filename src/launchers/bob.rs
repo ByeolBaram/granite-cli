@@ -31,12 +31,12 @@ impl Launcher for BobLauncher {
         "Bob CLI"
     }
 
-    fn command_name(&self) -> &str {
+    fn command(&self) -> &str {
         self.config.command_path.as_deref().unwrap_or("bob")
     }
 
     fn supported_capabilities(&self) -> Vec<String> {
-        vec![]
+        Self::metadata().supported_capabilities
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -86,17 +86,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_name_defaults_to_bob() {
+    fn command_defaults_to_bob() {
         let l = BobLauncher::new(&serde_json::json!({}));
-        assert_eq!(l.command_name(), "bob");
+        assert_eq!(l.command(), "bob");
     }
 
     #[test]
-    fn command_name_uses_explicit_path_when_set() {
+    fn command_uses_explicit_path_when_set() {
         let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "/usr/local/bin/bob"
+            "command_path": "/opt/bin/bob"
         }));
-        assert_eq!(l.command_name(), "/usr/local/bin/bob");
+        assert_eq!(l.command(), "/opt/bin/bob");
     }
 
     #[test]

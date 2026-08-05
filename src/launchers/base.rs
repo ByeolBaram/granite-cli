@@ -13,11 +13,13 @@ pub trait Launcher: ConfigConstructable + Send + Sync {
     fn name(&self) -> &str;
 
     /// The binary/command this instance will exec.
-    /// Concrete impls return their default name (e.g. `"claude"`); the command
-    /// path override in config is applied by `validate_command`.
-    fn command_name(&self) -> &str;
+    /// Returns the full command string — either a bare binary name for PATH
+    /// lookup (e.g. `"claude"`) or an absolute path set by the user in config.
+    fn command(&self) -> &str;
 
-    /// Capability IDs this launcher instance supports.
+    /// Capability IDs this launcher type supports.
+    /// Default implementation delegates to `metadata()` so there is no need
+    /// to duplicate the list on the instance.
     fn supported_capabilities(&self) -> Vec<String>;
 
     /// Resolve the binary to an absolute path.
@@ -81,6 +83,8 @@ impl std::fmt::Display for LauncherMetadata {
 /// Runtime context passed through the launch lifecycle.
 pub struct LaunchContext {
     pub launcher_id: String,
+    /// The working directory for the spawned subprocess (i.e. the CWD the
+    /// tool process will see). Typically set to the user's current directory.
     pub working_dir: PathBuf,
     /// Env vars already resolved (e.g. provider URL, model ID) before any
     /// capability bindings are merged on top.
@@ -137,12 +141,12 @@ pub(crate) mod tests {
             "Fake Launcher"
         }
 
-        fn command_name(&self) -> &str {
+        fn command(&self) -> &str {
             &self.command_name
         }
 
         fn supported_capabilities(&self) -> Vec<String> {
-            vec![]
+            Self::metadata().supported_capabilities
         }
 
         fn validate_command(&self) -> anyhow::Result<PathBuf> {

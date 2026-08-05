@@ -31,12 +31,12 @@ impl Launcher for ClaudeLauncher {
         "Claude CLI"
     }
 
-    fn command_name(&self) -> &str {
+    fn command(&self) -> &str {
         self.config.command_path.as_deref().unwrap_or("claude")
     }
 
     fn supported_capabilities(&self) -> Vec<String> {
-        vec![]
+        Self::metadata().supported_capabilities
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -87,17 +87,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_name_defaults_to_claude() {
+    fn command_defaults_to_claude() {
         let l = ClaudeLauncher::new(&serde_json::json!({}));
-        assert_eq!(l.command_name(), "claude");
+        assert_eq!(l.command(), "claude");
     }
 
     #[test]
-    fn command_name_uses_explicit_path_when_set() {
+    fn command_uses_explicit_path_when_set() {
         let l = ClaudeLauncher::new(&serde_json::json!({
-            "command_path": "/usr/local/bin/claude"
+            "command_path": "/opt/bin/claude"
         }));
-        assert_eq!(l.command_name(), "/usr/local/bin/claude");
+        assert_eq!(l.command(), "/opt/bin/claude");
     }
 
     #[test]
