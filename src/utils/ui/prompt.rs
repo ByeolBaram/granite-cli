@@ -193,11 +193,10 @@ fn get_promptable_type(node: &Value) -> Option<String> {
     ];
 
     // Case 1: `type` is a single string (e.g. `"string"`).
-    if let Some(t) = node.get("type").and_then(Value::as_str) {
-        if promptable_types.contains(&t) {
+    if let Some(t) = node.get("type").and_then(Value::as_str)
+        && promptable_types.contains(&t) {
             return Some(t.to_string());
         }
-    }
 
     // Case 2: `type` is an array of strings (e.g. `["string", "null"]`).
     if let Some(types) = node.get("type").and_then(Value::as_array) {
