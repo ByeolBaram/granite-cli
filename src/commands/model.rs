@@ -670,6 +670,23 @@ impl ModelCommands {
         Ok(())
     }
 
+    /// Remove a configured model instance by ID.
+    ///
+    /// Deletes the model's config file and removes it from the in-memory
+    /// config. After this call `model list` will no longer show the entry.
+    pub fn remove(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
+        if ctx.config.get_model(model_id).is_none() {
+            anyhow::bail!("No model configured with id '{model_id}'. Nothing to remove.");
+        }
+
+        if let Err(e) = ctx.config.remove_model(model_id) {
+            ctx.ui
+                .warn(&format!("failed to persist model removal: {e}"));
+        }
+        ctx.ui.info(&format!("Model '{model_id}' removed."));
+        Ok(())
+    }
+
     /// Resolve which provider instance to use for a model variant, prompting
     /// to configure a new one (with its own instance nickname, distinct from
     /// its catalog type) when no existing instance satisfies it.
@@ -1447,5 +1464,46 @@ mod tests {
             .warns
             .borrow();
         assert!(!warns.is_empty());
+    }
+
+    // -- remove -------------------------------------------------------------
+
+    #[test]
+    fn remove_existing_model_succeeds_and_disappears_from_list() {
+        let mut ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
+        assert!(ctx.config.get_model("granite-3.1-8b-instruct").is_some());
+
+        ModelCommands::remove(&mut ctx, "granite-3.1-8b-instruct").unwrap();
+
+        assert!(ctx.config.get_model("granite-3.1-8b-instruct").is_none());
+        let infos = infos!(ctx);
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains("granite-3.1-8b-instruct") && m.contains("removed"))
+        );
+    }
+
+    #[test]
+    fn remove_nonexistent_model_returns_err() {
+        let mut ctx = empty_ctx();
+        let result = ModelCommands::remove(&mut ctx, "doesnt-exist");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Nothing to remove")
+        );
+    }
+
+    #[test]
+    fn list_does_not_show_removed_model() {
+        let mut ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
+        ModelCommands::remove(&mut ctx, "granite-3.1-8b-instruct").unwrap();
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert!(rows.is_empty());
     }
 }

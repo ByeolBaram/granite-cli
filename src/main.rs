@@ -183,6 +183,12 @@ enum ModelSubcommands {
         /// Model ID to pull
         model_id: String,
     },
+
+    /// Remove a configured model instance
+    Remove {
+        /// Configured model ID to remove
+        model_id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -202,6 +208,12 @@ enum CapabilitySubcommands {
     /// Set up a capability
     Setup {
         /// Capability ID to set up
+        capability_id: String,
+    },
+
+    /// Remove a configured capability instance
+    Remove {
+        /// Configured capability ID to remove
         capability_id: String,
     },
 }
@@ -230,6 +242,12 @@ enum ProviderSubcommands {
     Health {
         /// Provider ID (optional, checks all if not specified)
         provider_id: Option<String>,
+    },
+
+    /// Remove a configured provider instance
+    Remove {
+        /// Configured provider instance ID to remove
+        provider_id: String,
     },
 }
 
@@ -419,6 +437,7 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
         ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
         ModelSubcommands::Pull { model_id } => ModelCommands::pull(ctx, &model_id).await,
+        ModelSubcommands::Remove { model_id } => ModelCommands::remove(ctx, &model_id),
     }
 }
 
@@ -434,6 +453,9 @@ async fn run_capability_command(
         }
         CapabilitySubcommands::Setup { capability_id } => {
             CapabilityCommands::setup(ctx, &capability_id).await
+        }
+        CapabilitySubcommands::Remove { capability_id } => {
+            CapabilityCommands::remove(ctx, &capability_id)
         }
     }
 }
@@ -452,6 +474,7 @@ async fn run_provider_command(
         ProviderSubcommands::Health { provider_id } => {
             ProviderCommands::health(ctx, provider_id.as_deref()).await
         }
+        ProviderSubcommands::Remove { provider_id } => ProviderCommands::remove(ctx, &provider_id),
     }
 }
 
