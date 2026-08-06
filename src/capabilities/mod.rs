@@ -11,8 +11,5 @@ pub static CAPABILITY_REGISTRY: LazyLock<base::CapabilityFactory> = LazyLock::ne
     factory
 });
 
-// Re-export types from base
 mod base;
-pub use base::{
-    Capability, ConfigureResult, Dependency, EnvBinding, Factory, LaunchContext, ToolConfig,
-};
+pub use base::{Capability, CapabilityMetadata, Dependency};

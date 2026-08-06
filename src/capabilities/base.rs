@@ -18,9 +18,6 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     async fn on_setup(&self, _factory: &dyn Factory) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn on_configure(&self, _tool: &ToolConfig) -> anyhow::Result<ConfigureResult> {
-        Ok(ConfigureResult::default())
-    }
     async fn on_pre_launch(&self, _context: &LaunchContext) -> anyhow::Result<()> {
         Ok(())
     }
@@ -99,22 +96,6 @@ impl std::fmt::Display for Dependency {
     }
 }
 
-pub struct ConfigureResult {
-    pub success: bool,
-    pub artifacts: Vec<PathBuf>,
-    pub messages: Vec<String>,
-}
-
-impl Default for ConfigureResult {
-    fn default() -> Self {
-        Self {
-            success: true,
-            artifacts: vec![],
-            messages: vec![],
-        }
-    }
-}
-
 pub struct LaunchContext {
     pub tool_id: String,
     pub tool_version: String,
@@ -132,13 +113,6 @@ pub trait Factory: Send + Sync {
     async fn resolve_model(&self, id: &str) -> anyhow::Result<String>;
     async fn resolve_provider(&self, id: &str) -> anyhow::Result<String>;
     async fn resolve_capability(&self, id: &str) -> anyhow::Result<String>;
-}
-
-pub struct ToolConfig {
-    pub tool_id: String,
-    pub provider_id: String,
-    pub model_id: String,
-    pub env_vars: HashMap<String, String>,
 }
 
 /*-- Factory Definition ------------------------------------------------------*/

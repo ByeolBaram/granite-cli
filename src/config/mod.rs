@@ -1,6 +1,3 @@
-pub mod exports;
-pub mod shell;
-
 use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -11,20 +8,11 @@ use std::path::{Path, PathBuf};
 use_channel!("CONF");
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TopLevelConfig {
-    pub routing: RoutingConfig,
-    pub shell: ShellConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub models: HashMap<String, ModelConfig>,
     pub providers: HashMap<String, ProviderConfig>,
     pub capabilities: HashMap<String, CapabilityConfig>,
     pub launchers: HashMap<String, LauncherConfig>,
-    pub routing: RoutingConfig,
-    pub shell: ShellConfig,
-    pub tools: HashMap<String, ToolConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -54,53 +42,6 @@ impl Default for ProviderConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapabilityConfig {
-    pub capability_id: String,
-    pub config: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RoutingConfig {
-    pub model_routes: HashMap<String, Vec<ProviderRoute>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderRoute {
-    pub provider_id: String,
-    pub priority: u8,
-    pub health_check: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShellConfig {
-    pub shell: String,
-    pub export_file: PathBuf,
-    pub export_format: String,
-}
-
-impl Default for ShellConfig {
-    fn default() -> Self {
-        let detected = shell::detect_shell();
-        Self {
-            shell: detected.0,
-            export_file: detected.1,
-            export_format: detected.2,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolConfig {
-    pub tool_id: String,
-    pub tool_version: Option<String>,
-    pub provider_id: String,
-    pub model_id: String,
-    pub env_vars: HashMap<String, String>,
-    pub capabilities: Vec<ConfiguredCapability>,
-    pub export_to_shell: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfiguredCapability {
     pub capability_id: String,
     pub config: HashMap<String, String>,
 }
@@ -157,10 +98,6 @@ impl Config {
         Ok(default_dir.join("granite-cli"))
     }
 
-    fn config_path() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join("config.yaml"))
-    }
-
     fn models_dir() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("models"))
     }
@@ -171,10 +108,6 @@ impl Config {
 
     fn capabilities_dir() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("capabilities"))
-    }
-
-    fn tools_dir() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join("tools"))
     }
 
     fn launchers_dir() -> Result<PathBuf> {
@@ -189,7 +122,6 @@ impl Config {
         fs::create_dir_all(Self::models_dir()?)?;
         fs::create_dir_all(Self::providers_dir()?)?;
         fs::create_dir_all(Self::capabilities_dir()?)?;
-        fs::create_dir_all(Self::tools_dir()?)?;
         fs::create_dir_all(Self::launchers_dir()?)?;
         Ok(())
     }
@@ -238,18 +170,6 @@ impl Config {
 
         let mut config = Config::default();
 
-        // Load top-level config.yaml for shell and routing
-        let top_level_path = Self::config_path()?;
-        alog_channel!(MessageLevel::Info, "Config Path: {:#?}", top_level_path);
-        if top_level_path.exists() {
-            if let Ok(top_config) = Self::load_yaml_from_file::<TopLevelConfig>(&top_level_path) {
-                config.shell = top_config.shell;
-                config.routing = top_config.routing;
-            }
-        } else {
-            config.save()?;
-        }
-
         // Load component files
         let models_dir = &Self::models_dir()?;
         let providers_dir = &Self::providers_dir()?;
@@ -272,14 +192,6 @@ impl Config {
     }
 
     fn save(&self) -> Result<()> {
-        // Save top-level config.yaml with shell and routing
-        let top_level_path = Self::config_path()?;
-        let top_config = TopLevelConfig {
-            routing: self.routing.clone(),
-            shell: self.shell.clone(),
-        };
-        Self::save_yaml_to_file(&top_level_path, &top_config)?;
-
         // Save individual model files
         for (id, model) in &self.models {
             let path = Self::models_dir()?.join(format!("{id}.yaml"));
@@ -296,12 +208,6 @@ impl Config {
         for (id, capability) in &self.capabilities {
             let path = Self::capabilities_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, capability)?;
-        }
-
-        // Save individual tool files
-        for (id, tool) in &self.tools {
-            let path = Self::tools_dir()?.join(format!("{id}.yaml"));
-            Self::save_yaml_to_file(&path, tool)?;
         }
 
         // Save individual launcher files
@@ -413,37 +319,6 @@ impl Config {
         }
     }
 
-    // -- Tool --
-
-    pub fn get_tool(&self, id: &str) -> Option<&ToolConfig> {
-        self.tools.get(id)
-    }
-
-    pub fn insert_tool(&mut self, id: &str, config: ToolConfig) -> Result<()> {
-        self.tools.insert(id.to_string(), config);
-        self.save()
-    }
-
-    pub fn remove_tool(&mut self, id: &str) -> Result<()> {
-        self.tools.remove(id);
-        let path = Self::tools_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
-            if p.exists() { Some(p) } else { None }
-        });
-        if let Some(p) = path {
-            let _ = fs::remove_file(&p);
-        }
-        self.save()
-    }
-
-    pub fn update_tool(&mut self, id: &str, f: impl FnOnce(&mut ToolConfig)) -> Result<()> {
-        if let Some(tool) = self.tools.get_mut(id) {
-            f(tool);
-            self.save()
-        } else {
-            Ok(())
-        }
-    }
     // -- Launcher --
 
     pub fn get_launcher(&self, id: &str) -> Option<&LauncherConfig> {
@@ -483,13 +358,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_config_default_shell_detection() {
-        let config = Config::default();
-        assert!(!config.shell.shell.is_empty());
-        assert!(!config.shell.export_format.is_empty());
-    }
-
-    #[test]
     fn launcher_config_default_round_trips() {
         let original = LauncherConfig::default();
         let serialized = serde_yaml::to_string(&original).unwrap();
@@ -497,17 +365,6 @@ mod tests {
         assert_eq!(deserialized.launcher_id, original.launcher_id);
         assert_eq!(deserialized.launcher_type, original.launcher_type);
         assert!(deserialized.enabled_capabilities.is_empty());
-    }
-
-    #[test]
-    fn config_launchers_dir_created_on_new() {
-        let tmp = TempDir::new().unwrap();
-        // Derive a path and create directories manually to avoid env-var races
-        // with other parallel tests (Config::new mutates a global env var).
-        let home = tmp.path().to_path_buf();
-        let launchers_dir = home.join("launchers");
-        fs::create_dir_all(&launchers_dir).unwrap();
-        assert!(launchers_dir.is_dir());
     }
 
     #[test]

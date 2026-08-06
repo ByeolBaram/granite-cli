@@ -1,6 +1,3 @@
-// Standard
-use std::collections::HashMap;
-
 // Third Party
 use anyhow::Result;
 
@@ -70,8 +67,6 @@ impl CapabilityCommands {
                     fields.push(("Tags", cap.tags.join(", ")));
                 }
 
-                fields.push(("Execution Hooks", "on_setup, on_configure, on_pre_launch, on_post_launch, on_shutdown, runtime_bindings".to_string()));
-
                 if let Some(configured) = ctx.config.get_capability(capability_id) {
                     for (k, v) in &configured.config {
                         fields.push(("Config", format!("{k} = {v}")));
@@ -108,57 +103,14 @@ impl CapabilityCommands {
                 ctx.ui.info(&format!("Description: {}", cap.description));
                 ctx.ui.info("");
 
-                // Check dependencies
-                ctx.ui.info("Checking dependencies:");
-                // let mut all_satisfied = true;
-
-                // for dep in &cap.dependencies {
-                //     let status = Self::check_dep_status(ctx, dep);
-                //     println!("  - {} {}", dep, status);
-                //     if status == " [MISSING]" {
-                //         all_satisfied = false;
-                //     }
-                // }
-
-                // Use DI factory to validate dependencies
-                // TODO: Recursively resolve dependencies
-
-                // if !all_satisfied {
-                //     ctx.ui.info("\nSome dependencies are missing. You may want to:");
-                //     ctx.ui.info("  - Configure required models: granite-cli model setup <model-id>");
-                //     ctx.ui.info("  - Configure required providers: granite-cli provider setup <provider-id>");
-                //     ctx.ui.info("  - Install required external tools");
-                //     ctx.ui.info("");
-
-                //     let continue_anyway = ctx.ui.confirm("Continue with setup anyway?", false)?;
-
-                //     if !continue_anyway {
-                //         ctx.ui.info("Capability setup cancelled.");
-                //         return Ok(());
-                //     }
-                // }
-
-                // Run on_setup hook
-                // TODO: Recursively set up dependencies
-                // println!("\nRunning setup hooks...");
-                // if let Ok(capability) = crate::capabilities::resolve_capability_from_registry(capability_id) {
-                //     let result = capability.on_setup(&factory).await;
-                //     if let Err(e) = result {
-                //         println!("Warning: on_setup hook failed: {}", e);
-                //     }
-                // }
-
-                // Prompt for capability-specific configuration
-                let config_map = HashMap::new();
-
                 ctx.ui.info(&format!(
-                    "\nCapability {} will be available at tool launch time.",
+                    "\nCapability '{}' will be available for use.",
                     cap.name
                 ));
 
                 let capability_config = crate::config::CapabilityConfig {
                     capability_id: capability_id.to_string(),
-                    config: config_map,
+                    config: std::collections::HashMap::new(),
                 };
 
                 if let Err(e) = ctx
@@ -232,58 +184,6 @@ impl CapabilityCommands {
             .info(&format!("Capability '{capability_id}' removed."));
         Ok(())
     }
-
-    // TODO: Use generic dependency checking
-    // fn check_dep_status(ctx: &crate::AppContext, dep: &crate::registry::CapabilityDependency) -> &'static str {
-    //     match dep {
-    //         crate::registry::CapabilityDependency::Model { id, required: _ } => {
-    //             if registry::MODEL_REGISTRY.get(id).is_some()
-    //                 || ctx.config.models.contains_key(id.as_str())
-    //             {
-    //                 " [OK]"
-    //             } else {
-    //                 " [MISSING]"
-    //             }
-    //         }
-    //         crate::registry::CapabilityDependency::Provider { id, required: _ } => {
-    //             if ctx.config.providers.contains_key(id.as_str())
-    //                 || Registry::get(&*registry::PROVIDER_REGISTRY, id).is_some()
-    //             {
-    //                 " [OK]"
-    //             } else {
-    //                 " [MISSING]"
-    //             }
-    //         }
-    //         crate::registry::CapabilityDependency::ExternalTool { name: _, check_command } => {
-    //             let parts: Vec<&str> = check_command.split_whitespace().collect();
-    //             let available = if parts.is_empty() {
-    //                 false
-    //             } else {
-    //                 std::process::Command::new(&parts[0])
-    //                     .args(&parts[1..])
-    //                     .output()
-    //                     .map(|o| o.status.success())
-    //                     .unwrap_or(false)
-    //             };
-
-    //             if available {
-    //                 " [OK]"
-    //             } else {
-    //                 println!("       (command: {})", check_command);
-    //                 " [MISSING]"
-    //             }
-    //         }
-    //         crate::registry::CapabilityDependency::Capability { id, required: _ } => {
-    //             if registry::CAPABILITY_REGISTRY.get(id).is_some()
-    //                 || ctx.config.capabilities.contains_key(id.as_str())
-    //             {
-    //                 " [OK]"
-    //             } else {
-    //                 " [MISSING]"
-    //             }
-    //         }
-    //     }
-    // }
 }
 
 /*-- tests --*/
