@@ -88,14 +88,14 @@ struct LaunchWithOutput {
     #[arg(short, long, global = true, default_value = "terminal")]
     output: String,
 
-    /// Tool ID to launch
-    tool_id: String,
+    /// Launcher ID to launch
+    launcher_id: String,
 
     /// Show overlay without launching
     #[arg(long)]
     dry_run: bool,
 
-    /// Additional arguments to pass to the tool
+    /// Additional arguments to pass to the launcher
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
 }
@@ -127,7 +127,7 @@ enum Commands {
     /// Show hardware profile and recommended precision
     Hardware,
 
-    /// Launch a tool with Granite overlay
+    /// Launch a configured launcher with Granite overlay
     Launch(LaunchWithOutput),
 
     /// Show version information
@@ -478,7 +478,7 @@ async fn main() {
                 log_json,
                 log_thread_id,
             );
-            run_launch(&*ctx.ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
+            run_launch(&*ctx.ui, &wrapper.launcher_id, &wrapper.args, wrapper.dry_run)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
