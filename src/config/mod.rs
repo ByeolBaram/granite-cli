@@ -24,7 +24,6 @@ pub struct Config {
     pub launchers: HashMap<String, LauncherConfig>,
     pub routing: RoutingConfig,
     pub shell: ShellConfig,
-    pub tools: HashMap<String, ToolConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -86,17 +85,6 @@ impl Default for ShellConfig {
             export_format: detected.2,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolConfig {
-    pub tool_id: String,
-    pub tool_version: Option<String>,
-    pub provider_id: String,
-    pub model_id: String,
-    pub env_vars: HashMap<String, String>,
-    pub capabilities: Vec<ConfiguredCapability>,
-    pub export_to_shell: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,10 +161,6 @@ impl Config {
         Ok(Self::config_dir()?.join("capabilities"))
     }
 
-    fn tools_dir() -> Result<PathBuf> {
-        Ok(Self::config_dir()?.join("tools"))
-    }
-
     fn launchers_dir() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("launchers"))
     }
@@ -189,7 +173,6 @@ impl Config {
         fs::create_dir_all(Self::models_dir()?)?;
         fs::create_dir_all(Self::providers_dir()?)?;
         fs::create_dir_all(Self::capabilities_dir()?)?;
-        fs::create_dir_all(Self::tools_dir()?)?;
         fs::create_dir_all(Self::launchers_dir()?)?;
         Ok(())
     }
@@ -296,12 +279,6 @@ impl Config {
         for (id, capability) in &self.capabilities {
             let path = Self::capabilities_dir()?.join(format!("{id}.yaml"));
             Self::save_yaml_to_file(&path, capability)?;
-        }
-
-        // Save individual tool files
-        for (id, tool) in &self.tools {
-            let path = Self::tools_dir()?.join(format!("{id}.yaml"));
-            Self::save_yaml_to_file(&path, tool)?;
         }
 
         // Save individual launcher files
@@ -413,37 +390,6 @@ impl Config {
         }
     }
 
-    // -- Tool --
-
-    pub fn get_tool(&self, id: &str) -> Option<&ToolConfig> {
-        self.tools.get(id)
-    }
-
-    pub fn insert_tool(&mut self, id: &str, config: ToolConfig) -> Result<()> {
-        self.tools.insert(id.to_string(), config);
-        self.save()
-    }
-
-    pub fn remove_tool(&mut self, id: &str) -> Result<()> {
-        self.tools.remove(id);
-        let path = Self::tools_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
-            if p.exists() { Some(p) } else { None }
-        });
-        if let Some(p) = path {
-            let _ = fs::remove_file(&p);
-        }
-        self.save()
-    }
-
-    pub fn update_tool(&mut self, id: &str, f: impl FnOnce(&mut ToolConfig)) -> Result<()> {
-        if let Some(tool) = self.tools.get_mut(id) {
-            f(tool);
-            self.save()
-        } else {
-            Ok(())
-        }
-    }
     // -- Launcher --
 
     pub fn get_launcher(&self, id: &str) -> Option<&LauncherConfig> {
