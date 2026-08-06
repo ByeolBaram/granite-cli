@@ -232,7 +232,7 @@ impl Ui for TerminalOutput {
         }
         format!(
             "{}{}{}",
-            SetForegroundColor(Color::DarkGrey),
+            SetForegroundColor(Color::Grey),
             msg,
             ResetColor
         )
