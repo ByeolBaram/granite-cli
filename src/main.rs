@@ -478,9 +478,14 @@ async fn main() {
                 log_json,
                 log_thread_id,
             );
-            run_launch(&*ctx.ui, &wrapper.launcher_id, &wrapper.args, wrapper.dry_run)
-                .await
-                .map_err(|e| ctx.ui.error(&e.to_string()))
+            run_launch(
+                &*ctx.ui,
+                &wrapper.launcher_id,
+                &wrapper.args,
+                wrapper.dry_run,
+            )
+            .await
+            .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
             let _ctx =
