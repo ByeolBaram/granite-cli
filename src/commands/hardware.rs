@@ -44,6 +44,7 @@ impl HardwareCommands {
 mod tests {
     use super::*;
     use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
     fn ctx() -> crate::AppContext {
         crate::AppContext {

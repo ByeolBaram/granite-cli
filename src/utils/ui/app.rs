@@ -725,6 +725,7 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
     fn app() -> App {
         App::new(crate::AppContext {

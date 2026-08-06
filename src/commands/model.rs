@@ -763,6 +763,7 @@ mod tests {
     use crate::providers::{ModelFormat, ProviderType};
     use crate::registry::ConfigConstructable;
     use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
     fn empty_ctx() -> crate::AppContext {
         crate::AppContext {
