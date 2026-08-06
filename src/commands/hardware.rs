@@ -44,11 +44,12 @@ impl HardwareCommands {
 mod tests {
     use super::*;
     use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
     fn ctx() -> crate::AppContext {
         crate::AppContext {
             config: crate::config::Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 

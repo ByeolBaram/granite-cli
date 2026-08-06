@@ -13,6 +13,7 @@ pub mod version {
 pub mod providers;
 
 // Third Party
+use alog::{MessageLevel, alog};
 use clap::{Parser, Subcommand};
 
 // Local
@@ -30,6 +31,19 @@ extern crate paste;
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Default logging level
+    #[arg(short, long, global = true, default_value = "warning", env = "LOG_LEVEL")]
+    log_level: String,
+    /// Per-level overrides
+    #[arg(long, global = true, default_value = "", env = "LOG_FILTERS")]
+    log_filters: String,
+    /// Log with json format
+    #[arg(long, global = true, env = "LOG_JSON")]
+    log_json: bool,
+    /// Include thread ID in log lines
+    #[arg(long, global = true, env = "LOG_THREAD_ID")]
+    log_thread_id: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -294,7 +308,7 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
-    pub ui: Box<dyn Ui>,
+    pub ui: std::sync::Arc<dyn Ui>,
 }
 
 /// Construct the `Ui` backend for `--output`, exiting on an unrecognized
@@ -309,8 +323,40 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
         })
 }
 
-fn construct_context(output: &str) -> AppContext {
+fn construct_context(
+    output: &str,
+    log_level: &str,
+    log_filters: &str,
+    log_json: bool,
+    log_thread_id: bool,
+) -> AppContext {
+    // Set up Ui
     let ui = construct_ui(output);
+    let ui: std::sync::Arc<dyn Ui> = std::sync::Arc::from(ui);
+
+    // Configure logging
+    let formatter_kind = if log_json {
+        alog::FormatterKind::Json
+    } else {
+        alog::FormatterKind::Pretty
+    };
+    let ui_arc_clone = Arc::clone(&ui);
+    let ui_writer = UiWriter {
+        ui: Arc::clone(&ui),
+    };
+    alog::configure(alog::Config {
+        default_level: log_level.parse().unwrap(),
+        filters: alog::Filters::Spec(log_filters.to_string()),
+        formatter: alog::FormatterKind::Custom(Box::new(UiFormatter::new(
+            formatter_kind,
+            ui_arc_clone,
+        ))),
+        writer: alog::Writer::Custom(Box::new(ui_writer)),
+        thread_id: log_thread_id,
+    });
+    alog!("MAIN", MessageLevel::Debug, "Welcome to granite-cli!");
+
+    // Initialize config
     let config = config::Config::new().unwrap_or_else(|e| {
         ui.error(&format!("Failed to load config: {e}"));
         std::process::exit(1);
@@ -318,59 +364,169 @@ fn construct_context(output: &str) -> AppContext {
     AppContext { config, ui }
 }
 
+/*-- private --*/
+
+use std::io::{self, Write};
+use std::sync::Arc;
+
+/// A log sink that routes formatted records through a [`Ui`] backend.
+struct UiWriter {
+    ui: Arc<dyn Ui>,
+}
+
+impl Write for UiWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = std::str::from_utf8(buf).unwrap_or("");
+        // The formatter adds a trailing newline; split and route each line.
+        for line in text.split('\n') {
+            if line.is_empty() {
+                continue;
+            }
+            self.ui.info(line);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Wraps an alog formatter and delegates to it.
+struct UiFormatter {
+    inner: Box<dyn alog::Formatter>,
+    ui: Arc<dyn Ui>,
+}
+
+impl UiFormatter {
+    fn new(kind: alog::FormatterKind, ui: Arc<dyn Ui>) -> Self {
+        Self {
+            inner: match kind {
+                alog::FormatterKind::Pretty => Box::new(alog::PrettyFormatter::default()),
+                alog::FormatterKind::Json => Box::new(alog::JsonFormatter),
+                alog::FormatterKind::Custom(c) => c,
+            },
+            ui,
+        }
+    }
+}
+
+impl alog::Formatter for UiFormatter {
+    fn format(&self, record: &alog::LogRecord<'_>) -> String {
+        let formatted = self.inner.format(record).trim_end_matches('\n').to_string();
+        match record.level {
+            MessageLevel::Fatal | MessageLevel::Error => self.ui.error_mark(&formatted),
+            MessageLevel::Warning => self.ui.warn_mark(&formatted),
+            MessageLevel::Info => formatted,
+            _ => self.ui.detail_mark(&formatted),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    let log_level = cli.log_level.clone();
+    let log_filters = cli.log_filters.clone();
+    let log_json = cli.log_json;
+    let log_thread_id = cli.log_thread_id;
+    let command = cli.command;
 
-    let result: Result<(), ()> = match cli.command {
+    let result: Result<(), ()> = match command {
         Some(Commands::Model(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_model_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Capability(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_capability_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Provider(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_provider_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Hardware) => {
-            let ctx = construct_context("terminal");
+            let ctx = construct_context(
+                "terminal",
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             HardwareCommands::show(&ctx).map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Configure(wrapper)) => {
+            let _ctx =
+                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
             let ui = construct_ui(&wrapper.output);
             run_configure(&*ui, wrapper.args)
                 .await
                 .map_err(|e| ui.error(&e.to_string()))
         }
         Some(Commands::Launcher(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_launcher_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Launch(wrapper)) => {
-            let ctx = construct_context(&wrapper.output);
+            let ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_launch(&*ctx.ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
+            let _ctx =
+                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
             println!("{}", version::version_string());
             Ok(())
         }
         None => {
             // `ctx` (and its `ui`) is consumed by value into the TUI `App`
             // before any error can occur, so it can't be used to report one.
-            let ctx = construct_context("terminal");
+            let ctx = construct_context(
+                "terminal",
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_interactive_tui(ctx)
                 .await
                 .map_err(|e| eprintln!("Error: {e}"))

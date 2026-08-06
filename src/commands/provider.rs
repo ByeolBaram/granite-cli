@@ -250,11 +250,12 @@ mod tests {
     use super::*;
     use crate::config::{Config, ProviderConfig};
     use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 

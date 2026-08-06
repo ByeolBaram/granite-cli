@@ -12,6 +12,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alchemy-logging"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d857cd0568ebd4359b0bd6decf135d23f2d86ef4db3efbdd9b38b9fb6e2d9329"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,6 +827,7 @@ dependencies = [
 name = "granite-cli"
 version = "0.0.0"
 dependencies = [
+ "alchemy-logging",
  "anyhow",
  "async-trait",
  "clap",
