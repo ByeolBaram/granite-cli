@@ -33,16 +33,16 @@ struct Cli {
     command: Option<Commands>,
 
     /// Default logging level
-    #[arg(short, long, global = true, default_value = "warning")]
+    #[arg(short, long, global = true, default_value = "warning", env = "LOG_LEVEL")]
     log_level: String,
     /// Per-level overrides
-    #[arg(long, global = true, default_value = "")]
+    #[arg(long, global = true, default_value = "", env = "LOG_FILTERS")]
     log_filters: String,
     /// Log with json format
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "LOG_JSON")]
     log_json: bool,
     /// Include thread ID in log lines
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "LOG_THREAD_ID")]
     log_thread_id: bool,
 }
 
