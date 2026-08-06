@@ -83,16 +83,6 @@ struct ProviderWithOutput {
 }
 
 #[derive(clap::Args, Debug)]
-struct ConfigureWithOutput {
-    /// Output format: terminal (default), plain, json, markdown
-    #[arg(short, long, global = true, default_value = "terminal")]
-    output: String,
-
-    #[command(flatten)]
-    args: ConfigureArgs,
-}
-
-#[derive(clap::Args, Debug)]
 struct LaunchWithOutput {
     /// Output format: terminal (default), plain, json, markdown
     #[arg(short, long, global = true, default_value = "terminal")]
@@ -136,9 +126,6 @@ enum Commands {
 
     /// Show hardware profile and recommended precision
     Hardware,
-
-    /// Configure tools with Granite capabilities
-    Configure(ConfigureWithOutput),
 
     /// Launch a tool with Granite overlay
     Launch(LaunchWithOutput),
@@ -296,20 +283,6 @@ enum LauncherSubcommands {
         /// Configured launcher instance ID to remove
         launcher_id: String,
     },
-}
-
-#[derive(clap::Args, Debug)]
-struct ConfigureArgs {
-    /// Tool ID to configure
-    tool_id: String,
-
-    /// Export configuration to shell profile
-    #[arg(long)]
-    export: bool,
-
-    /// Reset tool configuration
-    #[arg(long)]
-    reset: bool,
 }
 
 pub struct AppContext {
@@ -485,14 +458,6 @@ async fn main() {
             );
             HardwareCommands::show(&ctx).map_err(|e| ctx.ui.error(&e.to_string()))
         }
-        Some(Commands::Configure(wrapper)) => {
-            let _ctx =
-                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
-            let ui = construct_ui(&wrapper.output);
-            run_configure(&*ui, wrapper.args)
-                .await
-                .map_err(|e| ui.error(&e.to_string()))
-        }
         Some(Commands::Launcher(wrapper)) => {
             let mut ctx = construct_context(
                 &wrapper.output,
@@ -638,11 +603,6 @@ async fn run_provider_command(
         }
         ProviderSubcommands::Remove { provider_id } => ProviderCommands::remove(ctx, &provider_id),
     }
-}
-
-async fn run_configure(ui: &dyn Ui, _args: ConfigureArgs) -> anyhow::Result<()> {
-    ui.info("Tool configuration wizard will be available in Phase 3.");
-    Ok(())
 }
 
 async fn run_launcher_command(
