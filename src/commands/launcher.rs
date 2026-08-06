@@ -1,6 +1,5 @@
 // Third Party
 use anyhow::Result;
-use std::sync::Arc;
 
 // Local
 use crate::launchers::LAUNCHER_REGISTRY;

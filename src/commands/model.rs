@@ -11,7 +11,6 @@ use crate::providers::{
 use crate::utils::Searchable;
 use crate::utils::hardware::detect_hardware;
 use crate::utils::ui::Ui;
-use std::sync::Arc;
 
 /// Compare semantic versions in descending order (higher versions first).
 /// Handles versions like "3.1", "4.0", "3.0.1".

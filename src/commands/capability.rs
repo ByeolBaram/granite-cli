@@ -291,16 +291,16 @@ impl CapabilityCommands {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::config::{CapabilityConfig, Config};
-use crate::utils::ui::base::tests::CaptureUi;
-use std::sync::Arc;
+    use crate::config::{CapabilityConfig, Config};
+    use crate::utils::ui::base::tests::CaptureUi;
+    use std::sync::Arc;
 
-fn test_ctx() -> crate::AppContext {
-    crate::AppContext {
-        config: Config::default(),
-        ui: Arc::new(CaptureUi::default()),
+    fn test_ctx() -> crate::AppContext {
+        crate::AppContext {
+            config: Config::default(),
+            ui: Arc::new(CaptureUi::default()),
+        }
     }
-}
 
     fn ctx_with_capability(id: &str) -> crate::AppContext {
         let mut ctx = test_ctx();

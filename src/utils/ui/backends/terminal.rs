@@ -230,12 +230,7 @@ impl Ui for TerminalOutput {
         if !self.is_tty {
             return PlainOutput.detail_mark(msg);
         }
-        format!(
-            "{}{}{}",
-            SetForegroundColor(Color::Grey),
-            msg,
-            ResetColor
-        )
+        format!("{}{}{}", SetForegroundColor(Color::Grey), msg, ResetColor)
     }
 
     fn pull_start(&self, label: &str, total_bytes: Option<u64>) -> PullHandle {

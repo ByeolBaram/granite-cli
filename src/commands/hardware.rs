@@ -1,7 +1,6 @@
 // Local
 use crate::utils::hardware::detect_hardware;
 use anyhow::Result;
-use std::sync::Arc;
 
 pub struct HardwareCommands;
 

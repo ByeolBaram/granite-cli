@@ -6,7 +6,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
 };
-use std::sync::Arc;
 
 use crate::commands::{HardwareCommands, ModelCommands};
 use crate::dependency::Configured;

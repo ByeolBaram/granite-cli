@@ -1,7 +1,7 @@
 pub mod exports;
 pub mod shell;
 
-use alog::{alog_channel, use_channel, MessageLevel};
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -257,7 +257,11 @@ impl Config {
         let launchers_dir = &Self::launchers_dir()?;
         alog_channel!(MessageLevel::Debug, "Models Dir: {:#?}", models_dir);
         alog_channel!(MessageLevel::Debug, "Providers Dir: {:#?}", providers_dir);
-        alog_channel!(MessageLevel::Debug, "Capabilities Dir: {:#?}", capabilities_dir);
+        alog_channel!(
+            MessageLevel::Debug,
+            "Capabilities Dir: {:#?}",
+            capabilities_dir
+        );
         alog_channel!(MessageLevel::Debug, "Launchers Dir: {:#?}", launchers_dir);
         config.models = Self::load_dir(models_dir, |s| s.to_string())?;
         config.providers = Self::load_dir(providers_dir, |s| s.to_string())?;

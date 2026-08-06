@@ -13,7 +13,7 @@ pub mod version {
 pub mod providers;
 
 // Third Party
-use alog::{alog, MessageLevel};
+use alog::{MessageLevel, alog};
 use clap::{Parser, Subcommand};
 
 // Local
@@ -323,7 +323,13 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
         })
 }
 
-fn construct_context(output: &str, log_level: &str, log_filters: &str, log_json: bool, log_thread_id: bool) -> AppContext {
+fn construct_context(
+    output: &str,
+    log_level: &str,
+    log_filters: &str,
+    log_json: bool,
+    log_thread_id: bool,
+) -> AppContext {
     // Set up Ui
     let ui = construct_ui(output);
     let ui: std::sync::Arc<dyn Ui> = std::sync::Arc::from(ui);
@@ -341,7 +347,10 @@ fn construct_context(output: &str, log_level: &str, log_filters: &str, log_json:
     alog::configure(alog::Config {
         default_level: log_level.parse().unwrap(),
         filters: alog::Filters::Spec(log_filters.to_string()),
-        formatter: alog::FormatterKind::Custom(Box::new(UiFormatter::new(formatter_kind, ui_arc_clone))),
+        formatter: alog::FormatterKind::Custom(Box::new(UiFormatter::new(
+            formatter_kind,
+            ui_arc_clone,
+        ))),
         writer: alog::Writer::Custom(Box::new(ui_writer)),
         thread_id: log_thread_id,
     });
@@ -397,7 +406,7 @@ impl UiFormatter {
                 alog::FormatterKind::Json => Box::new(alog::JsonFormatter),
                 alog::FormatterKind::Custom(c) => c,
             },
-            ui: ui,
+            ui,
         }
     }
 }
@@ -425,55 +434,99 @@ async fn main() {
 
     let result: Result<(), ()> = match command {
         Some(Commands::Model(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output, &log_level, &log_filters, log_json, log_thread_id);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_model_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Capability(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output, &log_level, &log_filters, log_json, log_thread_id);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_capability_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Provider(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output, &log_level, &log_filters, log_json, log_thread_id);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_provider_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Hardware) => {
-            let ctx = construct_context("terminal", &log_level, &log_filters, log_json, log_thread_id);
+            let ctx = construct_context(
+                "terminal",
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             HardwareCommands::show(&ctx).map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Configure(wrapper)) => {
-            let _ctx = construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
+            let _ctx =
+                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
             let ui = construct_ui(&wrapper.output);
             run_configure(&*ui, wrapper.args)
                 .await
                 .map_err(|e| ui.error(&e.to_string()))
         }
         Some(Commands::Launcher(wrapper)) => {
-            let mut ctx = construct_context(&wrapper.output, &log_level, &log_filters, log_json, log_thread_id);
+            let mut ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_launcher_command(&mut ctx, wrapper.subcommand)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Launch(wrapper)) => {
-            let ctx = construct_context(&wrapper.output, &log_level, &log_filters, log_json, log_thread_id);
+            let ctx = construct_context(
+                &wrapper.output,
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_launch(&*ctx.ui, &wrapper.tool_id, &wrapper.args, wrapper.dry_run)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
-            let _ctx = construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
+            let _ctx =
+                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
             println!("{}", version::version_string());
             Ok(())
         }
         None => {
             // `ctx` (and its `ui`) is consumed by value into the TUI `App`
             // before any error can occur, so it can't be used to report one.
-            let ctx = construct_context("terminal", &log_level, &log_filters, log_json, log_thread_id);
+            let ctx = construct_context(
+                "terminal",
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
             run_interactive_tui(ctx)
                 .await
                 .map_err(|e| eprintln!("Error: {e}"))
