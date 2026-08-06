@@ -294,7 +294,7 @@ struct ConfigureArgs {
 
 pub struct AppContext {
     pub config: config::Config,
-    pub ui: Box<dyn Ui>,
+    pub ui: std::sync::Arc<dyn Ui>,
 }
 
 /// Construct the `Ui` backend for `--output`, exiting on an unrecognized
@@ -311,6 +311,7 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
 
 fn construct_context(output: &str) -> AppContext {
     let ui = construct_ui(output);
+    let ui: std::sync::Arc<dyn Ui> = std::sync::Arc::from(ui);
     let config = config::Config::new().unwrap_or_else(|e| {
         ui.error(&format!("Failed to load config: {e}"));
         std::process::exit(1);
