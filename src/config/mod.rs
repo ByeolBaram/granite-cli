@@ -1,11 +1,14 @@
 pub mod exports;
 pub mod shell;
 
+use alog::{alog_channel, use_channel, MessageLevel};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use_channel!("CONF");
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TopLevelConfig {
@@ -237,6 +240,7 @@ impl Config {
 
         // Load top-level config.yaml for shell and routing
         let top_level_path = Self::config_path()?;
+        alog_channel!(MessageLevel::Info, "Config Path: {:#?}", top_level_path);
         if top_level_path.exists() {
             if let Ok(top_config) = Self::load_yaml_from_file::<TopLevelConfig>(&top_level_path) {
                 config.shell = top_config.shell;
@@ -247,11 +251,18 @@ impl Config {
         }
 
         // Load component files
-        config.models = Self::load_dir(&Self::models_dir()?, |s| s.to_string())?;
-        config.providers = Self::load_dir(&Self::providers_dir()?, |s| s.to_string())?;
-        config.capabilities = Self::load_dir(&Self::capabilities_dir()?, |s| s.to_string())?;
-        config.tools = Self::load_dir(&Self::tools_dir()?, |s| s.to_string())?;
-        config.launchers = Self::load_dir(&Self::launchers_dir()?, |s| s.to_string())?;
+        let models_dir = &Self::models_dir()?;
+        let providers_dir = &Self::providers_dir()?;
+        let capabilities_dir = &Self::capabilities_dir()?;
+        let launchers_dir = &Self::launchers_dir()?;
+        alog_channel!(MessageLevel::Debug, "Models Dir: {:#?}", models_dir);
+        alog_channel!(MessageLevel::Debug, "Providers Dir: {:#?}", providers_dir);
+        alog_channel!(MessageLevel::Debug, "Capabilities Dir: {:#?}", capabilities_dir);
+        alog_channel!(MessageLevel::Debug, "Launchers Dir: {:#?}", launchers_dir);
+        config.models = Self::load_dir(models_dir, |s| s.to_string())?;
+        config.providers = Self::load_dir(providers_dir, |s| s.to_string())?;
+        config.capabilities = Self::load_dir(capabilities_dir, |s| s.to_string())?;
+        config.launchers = Self::load_dir(launchers_dir, |s| s.to_string())?;
 
         Ok(config)
     }
