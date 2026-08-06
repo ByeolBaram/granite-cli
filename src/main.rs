@@ -33,7 +33,13 @@ struct Cli {
     command: Option<Commands>,
 
     /// Default logging level
-    #[arg(short, long, global = true, default_value = "warning", env = "LOG_LEVEL")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        default_value = "warning",
+        env = "LOG_LEVEL"
+    )]
     log_level: String,
     /// Per-level overrides
     #[arg(long, global = true, default_value = "", env = "LOG_FILTERS")]
