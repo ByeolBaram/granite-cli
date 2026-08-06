@@ -369,7 +369,7 @@ impl Write for UiWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let text = std::str::from_utf8(buf).unwrap_or("");
         // The formatter adds a trailing newline; split and route each line.
-        for line in text.trim_end_matches('\n').split('\n') {
+        for line in text.split('\n') {
             if line.is_empty() {
                 continue;
             }
@@ -404,7 +404,7 @@ impl UiFormatter {
 
 impl alog::Formatter for UiFormatter {
     fn format(&self, record: &alog::LogRecord<'_>) -> String {
-        let formatted = self.inner.format(record);
+        let formatted = self.inner.format(record).trim_end_matches('\n').to_string();
         match record.level {
             MessageLevel::Fatal | MessageLevel::Error => self.ui.error_mark(&formatted),
             MessageLevel::Warning => self.ui.warn_mark(&formatted),
