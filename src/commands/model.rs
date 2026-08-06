@@ -11,6 +11,7 @@ use crate::providers::{
 use crate::utils::Searchable;
 use crate::utils::hardware::detect_hardware;
 use crate::utils::ui::Ui;
+use std::sync::Arc;
 
 /// Compare semantic versions in descending order (higher versions first).
 /// Handles versions like "3.1", "4.0", "3.0.1".
@@ -767,7 +768,7 @@ mod tests {
     fn empty_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 
@@ -1170,7 +1171,7 @@ mod tests {
     fn ctx_with_config(config: Config) -> crate::AppContext {
         crate::AppContext {
             config,
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 

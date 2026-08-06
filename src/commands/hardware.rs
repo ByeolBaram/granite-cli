@@ -1,6 +1,7 @@
 // Local
 use crate::utils::hardware::detect_hardware;
 use anyhow::Result;
+use std::sync::Arc;
 
 pub struct HardwareCommands;
 
@@ -48,7 +49,7 @@ mod tests {
     fn ctx() -> crate::AppContext {
         crate::AppContext {
             config: crate::config::Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 

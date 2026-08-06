@@ -1,5 +1,6 @@
 // Third Party
 use anyhow::Result;
+use std::sync::Arc;
 
 // Local
 use crate::providers::{HealthStatus, PROVIDER_REGISTRY};
@@ -254,7 +255,7 @@ mod tests {
     fn test_ctx() -> crate::AppContext {
         crate::AppContext {
             config: Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         }
     }
 

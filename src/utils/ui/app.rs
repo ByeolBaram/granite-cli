@@ -6,6 +6,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
 };
+use std::sync::Arc;
 
 use crate::commands::{HardwareCommands, ModelCommands};
 use crate::dependency::Configured;
@@ -729,7 +730,7 @@ mod tests {
     fn app() -> App {
         App::new(crate::AppContext {
             config: Config::default(),
-            ui: Box::new(CaptureUi::default()),
+            ui: Arc::new(CaptureUi::default()),
         })
     }
 
