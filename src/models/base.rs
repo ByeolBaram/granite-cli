@@ -157,6 +157,25 @@ pub trait Model: ConfigConstructable + Send + Sync {
             hardware,
         )
     }
+
+    /// Resolved provider-construction data this instance was built with (see
+    /// `ModelSource::from_config`). `None` for bare catalog instances that
+    /// weren't constructed from a configured model.
+    fn provider_config(&self) -> Option<&crate::config::ProviderConfig> {
+        None
+    }
+
+    /// Construct this model's provider from its resolved `provider_config`.
+    /// Consolidates the provider_id -> Provider construction that used to be
+    /// duplicated at each call site in `commands/model.rs`.
+    fn provider(&self) -> anyhow::Result<Box<dyn crate::providers::Provider>> {
+        let pc = self
+            .provider_config()
+            .ok_or_else(|| anyhow::anyhow!("model has no configured provider"))?;
+        crate::providers::PROVIDER_REGISTRY
+            .construct(&pc.provider_type, &pc.config)
+            .map_err(|e| anyhow::anyhow!(e))
+    }
 }
 
 /*-- Metadata Types ----------------------------------------------------------*/
