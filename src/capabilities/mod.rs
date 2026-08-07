@@ -25,7 +25,10 @@ impl CapabilitySource {
             .values()
             .filter_map(|capability_config| {
                 CAPABILITY_REGISTRY
-                    .construct(&capability_config.capability_type, &capability_config.config)
+                    .construct(
+                        &capability_config.capability_type,
+                        &capability_config.config,
+                    )
                     .ok()
                     .map(|capability| (capability_config.capability_id.clone(), capability))
             })
@@ -55,17 +58,15 @@ impl crate::dependency::Configured<dyn Capability> for CapabilitySource {
 
 mod base;
 pub use base::{
-    Binding, BindingRequest, BindingType, Capability, CapabilityMetadata, Dependency, EnvBinding,
-    LaunchContext,
+    AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
+    CapabilityMetadata, Dependency, EnvBinding, LaunchContext,
 };
 
 mod requirement;
-pub use requirement::{
-    CapabilityRequirement, ModelRequirement, ProviderRequirement, ShellToolRequirement,
-};
+pub use requirement::{ModelRequirement, ProviderRequirement, ShellCommandRequirement};
 
 mod agent_model;
-pub use agent_model::{AgentModelBinding, AgentModelCapability, AgentModelCapabilityConfig};
+pub use agent_model::{AgentModelCapability, AgentModelCapabilityConfig};
 
 /*-- tests ---------------------------------------------------------------------*/
 

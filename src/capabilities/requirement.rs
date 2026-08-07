@@ -1,8 +1,7 @@
 //! Concrete `Requirement`/`DependsOn` pairings that let a `Capability`
-//! declare what it needs from the model, provider, capability, and
-//! shell-tool worlds, plugging into the generic `dependency` module.
+//! declare what it needs from the model, provider, and shell-command
+//! worlds, plugging into the generic `dependency` module.
 
-use crate::capabilities::base::{BindingType, Capability, CapabilityMetadata};
 use crate::dependency::{DependsOn, Requirement};
 use crate::models::{Model, ModelFunction, ModelMetadata, ModelType};
 use crate::providers::{ApiEndpoint, ApiType, Provider, ProviderMetadata};
@@ -163,55 +162,25 @@ impl DependsOn<dyn Provider> for ProviderRequirement {
     }
 }
 
-/*-- ShellToolRequirement -------------------------------------------------------*/
+/*-- ShellCommandRequirement -----------------------------------------------------*/
 
-/// What a capability needs from the host shell -- an external tool reachable
-/// on PATH (or at a user-configured explicit path). There is no catalog of
-/// shell tools, so this is a standalone pass/fail check rather than a
-/// `Requirement<U: Catalogued>` impl -- `admits_type`/`admits_instance` would
-/// be vacuous with nothing to narrow.
+/// What a capability needs from the host shell -- an external command
+/// reachable on PATH (or at a user-configured explicit path). There is no
+/// catalog of shell commands, so this is a standalone pass/fail check rather
+/// than a `Requirement<U: Catalogued>` impl -- `admits_type`/`admits_instance`
+/// would be vacuous with nothing to narrow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShellToolRequirement {
+pub struct ShellCommandRequirement {
     pub command: String,
 }
 
-impl ShellToolRequirement {
+impl ShellCommandRequirement {
     pub fn resolve(&self) -> anyhow::Result<std::path::PathBuf> {
         crate::utils::resolve_shell_command(&None, &self.command)
     }
 
     pub fn is_satisfied(&self) -> bool {
         self.resolve().is_ok()
-    }
-}
-
-/*-- CapabilityRequirement ------------------------------------------------------*/
-
-/// What a capability needs from another `Capability` -- the set of binding
-/// types it must expose. AND logic: must expose all listed.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CapabilityRequirement {
-    pub binding_types: Vec<BindingType>,
-}
-
-impl Requirement<dyn Capability> for CapabilityRequirement {
-    fn admits_type(&self, metadata: &CapabilityMetadata) -> bool {
-        self.binding_types
-            .iter()
-            .all(|bt| metadata.binding_types.contains(bt))
-    }
-
-    fn admits_instance(&self, instance: &dyn Capability) -> bool {
-        let binding_types = instance.binding_types();
-        self.binding_types.iter().all(|bt| binding_types.contains(bt))
-    }
-}
-
-impl DependsOn<dyn Capability> for CapabilityRequirement {
-    type Requirement = Self;
-
-    fn requirement(&self) -> Self {
-        self.clone()
     }
 }
 
@@ -263,7 +232,14 @@ mod tests {
     #[test]
     fn model_requirement_wildcard_admits_anything() {
         let req = ModelRequirement::default();
-        let meta = model_metadata("Granite", ModelType::Text, 4096, 8_000_000_000, vec![], vec![]);
+        let meta = model_metadata(
+            "Granite",
+            ModelType::Text,
+            4096,
+            8_000_000_000,
+            vec![],
+            vec![],
+        );
         assert!(req.admits_type(&meta));
     }
 
@@ -273,7 +249,14 @@ mod tests {
             family: Some("Granite".to_string()),
             ..Default::default()
         };
-        let meta = model_metadata("Llama", ModelType::Text, 4096, 8_000_000_000, vec![], vec![]);
+        let meta = model_metadata(
+            "Llama",
+            ModelType::Text,
+            4096,
+            8_000_000_000,
+            vec![],
+            vec![],
+        );
         assert!(!req.admits_type(&meta));
     }
 
@@ -283,7 +266,14 @@ mod tests {
             min_context_length: Some(8192),
             ..Default::default()
         };
-        let meta = model_metadata("Granite", ModelType::Text, 4096, 8_000_000_000, vec![], vec![]);
+        let meta = model_metadata(
+            "Granite",
+            ModelType::Text,
+            4096,
+            8_000_000_000,
+            vec![],
+            vec![],
+        );
         assert!(!req.admits_type(&meta));
     }
 
@@ -381,52 +371,18 @@ mod tests {
     }
 
     #[test]
-    fn shell_tool_requirement_detects_missing_binary() {
-        let req = ShellToolRequirement {
+    fn shell_command_requirement_detects_missing_binary() {
+        let req = ShellCommandRequirement {
             command: "this-binary-absolutely-does-not-exist-9x7z".to_string(),
         };
         assert!(!req.is_satisfied());
     }
 
     #[test]
-    fn shell_tool_requirement_detects_present_binary() {
-        let req = ShellToolRequirement {
+    fn shell_command_requirement_detects_present_binary() {
+        let req = ShellCommandRequirement {
             command: "ls".to_string(),
         };
         assert!(req.is_satisfied());
-    }
-
-    #[test]
-    fn capability_requirement_wildcard_admits_anything() {
-        let req = CapabilityRequirement::default();
-        let meta = CapabilityMetadata {
-            name: "Test".to_string(),
-            description: "test".to_string(),
-            dependencies: vec![],
-            tags: vec![],
-            binding_types: std::collections::HashSet::new(),
-        };
-        assert!(req.admits_type(&meta));
-    }
-
-    #[test]
-    fn capability_requirement_requires_all_binding_types() {
-        let req = CapabilityRequirement {
-            binding_types: vec![BindingType::AgentModel],
-        };
-        let meta = CapabilityMetadata {
-            name: "Test".to_string(),
-            description: "test".to_string(),
-            dependencies: vec![],
-            tags: vec![],
-            binding_types: std::collections::HashSet::new(),
-        };
-        assert!(!req.admits_type(&meta));
-
-        let meta_matching = CapabilityMetadata {
-            binding_types: std::collections::HashSet::from([BindingType::AgentModel]),
-            ..meta
-        };
-        assert!(req.admits_type(&meta_matching));
     }
 }

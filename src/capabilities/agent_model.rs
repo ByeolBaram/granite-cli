@@ -3,29 +3,17 @@
 //! an agent's environment.
 
 use crate::capabilities::base::{
-    Binding, BindingRequest, BindingType, Capability, CapabilityMetadata, Dependency,
-    HasCapabilityMetadata,
+    AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
+    CapabilityMetadata, Dependency, HasCapabilityMetadata,
 };
-use crate::capabilities::requirement::{ModelRequirement, ProviderRequirement};
+use crate::capabilities::requirement::ModelRequirement;
 use crate::dependency::Configured;
 use crate::models::{Model, ModelFunction};
-use crate::providers::{ApiType, Provider};
-use crate::registry::{ConfigConstructable, Secret};
+use crate::providers::Provider;
+use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-
-/*-- AgentModelBinding -----------------------------------------------------------*/
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentModelBinding {
-    pub api_type: ApiType,
-    pub base_url: String,
-    pub model_name: String,
-    pub endpoint_path: String,
-    pub api_key: Option<Secret>,
-    pub verify_ssl: bool,
-}
 
 /*-- AgentModelCapabilityConfig ---------------------------------------------------*/
 
@@ -70,24 +58,14 @@ impl Capability for AgentModelCapability {
 
     fn dependencies(&self) -> Vec<Dependency> {
         let function = self.function();
-        vec![
-            Dependency::Provider {
-                requirement: ProviderRequirement {
-                    functions: vec![function.clone()],
-                    ..Default::default()
-                },
-                resolved_id: Some(self.config.provider_id.clone()),
-                required: true,
+        vec![Dependency::Model {
+            requirement: ModelRequirement {
+                supported_functions: vec![function],
+                ..Default::default()
             },
-            Dependency::Model {
-                requirement: ModelRequirement {
-                    supported_functions: vec![function],
-                    ..Default::default()
-                },
-                resolved_id: Some(self.config.model_id.clone()),
-                required: true,
-            },
-        ]
+            resolved_id: Some(self.config.model_id.clone()),
+            required: true,
+        }]
     }
 
     fn binding_types(&self) -> HashSet<BindingType> {
@@ -100,7 +78,7 @@ impl Capability for AgentModelCapability {
         providers: &(dyn Configured<dyn Provider> + Sync),
         models: &(dyn Configured<dyn Model> + Sync),
     ) -> anyhow::Result<Binding> {
-        let BindingRequest::AgentModel { api_type } = request;
+        let BindingRequest::AgentModel(AgentModelBindingRequest { api_type }) = request;
         let provider_id = self.config.provider_id.clone();
         let model_id = self.config.model_id.clone();
 
@@ -134,7 +112,9 @@ impl Capability for AgentModelCapability {
             .into_iter()
             .find(|e| e.api_type() == api_type)
             .ok_or_else(|| {
-                anyhow::anyhow!("provider '{provider_id}' has no {api_type} endpoint for {function}")
+                anyhow::anyhow!(
+                    "provider '{provider_id}' has no {api_type} endpoint for {function}"
+                )
             })?;
 
         Ok(Binding::AgentModel(AgentModelBinding {
@@ -153,20 +133,13 @@ impl HasCapabilityMetadata for AgentModelCapability {
         CapabilityMetadata {
             name: "Agent Model Binding".to_string(),
             description: "Surfaces a configured model's connection details (base URL, model name, auth, TLS) to a launched agent.".to_string(),
-            dependencies: vec![
-                Dependency::Provider {
-                    requirement: ProviderRequirement::default(),
-                    resolved_id: None,
-                    required: true,
-                },
-                Dependency::Model {
-                    requirement: ModelRequirement::default(),
-                    resolved_id: None,
-                    required: true,
-                },
-            ],
+            dependencies: vec![Dependency::Model {
+                requirement: ModelRequirement::default(),
+                resolved_id: None,
+                required: true,
+            }],
             tags: vec!["agent".to_string(), "model".to_string()],
-            binding_types: HashSet::from([BindingType::AgentModel]),
+            supported_binding_types: HashSet::from([BindingType::AgentModel]),
         }
     }
 
@@ -184,7 +157,8 @@ impl HasCapabilityMetadata for AgentModelCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::{ApiEndpoint, HealthStatus, ModelFormat, ProviderError};
+    use crate::providers::{ApiEndpoint, ApiType, HealthStatus, ModelFormat, ProviderError};
+    use crate::registry::Secret;
     use std::collections::HashMap;
 
     struct FakeProvider {
@@ -348,7 +322,13 @@ mod tests {
         });
 
         let binding = cap
-            .bind(BindingRequest::AgentModel { api_type: ApiType::OpenAI }, &providers, &models)
+            .bind(
+                BindingRequest::AgentModel(AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                }),
+                &providers,
+                &models,
+            )
             .await
             .unwrap();
 
@@ -369,7 +349,13 @@ mod tests {
         });
 
         let err = cap
-            .bind(BindingRequest::AgentModel { api_type: ApiType::OpenAI }, &providers, &models)
+            .bind(
+                BindingRequest::AgentModel(AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                }),
+                &providers,
+                &models,
+            )
             .await
             .unwrap_err();
         assert!(err.to_string().contains("not configured"));
@@ -392,7 +378,13 @@ mod tests {
         });
 
         let err = cap
-            .bind(BindingRequest::AgentModel { api_type: ApiType::OpenAI }, &providers, &models)
+            .bind(
+                BindingRequest::AgentModel(AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                }),
+                &providers,
+                &models,
+            )
             .await
             .unwrap_err();
         assert!(err.to_string().contains("does not support"));
@@ -415,7 +407,13 @@ mod tests {
         });
 
         let err = cap
-            .bind(BindingRequest::AgentModel { api_type: ApiType::OpenAI }, &providers, &models)
+            .bind(
+                BindingRequest::AgentModel(AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                }),
+                &providers,
+                &models,
+            )
             .await
             .unwrap_err();
         assert!(err.to_string().contains("does not support"));
@@ -438,7 +436,13 @@ mod tests {
         });
 
         let err = cap
-            .bind(BindingRequest::AgentModel { api_type: ApiType::OpenAI }, &providers, &models)
+            .bind(
+                BindingRequest::AgentModel(AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                }),
+                &providers,
+                &models,
+            )
             .await
             .unwrap_err();
         assert!(err.to_string().contains("no"));
@@ -447,18 +451,17 @@ mod tests {
     #[test]
     fn binding_types_reports_agent_model() {
         let cap = capability();
-        assert_eq!(cap.binding_types(), HashSet::from([BindingType::AgentModel]));
+        assert_eq!(
+            cap.binding_types(),
+            HashSet::from([BindingType::AgentModel])
+        );
     }
 
     #[test]
-    fn dependencies_carry_resolved_ids() {
+    fn dependencies_carry_resolved_model_id() {
         let cap = capability();
         let deps = cap.dependencies();
-        assert_eq!(deps.len(), 2);
-        assert!(deps.iter().any(|d| matches!(
-            d,
-            Dependency::Provider { resolved_id: Some(id), .. } if id == "my-provider"
-        )));
+        assert_eq!(deps.len(), 1);
         assert!(deps.iter().any(|d| matches!(
             d,
             Dependency::Model { resolved_id: Some(id), .. } if id == "my-model"
@@ -466,16 +469,18 @@ mod tests {
     }
 
     #[test]
-    fn metadata_reports_binding_types_and_wildcard_dependencies() {
+    fn metadata_reports_supported_binding_types_and_wildcard_dependency() {
         let meta = AgentModelCapability::metadata();
-        assert_eq!(meta.binding_types, HashSet::from([BindingType::AgentModel]));
+        assert_eq!(
+            meta.supported_binding_types,
+            HashSet::from([BindingType::AgentModel])
+        );
         assert!(meta.dependencies.iter().any(|d| matches!(
             d,
-            Dependency::Provider { resolved_id: None, .. }
-        )));
-        assert!(meta.dependencies.iter().any(|d| matches!(
-            d,
-            Dependency::Model { resolved_id: None, .. }
+            Dependency::Model {
+                resolved_id: None,
+                ..
+            }
         )));
     }
 }

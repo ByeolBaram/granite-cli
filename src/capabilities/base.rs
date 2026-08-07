@@ -1,10 +1,10 @@
 use crate::capabilities::requirement::{
-    CapabilityRequirement, ModelRequirement, ProviderRequirement, ShellToolRequirement,
+    ModelRequirement, ProviderRequirement, ShellCommandRequirement,
 };
 use crate::dependency::Configured;
 use crate::models::Model;
-use crate::providers::Provider;
-use crate::registry::ConfigConstructable;
+use crate::providers::{ApiType, Provider};
+use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -15,42 +15,92 @@ pub use crate::launchers::{EnvBinding, LaunchContext};
 
 /*-- BindingType / BindingRequest / Binding -----------------------------------*/
 
-/// Which binding surface a `Capability` can fill. Payload-free and hashable
-/// so a `Launcher` can declare `HashSet<BindingType>` for the surfaces it
-/// knows how to consume.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BindingType {
-    AgentModel,
-}
-
-impl std::fmt::Display for BindingType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BindingType::AgentModel => write!(f, "Agent Model"),
+/// Declares one binding surface a `Capability` can fill, together with the
+/// request payload it takes and the result payload it produces. Expands into
+/// matching variants of `BindingType` (payload-free, hashable), `BindingRequest`,
+/// and `Binding` -- one macro invocation site, so a new binding surface can't
+/// be added to one enum without the matching variant in the other two.
+macro_rules! define_bindings {
+    ($(
+        $variant:ident {
+            request: $request_ty:ty,
+            result: $result_ty:ty,
+            display: $display:literal,
         }
-    }
+    ),+ $(,)?) => {
+        /// Which binding surface a `Capability` can fill. Payload-free and
+        /// hashable so a `Launcher` can declare `HashSet<BindingType>` for
+        /// the surfaces it knows how to consume.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        pub enum BindingType {
+            $($variant),+
+        }
+
+        impl std::fmt::Display for BindingType {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(BindingType::$variant => write!(f, $display),)+
+                }
+            }
+        }
+
+        /// A request for a capability to produce a `Binding` for a specific
+        /// binding surface, parameterized by whatever detail that surface
+        /// needs (e.g. which `ApiType` the launcher's environment expects).
+        #[derive(Debug, Clone)]
+        pub enum BindingRequest {
+            $($variant($request_ty)),+
+        }
+
+        impl BindingRequest {
+            pub fn binding_type(&self) -> BindingType {
+                match self {
+                    $(BindingRequest::$variant(_) => BindingType::$variant,)+
+                }
+            }
+        }
+
+        /// The result of a successful `Capability::bind` call.
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Binding {
+            $($variant($result_ty)),+
+        }
+
+        impl Binding {
+            pub fn binding_type(&self) -> BindingType {
+                match self {
+                    $(Binding::$variant(_) => BindingType::$variant,)+
+                }
+            }
+        }
+    };
 }
 
-/// A request for a capability to produce a `Binding` for a specific binding
-/// surface, parameterized by whatever detail that surface needs (e.g. which
-/// `ApiType` the launcher's environment expects).
+/// Request payload for `BindingType::AgentModel` -- which `ApiType` the
+/// launcher's environment expects.
 #[derive(Debug, Clone)]
-pub enum BindingRequest {
-    AgentModel { api_type: crate::providers::ApiType },
+pub struct AgentModelBindingRequest {
+    pub api_type: ApiType,
 }
 
-impl BindingRequest {
-    pub fn binding_type(&self) -> BindingType {
-        match self {
-            BindingRequest::AgentModel { .. } => BindingType::AgentModel,
-        }
-    }
-}
-
-/// The result of a successful `Capability::bind` call.
+/// Result payload for `BindingType::AgentModel`: a configured model's
+/// connection details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Binding {
-    AgentModel(crate::capabilities::agent_model::AgentModelBinding),
+pub struct AgentModelBinding {
+    pub api_type: ApiType,
+    pub base_url: String,
+    pub model_name: String,
+    pub endpoint_path: String,
+    pub api_key: Option<Secret>,
+    pub verify_ssl: bool,
+}
+
+define_bindings! {
+    AgentModel {
+        request: AgentModelBindingRequest,
+        result: AgentModelBinding,
+        display: "Agent Model",
+    },
 }
 
 /*-- Capability Trait ----------------------------------------------------------*/
@@ -73,15 +123,9 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     async fn bind(
         &self,
         request: BindingRequest,
-        _providers: &(dyn Configured<dyn Provider> + Sync),
-        _models: &(dyn Configured<dyn Model> + Sync),
-    ) -> anyhow::Result<Binding> {
-        anyhow::bail!(
-            "capability '{}' does not support binding type {}",
-            self.name(),
-            request.binding_type()
-        )
-    }
+        providers: &(dyn Configured<dyn Provider> + Sync),
+        models: &(dyn Configured<dyn Model> + Sync),
+    ) -> anyhow::Result<Binding>;
 
     // Execution hooks (all optional with NoOp defaults)
     async fn on_setup(&self) -> anyhow::Result<()> {
@@ -110,7 +154,10 @@ pub struct CapabilityMetadata {
     pub description: String,
     pub dependencies: Vec<Dependency>,
     pub tags: Vec<String>,
-    pub binding_types: HashSet<BindingType>,
+    /// Binding surfaces this capability *type* can support (superset); a
+    /// concrete instance may choose to support only a subset via
+    /// `Capability::binding_types`.
+    pub supported_binding_types: HashSet<BindingType>,
 }
 
 impl std::fmt::Display for CapabilityMetadata {
@@ -121,10 +168,10 @@ impl std::fmt::Display for CapabilityMetadata {
 
 /*-- Supporting Types --------------------------------------------------------*/
 
-/// A capability's declared dependency on a model, provider, external shell
-/// tool, or another capability. `resolved_id` is `None` at the type level
-/// (catalog display, before any instance is configured) and `Some(id)` once
-/// a concrete instance has picked a specific dependency.
+/// A capability's declared dependency on a model, provider, or external shell
+/// command. `resolved_id` is `None` at the type level (catalog display,
+/// before any instance is configured) and `Some(id)` once a concrete
+/// instance has picked a specific dependency.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Dependency {
     Model {
@@ -138,12 +185,7 @@ pub enum Dependency {
         required: bool,
     },
     ExternalTool {
-        requirement: ShellToolRequirement,
-        required: bool,
-    },
-    Capability {
-        requirement: CapabilityRequirement,
-        resolved_id: Option<String>,
+        requirement: ShellCommandRequirement,
         required: bool,
     },
 }
@@ -183,18 +225,6 @@ impl std::fmt::Display for Dependency {
                     f,
                     "ExternalTool: {}{}",
                     requirement.command,
-                    if *required { " (required)" } else { "" }
-                )
-            }
-            Dependency::Capability {
-                resolved_id,
-                required,
-                ..
-            } => {
-                write!(
-                    f,
-                    "Capability: {}{}",
-                    resolved_id.as_deref().unwrap_or("<unresolved>"),
                     if *required { " (required)" } else { "" }
                 )
             }
