@@ -125,6 +125,11 @@ impl LlamaCppProvider {
             vec![ApiEndpoint::OpenAIEmbeddings],
         );
 
+        map.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
+        );
+
         map
     }
 

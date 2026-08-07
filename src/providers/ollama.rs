@@ -111,6 +111,11 @@ impl OllamaProvider {
             vec![ApiEndpoint::OpenAIEmbeddings, ApiEndpoint::OllamaEmbeddings],
         );
 
+        map.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
+        );
+
         map
     }
 }
