@@ -161,7 +161,9 @@ impl CapabilityCommands {
         let mut schema = CAPABILITY_REGISTRY
             .config_schema(capability_type)
             .ok_or_else(|| {
-                anyhow::anyhow!("No config schema registered for capability type '{capability_type}'")
+                anyhow::anyhow!(
+                    "No config schema registered for capability type '{capability_type}'"
+                )
             })?;
         let defaults = existing_config
             .map(|c| c.config.clone())

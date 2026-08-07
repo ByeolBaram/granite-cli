@@ -157,7 +157,9 @@ impl HasCapabilityMetadata for AgentModelCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::{ApiEndpoint, ApiType, HealthStatus, ModelFormat, Provider, ProviderError};
+    use crate::providers::{
+        ApiEndpoint, ApiType, HealthStatus, ModelFormat, Provider, ProviderError,
+    };
     use crate::registry::Secret;
     use std::collections::HashMap;
 
@@ -291,7 +293,11 @@ mod tests {
         }
     }
 
-    fn ok_provider(api_types: Vec<ApiType>, function: ModelFunction, endpoint: ApiEndpoint) -> Result<FakeProvider, String> {
+    fn ok_provider(
+        api_types: Vec<ApiType>,
+        function: ModelFunction,
+        endpoint: ApiEndpoint,
+    ) -> Result<FakeProvider, String> {
         let mut endpoints = HashMap::new();
         endpoints.insert(function, vec![endpoint]);
         Ok(FakeProvider {

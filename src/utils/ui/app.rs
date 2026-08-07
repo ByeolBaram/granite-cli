@@ -647,8 +647,11 @@ impl App {
                         if l.supported_capabilities.is_empty() {
                             "(none yet)".to_string()
                         } else {
-                            let mut caps: Vec<String> =
-                                l.supported_capabilities.iter().map(|c| c.to_string()).collect();
+                            let mut caps: Vec<String> = l
+                                .supported_capabilities
+                                .iter()
+                                .map(|c| c.to_string())
+                                .collect();
                             caps.sort();
                             caps.join(", ")
                         }
