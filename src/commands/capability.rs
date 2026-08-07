@@ -2,8 +2,10 @@
 use anyhow::Result;
 
 // Local
-use crate::capabilities::CAPABILITY_REGISTRY;
+use crate::capabilities::{CAPABILITY_REGISTRY, Dependency, ModelRequirement, ProviderRequirement};
+use crate::dependency::{self, Configured};
 use crate::utils::prompt_from_schema;
+use crate::utils::ui::Ui;
 
 pub struct CapabilityCommands;
 
@@ -156,7 +158,7 @@ impl CapabilityCommands {
             }
         }
 
-        let schema = CAPABILITY_REGISTRY
+        let mut schema = CAPABILITY_REGISTRY
             .config_schema(capability_type)
             .ok_or_else(|| {
                 anyhow::anyhow!("No config schema registered for capability type '{capability_type}'")
@@ -166,7 +168,76 @@ impl CapabilityCommands {
             .or_else(|| CAPABILITY_REGISTRY.default_config(capability_type))
             .unwrap_or_else(|| serde_json::json!({}));
 
-        let config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
+        // Phase A: prompt for everything except dependency-resolved fields --
+        // those are picked from configured instances below, never free-typed.
+        let dependency_keys: std::collections::HashSet<&str> = cap_def
+            .dependencies
+            .iter()
+            .filter_map(|d| match d {
+                Dependency::Model { config_key, .. } | Dependency::Provider { config_key, .. } => {
+                    Some(config_key.as_str())
+                }
+                Dependency::ExternalTool { .. } => None,
+            })
+            .collect();
+        if let Some(serde_json::Value::Object(props)) = schema.get_mut("properties") {
+            props.retain(|k, _| !dependency_keys.contains(k.as_str()));
+        }
+        if let Some(serde_json::Value::Array(req)) = schema.get_mut("required") {
+            req.retain(|v| !v.as_str().is_some_and(|s| dependency_keys.contains(s)));
+        }
+        let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
+
+        // Phase B: build a preview instance from what's been collected so
+        // far, then resolve its actual (possibly narrowed) dependencies
+        // against currently configured models/providers.
+        let preview = CAPABILITY_REGISTRY
+            .construct(capability_type, &config)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        for dep in preview.dependencies() {
+            match dep {
+                Dependency::Model {
+                    config_key,
+                    requirement,
+                    required,
+                    ..
+                } => {
+                    if let Some(id) = Self::resolve_model_dependency(ctx, &requirement, required)?
+                    {
+                        config
+                            .as_object_mut()
+                            .unwrap()
+                            .insert(config_key, serde_json::Value::String(id));
+                    }
+                }
+                Dependency::Provider {
+                    config_key,
+                    requirement,
+                    required,
+                    ..
+                } => {
+                    if let Some(id) =
+                        Self::resolve_provider_dependency(ctx, &requirement, required)?
+                    {
+                        config
+                            .as_object_mut()
+                            .unwrap()
+                            .insert(config_key, serde_json::Value::String(id));
+                    }
+                }
+                Dependency::ExternalTool {
+                    requirement,
+                    required,
+                } => {
+                    if required && !requirement.is_satisfied() {
+                        anyhow::bail!(
+                            "Required external command '{}' is not available.",
+                            requirement.command
+                        );
+                    }
+                }
+            }
+        }
 
         let capability_config = crate::config::CapabilityConfig {
             capability_id: instance_id.clone(),
@@ -187,6 +258,73 @@ impl CapabilityCommands {
         ));
 
         Ok(())
+    }
+
+    /// Resolve a capability's model dependency against currently configured
+    /// models, narrowed to those whose attached provider also supports every
+    /// function the requirement asks for. Returns the chosen model id, or
+    /// `None` if the dependency isn't required and nothing satisfies it.
+    fn resolve_model_dependency(
+        ctx: &crate::AppContext,
+        requirement: &ModelRequirement,
+        required: bool,
+    ) -> Result<Option<String>> {
+        let source = crate::models::ModelSource::from_config(&ctx.config);
+        let resolution = dependency::resolve(requirement, &source);
+        let instances = source.instances();
+        let usable: Vec<String> = resolution
+            .existing_instances
+            .into_iter()
+            .filter(|id| {
+                instances
+                    .iter()
+                    .find(|(i, _)| i == id)
+                    .is_some_and(|(_, model)| match model.provider() {
+                        Ok(p) => requirement
+                            .supported_functions
+                            .iter()
+                            .all(|f| p.supports_function(f)),
+                        Err(_) => false,
+                    })
+            })
+            .collect();
+        Self::pick_dependency(&*ctx.ui, &usable, required, "model")
+    }
+
+    /// Resolve a capability's provider dependency against currently
+    /// configured providers. Returns the chosen provider id, or `None` if
+    /// the dependency isn't required and nothing satisfies it.
+    fn resolve_provider_dependency(
+        ctx: &crate::AppContext,
+        requirement: &ProviderRequirement,
+        required: bool,
+    ) -> Result<Option<String>> {
+        let source = crate::providers::ProviderSource::from_config(&ctx.config);
+        let resolution = dependency::resolve(requirement, &source);
+        Self::pick_dependency(&*ctx.ui, &resolution.existing_instances, required, "provider")
+    }
+
+    /// Pick one candidate id: error if required and none exist, auto-select
+    /// the sole candidate, or prompt when there's a choice.
+    fn pick_dependency(
+        ui: &dyn Ui,
+        candidates: &[String],
+        required: bool,
+        what: &str,
+    ) -> Result<Option<String>> {
+        if candidates.is_empty() {
+            if required {
+                anyhow::bail!(
+                    "No configured {what} satisfies this capability's requirements yet. Configure one first."
+                );
+            }
+            return Ok(None);
+        }
+        if candidates.len() == 1 {
+            return Ok(Some(candidates[0].clone()));
+        }
+        let index = ui.select(&format!("Select a {what} for this capability:"), candidates, 0)?;
+        Ok(Some(candidates[index].clone()))
     }
 
     /// Remove a configured capability instance by ID.
@@ -347,20 +485,84 @@ mod tests {
         assert!(result.is_err());
     }
 
+    fn ctx_with_chat_capable_model() -> crate::AppContext {
+        use crate::config::{ModelConfig, ProviderConfig};
+
+        let mut ctx = test_ctx();
+        ctx.config.providers.insert(
+            "ollama".to_string(),
+            ProviderConfig {
+                provider_id: "ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({}),
+            },
+        );
+        ctx.config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: Some("ollama".to_string()),
+                variant: None,
+            },
+        );
+        ctx
+    }
+
     #[tokio::test]
     async fn setup_agent_model_persists_config() {
-        let mut ctx = test_ctx();
+        let mut ctx = ctx_with_chat_capable_model();
         // CaptureUi's text() echoes back the default when prompted; here we
-        // pass an explicit instance id so no prompt is needed.
+        // pass an explicit instance id so no prompt is needed. Exactly one
+        // configured model satisfies the Chat requirement, so it's picked
+        // automatically without a select prompt.
         let result = CapabilityCommands::setup(&mut ctx, "agent-model", Some("chat")).await;
         assert!(result.is_ok());
-        assert!(ctx.config.get_capability("chat").is_some());
+        let configured = ctx.config.get_capability("chat").unwrap();
+        assert_eq!(
+            configured.config.get("model_id").and_then(|v| v.as_str()),
+            Some("granite-3.1-8b-instruct")
+        );
         let infos = infos!(ctx);
         assert!(
             infos
                 .iter()
                 .any(|m| m.contains("chat") && m.contains("configured successfully"))
         );
+    }
+
+    #[tokio::test]
+    async fn setup_agent_model_fails_when_no_model_configured() {
+        let mut ctx = test_ctx();
+        let result = CapabilityCommands::setup(&mut ctx, "agent-model", Some("chat")).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No configured model satisfies")
+        );
+        assert!(ctx.config.get_capability("chat").is_none());
+    }
+
+    #[tokio::test]
+    async fn setup_agent_model_excludes_providerless_model() {
+        use crate::config::ModelConfig;
+
+        let mut ctx = test_ctx();
+        // Configured model with no provider_id -- Model::provider() errs, so
+        // it must not be offered as a candidate.
+        ctx.config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
+
+        let result = CapabilityCommands::setup(&mut ctx, "agent-model", Some("chat")).await;
+        assert!(result.is_err());
+        assert!(ctx.config.get_capability("chat").is_none());
     }
 
     // -- remove -----------------------------------------------------------------
