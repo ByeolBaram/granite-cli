@@ -2,10 +2,10 @@
 use anyhow::Result;
 
 // Local
+use super::{ModelCommands, ProviderCommands};
 use crate::capabilities::{CAPABILITY_REGISTRY, Dependency, ModelRequirement, ProviderRequirement};
 use crate::dependency::{self, Configured};
 use crate::utils::prompt_from_schema;
-use crate::utils::ui::Ui;
 
 pub struct CapabilityCommands;
 
@@ -202,7 +202,8 @@ impl CapabilityCommands {
                     required,
                     ..
                 } => {
-                    if let Some(id) = Self::resolve_model_dependency(ctx, &requirement, required)?
+                    if let Some(id) =
+                        Self::resolve_model_dependency(ctx, &requirement, required).await?
                     {
                         config
                             .as_object_mut()
@@ -217,7 +218,7 @@ impl CapabilityCommands {
                     ..
                 } => {
                     if let Some(id) =
-                        Self::resolve_provider_dependency(ctx, &requirement, required)?
+                        Self::resolve_provider_dependency(ctx, &requirement, required).await?
                     {
                         config
                             .as_object_mut()
@@ -262,17 +263,86 @@ impl CapabilityCommands {
 
     /// Resolve a capability's model dependency against currently configured
     /// models, narrowed to those whose attached provider also supports every
-    /// function the requirement asks for. Returns the chosen model id, or
-    /// `None` if the dependency isn't required and nothing satisfies it.
-    fn resolve_model_dependency(
-        ctx: &crate::AppContext,
+    /// function the requirement asks for. Always offers a "configure a new
+    /// model" option alongside any usable existing instances -- a freshly
+    /// configured model is re-checked against the same narrowing before
+    /// being accepted, since the user could configure one whose provider
+    /// doesn't actually satisfy the requirement. Returns the chosen model
+    /// id, or `None` if the dependency isn't required and nothing (existing
+    /// or configurable) satisfies it.
+    async fn resolve_model_dependency(
+        ctx: &mut crate::AppContext,
         requirement: &ModelRequirement,
         required: bool,
     ) -> Result<Option<String>> {
+        let (usable, configurable_types) = Self::model_candidates(ctx, requirement);
+        if usable.is_empty() && configurable_types.is_empty() {
+            if required {
+                anyhow::bail!(
+                    "No configured model satisfies this capability's requirements yet, and none can be configured. Configure a compatible model and provider first."
+                );
+            }
+            return Ok(None);
+        }
+
+        const CONFIGURE_NEW: &str = "Configure a new model...";
+        let mut options = usable;
+        if !configurable_types.is_empty() {
+            options.push(CONFIGURE_NEW.to_string());
+        }
+
+        let choice = if options.len() == 1 {
+            options[0].clone()
+        } else {
+            let index = ctx
+                .ui
+                .select("Select a model for this capability:", &options, 0)?;
+            options[index].clone()
+        };
+        if choice != CONFIGURE_NEW {
+            return Ok(Some(choice));
+        }
+
+        let model_type = if configurable_types.len() == 1 {
+            configurable_types[0]
+        } else {
+            let type_options: Vec<String> =
+                configurable_types.iter().map(|s| s.to_string()).collect();
+            let index = ctx
+                .ui
+                .select("Select a model type to configure:", &type_options, 0)?;
+            configurable_types[index]
+        };
+
+        ModelCommands::setup(ctx, model_type).await?;
+
+        let (usable_after, _) = Self::model_candidates(ctx, requirement);
+        if usable_after.contains(&model_type.to_string()) {
+            return Ok(Some(model_type.to_string()));
+        }
+        if required {
+            anyhow::bail!(
+                "The newly configured model '{model_type}' does not satisfy this capability's requirements (its provider may not support what's needed). Configure a compatible model/provider combination and try again."
+            );
+        }
+        ctx.ui.warn(&format!(
+            "The newly configured model '{model_type}' does not satisfy this capability's requirements; skipping."
+        ));
+        Ok(None)
+    }
+
+    /// Existing configured models that satisfy `requirement` (narrowed to
+    /// those whose attached provider also supports every requested
+    /// function), and catalog model types that could satisfy it if
+    /// configured. Both lists are sorted for deterministic display/tests.
+    fn model_candidates(
+        ctx: &crate::AppContext,
+        requirement: &ModelRequirement,
+    ) -> (Vec<String>, Vec<&'static str>) {
         let source = crate::models::ModelSource::from_config(&ctx.config);
         let resolution = dependency::resolve(requirement, &source);
         let instances = source.instances();
-        let usable: Vec<String> = resolution
+        let mut usable: Vec<String> = resolution
             .existing_instances
             .into_iter()
             .filter(|id| {
@@ -288,43 +358,96 @@ impl CapabilityCommands {
                     })
             })
             .collect();
-        Self::pick_dependency(&*ctx.ui, &usable, required, "model")
+        usable.sort();
+        let mut configurable_types = resolution.configurable_types;
+        configurable_types.sort();
+        (usable, configurable_types)
     }
 
     /// Resolve a capability's provider dependency against currently
-    /// configured providers. Returns the chosen provider id, or `None` if
-    /// the dependency isn't required and nothing satisfies it.
-    fn resolve_provider_dependency(
-        ctx: &crate::AppContext,
+    /// configured providers. Always offers a "configure a new provider"
+    /// option alongside any satisfying existing instances -- a freshly
+    /// configured provider is re-checked before being accepted, since the
+    /// user could configure one that doesn't actually satisfy the
+    /// requirement. Returns the chosen provider id, or `None` if the
+    /// dependency isn't required and nothing (existing or configurable)
+    /// satisfies it.
+    async fn resolve_provider_dependency(
+        ctx: &mut crate::AppContext,
         requirement: &ProviderRequirement,
         required: bool,
     ) -> Result<Option<String>> {
-        let source = crate::providers::ProviderSource::from_config(&ctx.config);
-        let resolution = dependency::resolve(requirement, &source);
-        Self::pick_dependency(&*ctx.ui, &resolution.existing_instances, required, "provider")
-    }
-
-    /// Pick one candidate id: error if required and none exist, auto-select
-    /// the sole candidate, or prompt when there's a choice.
-    fn pick_dependency(
-        ui: &dyn Ui,
-        candidates: &[String],
-        required: bool,
-        what: &str,
-    ) -> Result<Option<String>> {
-        if candidates.is_empty() {
+        let (existing, configurable_types) = Self::provider_candidates(ctx, requirement);
+        if existing.is_empty() && configurable_types.is_empty() {
             if required {
                 anyhow::bail!(
-                    "No configured {what} satisfies this capability's requirements yet. Configure one first."
+                    "No configured provider satisfies this capability's requirements yet, and none can be configured. Configure a compatible provider first."
                 );
             }
             return Ok(None);
         }
-        if candidates.len() == 1 {
-            return Ok(Some(candidates[0].clone()));
+
+        const CONFIGURE_NEW: &str = "Configure a new provider...";
+        let mut options = existing;
+        if !configurable_types.is_empty() {
+            options.push(CONFIGURE_NEW.to_string());
         }
-        let index = ui.select(&format!("Select a {what} for this capability:"), candidates, 0)?;
-        Ok(Some(candidates[index].clone()))
+
+        let choice = if options.len() == 1 {
+            options[0].clone()
+        } else {
+            let index = ctx
+                .ui
+                .select("Select a provider for this capability:", &options, 0)?;
+            options[index].clone()
+        };
+        if choice != CONFIGURE_NEW {
+            return Ok(Some(choice));
+        }
+
+        let provider_type = if configurable_types.len() == 1 {
+            configurable_types[0]
+        } else {
+            let type_options: Vec<String> =
+                configurable_types.iter().map(|s| s.to_string()).collect();
+            let index = ctx
+                .ui
+                .select("Select a provider type to configure:", &type_options, 0)?;
+            configurable_types[index]
+        };
+
+        let nickname = ctx.ui.text("Name this provider instance", provider_type)?;
+        ProviderCommands::setup(ctx, provider_type, Some(&nickname)).await?;
+
+        let (existing_after, _) = Self::provider_candidates(ctx, requirement);
+        if existing_after.contains(&nickname) {
+            return Ok(Some(nickname));
+        }
+        if required {
+            anyhow::bail!(
+                "The newly configured provider '{nickname}' does not satisfy this capability's requirements. Configure a different provider and try again."
+            );
+        }
+        ctx.ui.warn(&format!(
+            "The newly configured provider '{nickname}' does not satisfy this capability's requirements; skipping."
+        ));
+        Ok(None)
+    }
+
+    /// Existing configured providers that satisfy `requirement`, and
+    /// catalog provider types that could satisfy it if configured. Both
+    /// lists are sorted for deterministic display/tests.
+    fn provider_candidates(
+        ctx: &crate::AppContext,
+        requirement: &ProviderRequirement,
+    ) -> (Vec<String>, Vec<&'static str>) {
+        let source = crate::providers::ProviderSource::from_config(&ctx.config);
+        let resolution = dependency::resolve(requirement, &source);
+        let mut existing = resolution.existing_instances;
+        existing.sort();
+        let mut configurable_types = resolution.configurable_types;
+        configurable_types.sort();
+        (existing, configurable_types)
     }
 
     /// Remove a configured capability instance by ID.
@@ -530,27 +653,21 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn setup_agent_model_fails_when_no_model_configured() {
-        let mut ctx = test_ctx();
-        let result = CapabilityCommands::setup(&mut ctx, "agent-model", Some("chat")).await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No configured model satisfies")
-        );
-        assert!(ctx.config.get_capability("chat").is_none());
-    }
+    // These exercise the pure decision helpers directly rather than driving
+    // them through `setup()`: with nothing configured, `configurable_types`
+    // is never empty (the catalog always has something), so the "configure
+    // a new instance" option would auto-select and recurse into a real,
+    // live `ModelCommands::setup`/`ProviderCommands::setup` call against the
+    // real registries -- unsafe/nondeterministic for a unit test.
 
-    #[tokio::test]
-    async fn setup_agent_model_excludes_providerless_model() {
+    #[test]
+    fn model_candidates_excludes_providerless_model() {
         use crate::config::ModelConfig;
+        use crate::models::ModelFunction;
 
         let mut ctx = test_ctx();
         // Configured model with no provider_id -- Model::provider() errs, so
-        // it must not be offered as a candidate.
+        // it must not be offered as a usable candidate.
         ctx.config.models.insert(
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
@@ -560,9 +677,104 @@ mod tests {
             },
         );
 
-        let result = CapabilityCommands::setup(&mut ctx, "agent-model", Some("chat")).await;
+        let requirement = ModelRequirement {
+            supported_functions: vec![ModelFunction::Chat],
+            ..Default::default()
+        };
+        let (usable, _) = CapabilityCommands::model_candidates(&ctx, &requirement);
+        assert!(!usable.contains(&"granite-3.1-8b-instruct".to_string()));
+    }
+
+    #[test]
+    fn model_candidates_offers_configurable_types_when_nothing_configured() {
+        let ctx = test_ctx();
+        let requirement = ModelRequirement::default();
+        let (usable, configurable_types) = CapabilityCommands::model_candidates(&ctx, &requirement);
+        assert!(usable.is_empty());
+        assert!(!configurable_types.is_empty());
+    }
+
+    #[tokio::test]
+    async fn resolve_model_dependency_fails_when_unsatisfiable_and_required() {
+        let mut ctx = test_ctx();
+        // No catalog model type has this family, so both `usable` and
+        // `configurable_types` come back empty -- the true "nothing can
+        // satisfy this, not even by configuring something new" path.
+        let requirement = ModelRequirement {
+            family: Some("NoSuchFamilyXYZ".to_string()),
+            ..Default::default()
+        };
+        let result =
+            CapabilityCommands::resolve_model_dependency(&mut ctx, &requirement, true).await;
         assert!(result.is_err());
-        assert!(ctx.config.get_capability("chat").is_none());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No configured model satisfies")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_model_dependency_returns_none_when_unsatisfiable_and_optional() {
+        let mut ctx = test_ctx();
+        let requirement = ModelRequirement {
+            family: Some("NoSuchFamilyXYZ".to_string()),
+            ..Default::default()
+        };
+        let result = CapabilityCommands::resolve_model_dependency(&mut ctx, &requirement, false)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn provider_candidates_offers_configurable_types_when_nothing_configured() {
+        let ctx = test_ctx();
+        let requirement = ProviderRequirement::default();
+        let (existing, configurable_types) =
+            CapabilityCommands::provider_candidates(&ctx, &requirement);
+        assert!(existing.is_empty());
+        assert!(!configurable_types.is_empty());
+    }
+
+    #[tokio::test]
+    async fn resolve_provider_dependency_fails_when_unsatisfiable_and_required() {
+        use crate::models::ModelFunction;
+
+        let mut ctx = test_ctx();
+        // No registered provider type's default_function_endpoints ever
+        // keys on ToolCalling, so both `existing` and `configurable_types`
+        // come back empty -- the true "nothing can satisfy this, not even
+        // by configuring something new" path.
+        let requirement = ProviderRequirement {
+            functions: vec![ModelFunction::ToolCalling],
+            ..Default::default()
+        };
+        let result =
+            CapabilityCommands::resolve_provider_dependency(&mut ctx, &requirement, true).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No configured provider satisfies")
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_provider_dependency_returns_none_when_unsatisfiable_and_optional() {
+        use crate::models::ModelFunction;
+
+        let mut ctx = test_ctx();
+        let requirement = ProviderRequirement {
+            functions: vec![ModelFunction::ToolCalling],
+            ..Default::default()
+        };
+        let result = CapabilityCommands::resolve_provider_dependency(&mut ctx, &requirement, false)
+            .await
+            .unwrap();
+        assert!(result.is_none());
     }
 
     // -- remove -----------------------------------------------------------------
