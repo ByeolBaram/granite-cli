@@ -27,12 +27,22 @@ impl ModelSource {
     pub fn from_config(config: &crate::config::Config) -> Self {
         let constructed = config
             .models
-            .keys()
-            .filter_map(|id| {
+            .values()
+            .filter_map(|model_config| {
+                let cfg = match model_config
+                    .provider_id
+                    .as_deref()
+                    .and_then(|pid| config.get_provider(pid))
+                {
+                    Some(provider_config) => {
+                        serde_json::json!({ "provider_config": provider_config })
+                    }
+                    None => serde_json::json!({}),
+                };
                 MODEL_REGISTRY
-                    .construct(id, &serde_json::json!({}))
+                    .construct(&model_config.model_id, &cfg)
                     .ok()
-                    .map(|model| (id.clone(), model))
+                    .map(|model| (model_config.model_id.clone(), model))
             })
             .collect();
         Self { constructed }
@@ -107,6 +117,63 @@ mod tests {
                 "granite-guardian-3.1-8b".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn model_source_resolves_provider_from_provider_id() {
+        use crate::config::{Config, ModelConfig, ProviderConfig};
+        use crate::dependency::Configured;
+
+        let mut config = Config::default();
+        config.providers.insert(
+            "ollama".to_string(),
+            ProviderConfig {
+                provider_id: "ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({ "base_url": "http://localhost:11434" }),
+            },
+        );
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: Some("ollama".to_string()),
+                variant: None,
+            },
+        );
+
+        let source = ModelSource::from_config(&config);
+        let (_, model) = source
+            .instances()
+            .into_iter()
+            .find(|(id, _)| id == "granite-3.1-8b-instruct")
+            .unwrap();
+        let provider = model.provider().unwrap();
+        assert_eq!(provider.base_url(), "http://localhost:11434");
+    }
+
+    #[test]
+    fn model_source_provider_errs_when_provider_id_unresolvable() {
+        use crate::config::{Config, ModelConfig};
+        use crate::dependency::Configured;
+
+        let mut config = Config::default();
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: Some("does-not-exist".to_string()),
+                variant: None,
+            },
+        );
+
+        let source = ModelSource::from_config(&config);
+        let (_, model) = source
+            .instances()
+            .into_iter()
+            .find(|(id, _)| id == "granite-3.1-8b-instruct")
+            .unwrap();
+        assert!(model.provider().is_err());
     }
 
     #[test]
