@@ -76,12 +76,11 @@ mod tests {
     use crate::config::{CapabilityConfig, Config};
     use crate::dependency::Configured;
 
-    fn agent_model_config(id: &str, provider_id: &str, model_id: &str) -> CapabilityConfig {
+    fn agent_model_config(id: &str, model_id: &str) -> CapabilityConfig {
         CapabilityConfig {
             capability_id: id.to_string(),
             capability_type: "agent-model".to_string(),
             config: serde_json::json!({
-                "provider_id": provider_id,
                 "model_id": model_id,
             }),
         }
@@ -92,7 +91,7 @@ mod tests {
         let mut config = Config::default();
         config.capabilities.insert(
             "chat".to_string(),
-            agent_model_config("chat", "ollama", "granite-3.1-8b-instruct"),
+            agent_model_config("chat", "granite-3.1-8b-instruct"),
         );
 
         let source = CapabilitySource::from_config(&config);

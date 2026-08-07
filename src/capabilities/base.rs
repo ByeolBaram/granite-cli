@@ -3,7 +3,7 @@ use crate::capabilities::requirement::{
 };
 use crate::dependency::Configured;
 use crate::models::Model;
-use crate::providers::{ApiType, Provider};
+use crate::providers::ApiType;
 use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -119,11 +119,11 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     }
 
     /// Resolve a `BindingRequest` into a concrete `Binding`, looking up this
-    /// capability's model/provider dependencies from the given sources.
+    /// capability's model dependency from the given source. A model's own
+    /// provider is reached via `Model::provider()`.
     async fn bind(
         &self,
         request: BindingRequest,
-        providers: &(dyn Configured<dyn Provider> + Sync),
         models: &(dyn Configured<dyn Model> + Sync),
     ) -> anyhow::Result<Binding>;
 
@@ -175,11 +175,17 @@ impl std::fmt::Display for CapabilityMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Dependency {
     Model {
+        /// The JSON key in this capability's own config that the resolved
+        /// model id is stored under.
+        config_key: String,
         requirement: ModelRequirement,
         resolved_id: Option<String>,
         required: bool,
     },
     Provider {
+        /// The JSON key in this capability's own config that the resolved
+        /// provider id is stored under.
+        config_key: String,
         requirement: ProviderRequirement,
         resolved_id: Option<String>,
         required: bool,
