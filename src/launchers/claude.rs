@@ -57,7 +57,7 @@ impl HasClaudeLauncherMetadata for ClaudeLauncher {
             name: "Claude CLI".to_string(),
             description: "Anthropic's Claude CLI tool".to_string(),
             default_command: "claude".to_string(),
-            supported_capabilities: HashSet::new(),
+            supported_capabilities: HashSet::from([BindingType::AgentModel]),
             tags: vec!["claude".to_string(), "anthropic".to_string()],
         }
     }
