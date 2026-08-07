@@ -1,10 +1,59 @@
+use crate::capabilities::requirement::{
+    CapabilityRequirement, ModelRequirement, ProviderRequirement, ShellToolRequirement,
+};
+use crate::dependency::Configured;
+use crate::models::Model;
+use crate::providers::Provider;
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::HashSet;
 
-/*-- Capability Trait --------------------------------------------------------*/
+// Canonical launch-time types live in `launchers::base` -- re-exported here so
+// capabilities and launchers share one `LaunchContext`/`EnvBinding` pair.
+pub use crate::launchers::{EnvBinding, LaunchContext};
+
+/*-- BindingType / BindingRequest / Binding -----------------------------------*/
+
+/// Which binding surface a `Capability` can fill. Payload-free and hashable
+/// so a `Launcher` can declare `HashSet<BindingType>` for the surfaces it
+/// knows how to consume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BindingType {
+    AgentModel,
+}
+
+impl std::fmt::Display for BindingType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BindingType::AgentModel => write!(f, "Agent Model"),
+        }
+    }
+}
+
+/// A request for a capability to produce a `Binding` for a specific binding
+/// surface, parameterized by whatever detail that surface needs (e.g. which
+/// `ApiType` the launcher's environment expects).
+#[derive(Debug, Clone)]
+pub enum BindingRequest {
+    AgentModel { api_type: crate::providers::ApiType },
+}
+
+impl BindingRequest {
+    pub fn binding_type(&self) -> BindingType {
+        match self {
+            BindingRequest::AgentModel { .. } => BindingType::AgentModel,
+        }
+    }
+}
+
+/// The result of a successful `Capability::bind` call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Binding {
+    AgentModel(crate::capabilities::agent_model::AgentModelBinding),
+}
+
+/*-- Capability Trait ----------------------------------------------------------*/
 
 /// Core trait for capability implementations.
 /// All capabilities must implement this trait along with ConfigConstructable.
@@ -14,8 +63,28 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     fn description(&self) -> &str;
     fn dependencies(&self) -> Vec<Dependency>;
 
+    /// Which binding surfaces this capability instance can fill.
+    fn binding_types(&self) -> HashSet<BindingType> {
+        HashSet::new()
+    }
+
+    /// Resolve a `BindingRequest` into a concrete `Binding`, looking up this
+    /// capability's model/provider dependencies from the given sources.
+    async fn bind(
+        &self,
+        request: BindingRequest,
+        _providers: &(dyn Configured<dyn Provider> + Sync),
+        _models: &(dyn Configured<dyn Model> + Sync),
+    ) -> anyhow::Result<Binding> {
+        anyhow::bail!(
+            "capability '{}' does not support binding type {}",
+            self.name(),
+            request.binding_type()
+        )
+    }
+
     // Execution hooks (all optional with NoOp defaults)
-    async fn on_setup(&self, _factory: &dyn Factory) -> anyhow::Result<()> {
+    async fn on_setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
     async fn on_pre_launch(&self, _context: &LaunchContext) -> anyhow::Result<()> {
@@ -41,6 +110,7 @@ pub struct CapabilityMetadata {
     pub description: String,
     pub dependencies: Vec<Dependency>,
     pub tags: Vec<String>,
+    pub binding_types: HashSet<BindingType>,
 }
 
 impl std::fmt::Display for CapabilityMetadata {
@@ -51,68 +121,85 @@ impl std::fmt::Display for CapabilityMetadata {
 
 /*-- Supporting Types --------------------------------------------------------*/
 
+/// A capability's declared dependency on a model, provider, external shell
+/// tool, or another capability. `resolved_id` is `None` at the type level
+/// (catalog display, before any instance is configured) and `Some(id)` once
+/// a concrete instance has picked a specific dependency.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Dependency {
-    Model { id: String, required: bool },
-    Provider { id: String, required: bool },
-    ExternalTool { name: String, check_command: String },
-    Capability { id: String, required: bool },
+    Model {
+        requirement: ModelRequirement,
+        resolved_id: Option<String>,
+        required: bool,
+    },
+    Provider {
+        requirement: ProviderRequirement,
+        resolved_id: Option<String>,
+        required: bool,
+    },
+    ExternalTool {
+        requirement: ShellToolRequirement,
+        required: bool,
+    },
+    Capability {
+        requirement: CapabilityRequirement,
+        resolved_id: Option<String>,
+        required: bool,
+    },
 }
 
 impl std::fmt::Display for Dependency {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Dependency::Model { id, required } => {
+            Dependency::Model {
+                resolved_id,
+                required,
+                ..
+            } => {
                 write!(
                     f,
                     "Model: {}{}",
-                    id,
+                    resolved_id.as_deref().unwrap_or("<unresolved>"),
                     if *required { " (required)" } else { "" }
                 )
             }
-            Dependency::Provider { id, required } => {
+            Dependency::Provider {
+                resolved_id,
+                required,
+                ..
+            } => {
                 write!(
                     f,
                     "Provider: {}{}",
-                    id,
+                    resolved_id.as_deref().unwrap_or("<unresolved>"),
                     if *required { " (required)" } else { "" }
                 )
             }
             Dependency::ExternalTool {
-                name,
-                check_command,
+                requirement,
+                required,
             } => {
-                write!(f, "ExternalTool: {name} ({check_command})")
+                write!(
+                    f,
+                    "ExternalTool: {}{}",
+                    requirement.command,
+                    if *required { " (required)" } else { "" }
+                )
             }
-            Dependency::Capability { id, required } => {
+            Dependency::Capability {
+                resolved_id,
+                required,
+                ..
+            } => {
                 write!(
                     f,
                     "Capability: {}{}",
-                    id,
+                    resolved_id.as_deref().unwrap_or("<unresolved>"),
                     if *required { " (required)" } else { "" }
                 )
             }
         }
     }
-}
-
-pub struct LaunchContext {
-    pub tool_id: String,
-    pub tool_version: String,
-    pub working_dir: PathBuf,
-    pub env_vars: HashMap<String, String>,
-}
-
-pub struct EnvBinding {
-    pub key: String,
-    pub value: String,
-}
-
-#[async_trait]
-pub trait Factory: Send + Sync {
-    async fn resolve_model(&self, id: &str) -> anyhow::Result<String>;
-    async fn resolve_provider(&self, id: &str) -> anyhow::Result<String>;
-    async fn resolve_capability(&self, id: &str) -> anyhow::Result<String>;
 }
 
 /*-- Factory Definition ------------------------------------------------------*/

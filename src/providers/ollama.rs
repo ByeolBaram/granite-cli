@@ -157,6 +157,18 @@ impl Provider for OllamaProvider {
         vec![ApiType::OpenAI, ApiType::Ollama, ApiType::Anthropic]
     }
 
+    fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    fn api_key(&self) -> Option<&Secret> {
+        self.config.api_key.as_ref()
+    }
+
+    fn verify_ssl(&self) -> bool {
+        self.config.verify_ssl
+    }
+
     fn supported_formats(&self) -> Vec<ModelFormat> {
         vec![ModelFormat::GGUF]
     }
