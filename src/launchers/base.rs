@@ -17,7 +17,7 @@ use crate::utils::ui::Ui;
 /// Core trait for launcher implementations.
 /// All launchers must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Launcher: ConfigConstructable + Send + Sync {
+pub trait Launcher: Send + Sync {
     fn name(&self) -> &str;
 
     /// The binary/command this instance will exec.
@@ -177,6 +177,8 @@ pub(crate) mod tests {
     }
 
     impl ConfigConstructable for FakeLauncher {
+        type Config = crate::registry::NoConfig;
+
         fn new(cfg: &serde_json::Value) -> Self {
             let command_name = cfg
                 .get("command_name")

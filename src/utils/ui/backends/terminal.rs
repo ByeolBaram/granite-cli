@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::registry::ConfigConstructable;
+use crate::registry::{ConfigConstructable, NoConfig};
 use crate::utils::ui::backends::plain::PlainOutput;
 use crate::utils::ui::base::{HasUiMetadata, PullHandle, Ui, UiMetadata};
 
@@ -27,6 +27,8 @@ pub struct TerminalOutput {
 }
 
 impl ConfigConstructable for TerminalOutput {
+    type Config = NoConfig;
+
     fn new(_cfg: &serde_json::Value) -> Self {
         let (is_tty, width) = match crossterm::terminal::size() {
             Ok((cols, _rows)) => (true, Some(cols.max(20))),

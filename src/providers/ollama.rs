@@ -121,6 +121,8 @@ impl OllamaProvider {
 }
 
 impl ConfigConstructable for OllamaProvider {
+    type Config = OllamaProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: OllamaProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -297,14 +299,6 @@ impl HasProviderMetadata for OllamaProvider {
                 "multi-api".to_string(),
             ],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(OllamaProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(OllamaProviderConfig::default()).unwrap_or_default()
     }
 }
 

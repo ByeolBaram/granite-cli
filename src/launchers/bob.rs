@@ -22,6 +22,8 @@ pub struct BobLauncher {
 }
 
 impl ConfigConstructable for BobLauncher {
+    type Config = BobLauncherConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: BobLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self { config }
@@ -60,14 +62,6 @@ impl HasBobLauncherMetadata for BobLauncher {
             supported_capabilities: HashSet::new(),
             tags: vec!["bob".to_string(), "ibm".to_string()],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(BobLauncherConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(BobLauncherConfig::default()).unwrap_or_default()
     }
 }
 
@@ -120,7 +114,10 @@ mod tests {
 
     #[test]
     fn config_schema_is_present() {
-        let schema = BobLauncher::config_schema();
+        use crate::launchers::base::LauncherFactory;
+        let mut factory = LauncherFactory::new();
+        factory.register::<BobLauncher>("bob");
+        let schema = factory.config_schema("bob").unwrap();
         let props = schema.get("properties").and_then(|p| p.as_object());
         assert!(props.is_some());
         assert!(props.unwrap().contains_key("command_path"));

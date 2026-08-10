@@ -39,6 +39,8 @@ impl AgentModelCapability {
 }
 
 impl ConfigConstructable for AgentModelCapability {
+    type Config = AgentModelCapabilityConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
@@ -143,14 +145,6 @@ impl HasCapabilityMetadata for AgentModelCapability {
             supported_binding_types: HashSet::from([BindingType::AgentModel]),
         }
     }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(AgentModelCapabilityConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(AgentModelCapabilityConfig::default()).unwrap_or_default()
-    }
 }
 
 /*-- tests -------------------------------------------------------------------------*/
@@ -174,6 +168,8 @@ mod tests {
     }
 
     impl ConfigConstructable for FakeProvider {
+        type Config = crate::registry::NoConfig;
+
         fn new(_cfg: &serde_json::Value) -> Self {
             unimplemented!("not used in tests")
         }
@@ -213,6 +209,8 @@ mod tests {
     }
 
     impl ConfigConstructable for FakeModel {
+        type Config = crate::registry::NoConfig;
+
         fn new(_cfg: &serde_json::Value) -> Self {
             unimplemented!("not used in tests")
         }

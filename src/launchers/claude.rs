@@ -22,6 +22,8 @@ pub struct ClaudeLauncher {
 }
 
 impl ConfigConstructable for ClaudeLauncher {
+    type Config = ClaudeLauncherConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self { config }
@@ -60,14 +62,6 @@ impl HasClaudeLauncherMetadata for ClaudeLauncher {
             supported_capabilities: HashSet::from([BindingType::AgentModel]),
             tags: vec!["claude".to_string(), "anthropic".to_string()],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(ClaudeLauncherConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(ClaudeLauncherConfig::default()).unwrap_or_default()
     }
 }
 
@@ -121,7 +115,10 @@ mod tests {
 
     #[test]
     fn config_schema_is_present() {
-        let schema = ClaudeLauncher::config_schema();
+        use crate::launchers::base::LauncherFactory;
+        let mut factory = LauncherFactory::new();
+        factory.register::<ClaudeLauncher>("claude");
+        let schema = factory.config_schema("claude").unwrap();
         // Schema should reference ClaudeLauncherConfig properties
         let props = schema.get("properties").and_then(|p| p.as_object());
         assert!(props.is_some());

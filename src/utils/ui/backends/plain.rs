@@ -1,4 +1,4 @@
-use crate::registry::ConfigConstructable;
+use crate::registry::{ConfigConstructable, NoConfig};
 use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
 
 /*-- public --*/
@@ -8,6 +8,8 @@ use crate::utils::ui::base::{HasUiMetadata, Ui, UiMetadata};
 pub struct PlainOutput;
 
 impl ConfigConstructable for PlainOutput {
+    type Config = NoConfig;
+
     fn new(_cfg: &serde_json::Value) -> Self {
         Self
     }

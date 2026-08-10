@@ -121,7 +121,7 @@ impl std::fmt::Display for ApiEndpoint {
 /// Core trait for provider implementations.
 /// All providers must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Provider: ConfigConstructable + Send + Sync {
+pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Returns the mapping of model functions to API endpoints this provider instance supports.

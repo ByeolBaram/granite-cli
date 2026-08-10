@@ -116,6 +116,8 @@ impl LMStudioProvider {
 }
 
 impl ConfigConstructable for LMStudioProvider {
+    type Config = LMStudioProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: LMStudioProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
@@ -298,14 +300,6 @@ impl HasProviderMetadata for LMStudioProvider {
             authentication: vec![AuthType::None, AuthType::BearerToken],
             tags,
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(LMStudioProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(LMStudioProviderConfig::default()).unwrap_or_default()
     }
 }
 

@@ -266,6 +266,8 @@ impl LlamaCppProvider {
 }
 
 impl ConfigConstructable for LlamaCppProvider {
+    type Config = LlamaCppProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: LlamaCppProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
@@ -404,14 +406,6 @@ impl HasProviderMetadata for LlamaCppProvider {
                 "high-performance".to_string(),
             ],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(LlamaCppProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(LlamaCppProviderConfig::default()).unwrap_or_default()
     }
 }
 

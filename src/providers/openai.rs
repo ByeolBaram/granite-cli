@@ -86,6 +86,8 @@ impl OpenAIProvider {
 }
 
 impl ConfigConstructable for OpenAIProvider {
+    type Config = OpenAIProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: OpenAIProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -242,14 +244,6 @@ impl HasProviderMetadata for OpenAIProvider {
             ],
         }
     }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(OpenAIProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(OpenAIProviderConfig::default()).unwrap_or_default()
-    }
 }
 
 /*-- tests -------------------------------------------------------------------*/
@@ -269,7 +263,10 @@ mod tests {
 
     #[test]
     fn test_provider_config_schema_reflects_real_config_struct() {
-        let schema = OpenAIProvider::config_schema();
+        use crate::providers::base::ProviderFactory;
+        let mut factory = ProviderFactory::new();
+        factory.register::<OpenAIProvider>("openai-compatible");
+        let schema = factory.config_schema("openai-compatible").unwrap();
         let properties = schema
             .get("properties")
             .and_then(|p| p.as_object())

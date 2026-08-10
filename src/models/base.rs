@@ -103,7 +103,7 @@ pub struct ModelArchitecture {
 
 /// Core trait for model implementations.
 /// All models must implement this trait along with ConfigConstructable.
-pub trait Model: ConfigConstructable + Send + Sync {
+pub trait Model: Send + Sync {
     /// Get the model family name
     fn family(&self) -> &str;
 
