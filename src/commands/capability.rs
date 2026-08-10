@@ -208,6 +208,7 @@ impl CapabilityCommands {
                         Self::resolve_model_dependency(ctx, &requirement, required).await?
                     {
                         config
+                            // NOTE: Safe since config MUST be an object when registered
                             .as_object_mut()
                             .unwrap()
                             .insert(config_key, serde_json::Value::String(id));
@@ -223,6 +224,7 @@ impl CapabilityCommands {
                         Self::resolve_provider_dependency(ctx, &requirement, required).await?
                     {
                         config
+                            // NOTE: Safe since config MUST be an object when registered
                             .as_object_mut()
                             .unwrap()
                             .insert(config_key, serde_json::Value::String(id));
