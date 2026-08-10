@@ -2,6 +2,11 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
+
+use_channel!("LNCHR");
+
 /*-- public --*/
 
 pub static LAUNCHER_REGISTRY: LazyLock<base::LauncherFactory> = LazyLock::new(|| {
@@ -28,8 +33,15 @@ impl LauncherSource {
             .launchers
             .values()
             .filter_map(|lc| {
-                LAUNCHER_REGISTRY
-                    .construct(&lc.launcher_type, &lc.config)
+                let result = LAUNCHER_REGISTRY.construct(&lc.launcher_type, &lc.config);
+                if result.is_err() {
+                    alog_channel!(
+                        MessageLevel::Warning,
+                        "Could not construct launcher '{}'",
+                        lc.launcher_type
+                    );
+                }
+                result
                     .ok()
                     .map(|launcher| (lc.launcher_id.clone(), launcher))
             })

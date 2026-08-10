@@ -2,8 +2,13 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
+
 // Include generated code from build.rs
 include!(concat!(env!("OUT_DIR"), "/generated_models.rs"));
+
+use_channel!("MODEL");
 
 /*-- Public API --------------------------------------------------------------*/
 
@@ -39,8 +44,15 @@ impl ModelSource {
                     }
                     None => serde_json::json!({}),
                 };
-                MODEL_REGISTRY
-                    .construct(&model_config.model_id, &cfg)
+                let result = MODEL_REGISTRY.construct(&model_config.model_id, &cfg);
+                if result.is_err() {
+                    alog_channel!(
+                        MessageLevel::Warning,
+                        "Could not construct model '{}'",
+                        model_config.model_id
+                    );
+                }
+                result
                     .ok()
                     .map(|model| (model_config.model_id.clone(), model))
             })

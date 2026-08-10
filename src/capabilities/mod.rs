@@ -2,6 +2,11 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
+
+use_channel!("CAPBL");
+
 pub static CAPABILITY_REGISTRY: LazyLock<base::CapabilityFactory> = LazyLock::new(|| {
     let mut factory = base::CapabilityFactory::new();
     factory.register::<agent_model::AgentModelCapability>("agent-model");
@@ -24,11 +29,18 @@ impl CapabilitySource {
             .capabilities
             .values()
             .filter_map(|capability_config| {
-                CAPABILITY_REGISTRY
-                    .construct(
-                        &capability_config.capability_type,
-                        &capability_config.config,
-                    )
+                let result = CAPABILITY_REGISTRY.construct(
+                    &capability_config.capability_type,
+                    &capability_config.config,
+                );
+                if result.is_err() {
+                    alog_channel!(
+                        MessageLevel::Warning,
+                        "Could not construct capability '{}'",
+                        capability_config.capability_type
+                    );
+                }
+                result
                     .ok()
                     .map(|capability| (capability_config.capability_id.clone(), capability))
             })
