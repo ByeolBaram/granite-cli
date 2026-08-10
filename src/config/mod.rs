@@ -30,32 +30,12 @@ pub struct ProviderConfig {
     pub config: serde_json::Value,
 }
 
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            provider_id: String::new(),
-            provider_type: String::new(),
-            config: serde_json::Value::Object(serde_json::Map::new()),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityConfig {
     pub capability_id: String,
     #[serde(rename = "type")]
     pub capability_type: String,
     pub config: serde_json::Value,
-}
-
-impl Default for CapabilityConfig {
-    fn default() -> Self {
-        Self {
-            capability_id: String::new(),
-            capability_type: String::new(),
-            config: serde_json::Value::Object(serde_json::Map::new()),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,17 +47,6 @@ pub struct LauncherConfig {
     pub enabled_capabilities: Vec<String>,
     /// Launcher-type-specific config passed to `ConfigConstructable::new`.
     pub config: serde_json::Value,
-}
-
-impl Default for LauncherConfig {
-    fn default() -> Self {
-        Self {
-            launcher_id: String::new(),
-            launcher_type: String::new(),
-            enabled_capabilities: vec![],
-            config: serde_json::Value::Object(serde_json::Map::new()),
-        }
-    }
 }
 
 impl Config {
@@ -360,6 +329,42 @@ impl Config {
             self.save()
         } else {
             Ok(())
+        }
+    }
+}
+
+/*-- Tests -- */
+
+#[cfg(test)]
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            provider_id: String::new(),
+            provider_type: String::new(),
+            config: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for CapabilityConfig {
+    fn default() -> Self {
+        Self {
+            capability_id: String::new(),
+            capability_type: String::new(),
+            config: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for LauncherConfig {
+    fn default() -> Self {
+        Self {
+            launcher_id: String::new(),
+            launcher_type: String::new(),
+            enabled_capabilities: vec![],
+            config: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
 }
