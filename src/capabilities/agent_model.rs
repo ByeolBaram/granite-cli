@@ -12,12 +12,14 @@ use crate::models::{Model, ModelFunction};
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 use std::collections::HashSet;
 
 /*-- AgentModelCapabilityConfig ---------------------------------------------------*/
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
 pub struct AgentModelCapabilityConfig {
+    #[validate(min_length = 1)]
     pub model_id: String,
     /// Which model function to bind (defaults to `Chat` if unset).
     #[serde(default)]
