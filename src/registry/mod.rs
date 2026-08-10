@@ -7,9 +7,18 @@ pub use secret::Secret;
 
 /*-- Generic Factory Infrastructure ------------------------------------------*/
 
+/// Unit struct for types that have no structured config.
+/// Used by test doubles and impls that genuinely have no config to declare.
+#[derive(schemars::JsonSchema, serde::Serialize, serde::Deserialize, Default)]
+pub struct NoConfig {}
+
 /// Core trait that all factory-managed types must implement.
 /// Provides construction from a configuration object.
 pub trait ConfigConstructable {
+    /// The structured config type for this implementation.
+    /// Must implement `JsonSchema + Serialize + Default`.
+    type Config: schemars::JsonSchema + serde::Serialize + Default;
+
     /// Construct with a config instance
     fn new(cfg: &serde_json::Value) -> Self
     where
@@ -91,32 +100,18 @@ macro_rules! define_factory {
             pub trait [<Has $trait Metadata>] {
                 /// Return metadata describing this implementation
                 fn metadata() -> $metadata;
-
-                /// Return the JSON schema of the config this implementation's
-                /// `ConfigConstructable::new` expects. Implementations with a
-                /// real config struct should override this with
-                /// `schemars::schema_for!(TheirConfigType)`; the default is an
-                /// opaque schema for implementations with no structured config
-                /// worth exposing (e.g. test doubles).
-                fn config_schema() -> schemars::Schema {
-                    schemars::schema_for!(serde_json::Value)
-                }
-
-                /// Return the default config value for this implementation.
-                /// Implementations with a real config struct should override
-                /// this with their struct's own `Default` impl, serialized;
-                /// the default is an empty object for implementations with no
-                /// structured config worth exposing (e.g. test doubles).
-                fn default_config() -> serde_json::Value {
-                    serde_json::Value::Object(serde_json::Map::new())
-                }
             }
 
             /// Implementation of the internal metadata trait for any type T
             /// that implements the required traits.
             impl<T> [<$trait Metadata_>] for MetaOf<T>
             where
-                T: $trait + [<Has $trait Metadata>] + Send + Sync + 'static,
+                T: $trait
+                    + [<Has $trait Metadata>]
+                    + ConfigConstructable<Config: schemars::JsonSchema + serde::Serialize + Default>
+                    + Send
+                    + Sync
+                    + 'static,
             {
                 fn describe(&self) -> $metadata {
                     T::metadata()
@@ -127,11 +122,12 @@ macro_rules! define_factory {
                 }
 
                 fn config_schema(&self) -> schemars::Schema {
-                    T::config_schema()
+                    schemars::schema_for!(<T as ConfigConstructable>::Config)
                 }
 
                 fn default_config(&self) -> serde_json::Value {
-                    T::default_config()
+                    serde_json::to_value(<T as ConfigConstructable>::Config::default())
+                        .unwrap_or_default()
                 }
             }
 
@@ -167,7 +163,13 @@ macro_rules! define_factory {
                 #[allow(unused)]
                 pub(crate) fn register<T>(&mut self, name: &'static str)
                 where
-                    T: $trait + [<Has $trait Metadata>] + Send + Sync + 'static,
+                    T: $trait
+                        + ConfigConstructable<
+                            Config: schemars::JsonSchema + serde::Serialize + Default,
+                        > + [<Has $trait Metadata>]
+                        + Send
+                        + Sync
+                        + 'static,
                 {
                     self.registry.insert(name, Box::new(MetaOf::<T>::new()));
                 }
@@ -277,7 +279,7 @@ mod tests {
     extern crate paste;
 
     // Test trait and types
-    pub(crate) trait TestTrait: ConfigConstructable {
+    pub(crate) trait TestTrait {
         fn get_value(&self) -> i32;
     }
 
@@ -290,6 +292,8 @@ mod tests {
     }
 
     impl ConfigConstructable for TestImpl1 {
+        type Config = NoConfig;
+
         fn new(cfg: &serde_json::Value) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             Self { value }
@@ -314,6 +318,8 @@ mod tests {
     }
 
     impl ConfigConstructable for TestImpl2 {
+        type Config = TestImpl2Config;
+
         fn new(cfg: &serde_json::Value) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             Self { value: value * 2 }
@@ -326,7 +332,7 @@ mod tests {
         }
     }
 
-    #[derive(schemars::JsonSchema)]
+    #[derive(schemars::JsonSchema, serde::Serialize, Default)]
     struct TestImpl2Config {
         #[allow(unused)] // Used for schema inspection
         value: i32,
@@ -335,14 +341,6 @@ mod tests {
     impl HasTestTraitMetadata for TestImpl2 {
         fn metadata() -> String {
             "TestImpl2: Another test implementation".to_string()
-        }
-
-        fn config_schema() -> schemars::Schema {
-            schemars::schema_for!(TestImpl2Config)
-        }
-
-        fn default_config() -> serde_json::Value {
-            serde_json::json!({ "value": 7 })
         }
     }
 
@@ -419,10 +417,16 @@ mod tests {
         let mut factory = TestTraitFactory::new();
         factory.register::<TestImpl1>("impl1");
 
-        // TestImpl1 never overrides config_schema, so it gets the default
-        // opaque `serde_json::Value` schema rather than failing to compile.
+        // TestImpl1 uses NoConfig, which produces a proper schema for an empty object type.
         let schema = factory.config_schema("impl1").unwrap();
-        assert_eq!(schema, schemars::schema_for!(serde_json::Value));
+        assert_eq!(
+            schema.get("type").and_then(|t| t.as_str()),
+            Some("object")
+        );
+        assert_eq!(
+            schema.get("title").and_then(|t| t.as_str()),
+            Some("NoConfig")
+        );
     }
 
     #[test]
@@ -449,8 +453,7 @@ mod tests {
         let mut factory = TestTraitFactory::new();
         factory.register::<TestImpl1>("impl1");
 
-        // TestImpl1 never overrides default_config, so it gets the default
-        // empty object rather than failing to compile.
+        // TestImpl1 uses NoConfig, which serializes to an empty object.
         let value = factory.default_config("impl1").unwrap();
         assert_eq!(value, serde_json::json!({}));
     }
@@ -461,7 +464,7 @@ mod tests {
         factory.register::<TestImpl2>("impl2");
 
         let value = factory.default_config("impl2").unwrap();
-        assert_eq!(value, serde_json::json!({ "value": 7 }));
+        assert_eq!(value, serde_json::json!({ "value": 0 }));
     }
 
     #[test]
