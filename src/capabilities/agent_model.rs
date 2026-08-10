@@ -18,7 +18,6 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct AgentModelCapabilityConfig {
-    #[serde(default)]
     pub model_id: String,
     /// Which model function to bind (defaults to `Chat` if unset).
     #[serde(default)]
