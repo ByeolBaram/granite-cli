@@ -289,19 +289,20 @@ impl CapabilityCommands {
 
         const CONFIGURE_NEW: &str = "Configure a new model...";
         let mut options = usable;
+        let mut configure_new_idx: Option<usize> = None;
         if !configurable_types.is_empty() {
+            configure_new_idx = Some(options.len());
             options.push(CONFIGURE_NEW.to_string());
         }
 
-        let choice = if options.len() == 1 {
-            options[0].clone()
+        let choice_idx = if options.len() == 1 {
+            0
         } else {
-            let index = ctx
-                .ui
-                .select("Select a model for this capability:", &options, 0)?;
-            options[index].clone()
+            ctx.ui
+                .select("Select a model for this capability:", &options, 0)?
         };
-        if choice != CONFIGURE_NEW {
+        let choice = options[choice_idx].clone();
+        if configure_new_idx.is_none_or(|v| v != choice_idx) {
             return Ok(Some(choice));
         }
 
@@ -319,8 +320,12 @@ impl CapabilityCommands {
         ModelCommands::setup(ctx, model_type).await?;
 
         let (usable_after, _) = Self::model_candidates(ctx, requirement);
-        if usable_after.contains(&model_type.to_string()) {
-            return Ok(Some(model_type.to_string()));
+        let new_usable: Vec<_> = usable_after
+            .iter()
+            .filter(|x| !options.contains(x))
+            .collect();
+        if new_usable.len() == 1 {
+            return Ok(Some(new_usable[0].to_string()));
         }
         if required {
             anyhow::bail!(
@@ -391,19 +396,20 @@ impl CapabilityCommands {
 
         const CONFIGURE_NEW: &str = "Configure a new provider...";
         let mut options = existing;
+        let mut configure_new_idx: Option<usize> = None;
         if !configurable_types.is_empty() {
+            configure_new_idx = Some(options.len());
             options.push(CONFIGURE_NEW.to_string());
         }
 
-        let choice = if options.len() == 1 {
-            options[0].clone()
+        let choice_idx = if options.len() == 1 {
+            0
         } else {
-            let index = ctx
-                .ui
-                .select("Select a provider for this capability:", &options, 0)?;
-            options[index].clone()
+            ctx.ui
+                .select("Select a provider for this capability:", &options, 0)?
         };
-        if choice != CONFIGURE_NEW {
+        let choice = options[choice_idx].clone();
+        if configure_new_idx.is_none_or(|v| v != choice_idx) {
             return Ok(Some(choice));
         }
 
