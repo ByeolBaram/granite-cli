@@ -66,6 +66,7 @@ fn generate_model_struct(model: &YamlModel) -> String {
     s.push_str(&format!(
         "impl crate::registry::ConfigConstructable for {struct_name} {{\n"
     ));
+    s.push_str("    type Config = crate::registry::NoConfig;\n\n");
     s.push_str("    fn new(cfg: &serde_json::Value) -> Self {\n");
     s.push_str("        let provider_config = cfg.get(\"provider_config\").and_then(|v| serde_json::from_value(v.clone()).ok());\n");
     s.push_str("        Self { provider_config }\n");
