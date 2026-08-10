@@ -114,9 +114,7 @@ pub trait Capability: ConfigConstructable + Send + Sync {
     fn dependencies(&self) -> Vec<Dependency>;
 
     /// Which binding surfaces this capability instance can fill.
-    fn binding_types(&self) -> HashSet<BindingType> {
-        HashSet::new()
-    }
+    fn binding_types(&self) -> HashSet<BindingType>;
 
     /// Resolve a `BindingRequest` into a concrete `Binding`, looking up this
     /// capability's model dependency from the given source. A model's own
