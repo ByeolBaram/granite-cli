@@ -419,10 +419,7 @@ mod tests {
 
         // TestImpl1 uses NoConfig, which produces a proper schema for an empty object type.
         let schema = factory.config_schema("impl1").unwrap();
-        assert_eq!(
-            schema.get("type").and_then(|t| t.as_str()),
-            Some("object")
-        );
+        assert_eq!(schema.get("type").and_then(|t| t.as_str()), Some("object"));
         assert_eq!(
             schema.get("title").and_then(|t| t.as_str()),
             Some("NoConfig")
