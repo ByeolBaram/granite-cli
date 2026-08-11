@@ -21,21 +21,12 @@ use std::collections::HashSet;
 pub struct AgentModelCapabilityConfig {
     #[validate(min_length = 1)]
     pub model_id: String,
-    /// Which model function to bind (defaults to `Chat` if unset).
-    #[serde(default)]
-    pub function: Option<ModelFunction>,
 }
 
 /*-- AgentModelCapability ---------------------------------------------------------*/
 
 pub struct AgentModelCapability {
     config: AgentModelCapabilityConfig,
-}
-
-impl AgentModelCapability {
-    fn function(&self) -> ModelFunction {
-        self.config.function.clone().unwrap_or(ModelFunction::Chat)
-    }
 }
 
 impl ConfigConstructable for AgentModelCapability {
@@ -59,11 +50,10 @@ impl Capability for AgentModelCapability {
     }
 
     fn dependencies(&self) -> Vec<Dependency> {
-        let function = self.function();
         vec![Dependency::Model {
             config_key: "model_id".to_string(),
             requirement: ModelRequirement {
-                supported_functions: vec![function],
+                supported_functions: vec![ModelFunction::Chat, ModelFunction::ToolCalling],
                 ..Default::default()
             },
             resolved_id: Some(self.config.model_id.clone()),
@@ -105,24 +95,23 @@ impl Capability for AgentModelCapability {
             provider.supported_api_types().contains(&api_type),
             "provider for model '{model_id}' does not support {api_type}"
         );
-        let function = self.function();
         // Defensive only: setup-time resolution already guarantees these.
         anyhow::ensure!(
-            model.supported_functions().contains(&function),
-            "model '{model_id}' does not support {function}"
+            model.supported_functions().contains(&ModelFunction::Chat),
+            "model '{model_id}' does not support Chat"
         );
         anyhow::ensure!(
-            provider.supports_function(&function),
-            "provider for model '{model_id}' does not support {function}"
+            provider.supports_function(&ModelFunction::Chat),
+            "provider for model '{model_id}' does not support Chat"
         );
 
         let endpoint = provider
-            .endpoints_for_function(&function)
+            .endpoints_for_function(&ModelFunction::Chat)
             .into_iter()
             .find(|e| e.api_type() == api_type)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "provider for model '{model_id}' has no {api_type} endpoint for {function}"
+                    "provider for model '{model_id}' has no {api_type} endpoint for Chat"
                 )
             })?;
 
@@ -144,7 +133,10 @@ impl HasCapabilityMetadata for AgentModelCapability {
             description: "Surfaces a configured model's connection details (base URL, model name, auth, TLS) to a launched agent.".to_string(),
             dependencies: vec![Dependency::Model {
                 config_key: "model_id".to_string(),
-                requirement: ModelRequirement::default(),
+                requirement: ModelRequirement {
+                    supported_functions: vec![ModelFunction::Chat, ModelFunction::ToolCalling],
+                    ..Default::default()
+                },
                 resolved_id: None,
                 required: true,
             }],
