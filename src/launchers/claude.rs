@@ -1,4 +1,4 @@
-use crate::capabilities::BindingType;
+use crate::capabilities::{BindingType, Capability};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
@@ -40,8 +40,16 @@ impl Launcher for ClaudeLauncher {
         self.config.command_path.as_deref().unwrap_or("claude")
     }
 
-    fn supported_capabilities(&self) -> HashSet<BindingType> {
-        Self::metadata().supported_capabilities
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
+        let supported = Self::metadata().supported_capabilities;
+        let capability_types = capability.binding_types();
+        if !capability_types.is_subset(&supported) {
+            anyhow::bail!(
+                "capability supports {:?} which this launcher does not support",
+                capability_types.difference(&supported).collect::<Vec<_>>()
+            );
+        }
+        Ok(())
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {

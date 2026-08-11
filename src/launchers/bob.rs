@@ -1,4 +1,4 @@
-use crate::capabilities::BindingType;
+use crate::capabilities::Capability;
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
@@ -40,8 +40,8 @@ impl Launcher for BobLauncher {
         self.config.command_path.as_deref().unwrap_or("bob")
     }
 
-    fn supported_capabilities(&self) -> HashSet<BindingType> {
-        Self::metadata().supported_capabilities
+    async fn bind_capability(&mut self, _capability: &dyn Capability) -> anyhow::Result<()> {
+        anyhow::bail!("bob launcher does not support any capabilities")
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {

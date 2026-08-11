@@ -25,10 +25,16 @@ pub trait Launcher: Send + Sync {
     /// lookup (e.g. `"claude"`) or an absolute path set by the user in config.
     fn command(&self) -> &str;
 
-    /// Binding surfaces this launcher type supports.
-    /// Default implementation delegates to `metadata()` so there is no need
-    /// to duplicate the list on the instance.
-    fn supported_capabilities(&self) -> HashSet<BindingType>;
+    /// Bind a capability to this launcher instance.
+    ///
+    /// The implementation should validate that the capability's `binding_types()`
+    /// are supported by this launcher type (per `metadata().supported_capabilities`),
+    /// construct the appropriate `BindingRequest`, call `bind()`, and store the
+    /// resolved `Binding` for use in `env_overlay` / `launch`.
+    async fn bind_capability(
+        &mut self,
+        _capability: &dyn crate::capabilities::Capability,
+    ) -> anyhow::Result<()>;
 
     /// Resolve the binary to an absolute path.
     ///
@@ -206,8 +212,11 @@ pub(crate) mod tests {
             &self.command_name
         }
 
-        fn supported_capabilities(&self) -> HashSet<BindingType> {
-            Self::metadata().supported_capabilities
+        async fn bind_capability(
+            &mut self,
+            _capability: &dyn crate::capabilities::Capability,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("Capability binding not supported");
         }
 
         fn validate_command(&self) -> anyhow::Result<PathBuf> {
