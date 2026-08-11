@@ -358,12 +358,21 @@ impl CapabilityCommands {
                 instances
                     .iter()
                     .find(|(i, _)| i == id)
-                    .is_some_and(|(_, model)| match model.provider() {
-                        Ok(p) => requirement
+                    .is_some_and(|(_, model)| {
+                        let model_ok = requirement
                             .supported_functions
                             .iter()
-                            .all(|f| p.supports_function(f)),
-                        Err(_) => false,
+                            .all(|f| model.supported_functions().contains(f));
+                        match model.provider() {
+                            Ok(p) => {
+                                model_ok
+                                    && requirement
+                                        .supported_functions
+                                        .iter()
+                                        .all(|f| p.supports_function(f))
+                            }
+                            Err(_) => false,
+                        }
                     })
             })
             .collect();
@@ -751,14 +760,15 @@ mod tests {
     #[tokio::test]
     async fn resolve_provider_dependency_fails_when_unsatisfiable_and_required() {
         use crate::models::ModelFunction;
+        // NOTE: Eventually, all functions will be supported by at least one provider,
+        // so this test will be impossible to implement without a dummy function.
 
         let mut ctx = test_ctx();
-        // No registered provider type's default_function_endpoints ever
-        // keys on ToolCalling, so both `existing` and `configurable_types`
-        // come back empty -- the true "nothing can satisfy this, not even
-        // by configuring something new" path.
+        // No registered provider type supports Thinking, so both `existing`
+        // and `configurable_types` come back empty -- the true "nothing can
+        // satisfy this, not even by configuring something new" path.
         let requirement = ProviderRequirement {
-            functions: vec![ModelFunction::ToolCalling],
+            functions: vec![ModelFunction::KeywordBiasing],
             ..Default::default()
         };
         let result =
@@ -774,11 +784,13 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_provider_dependency_returns_none_when_unsatisfiable_and_optional() {
+        // NOTE: Eventually, all functions will be supported by at least one provider,
+        // so this test will be impossible to implement without a dummy function.
         use crate::models::ModelFunction;
 
         let mut ctx = test_ctx();
         let requirement = ProviderRequirement {
-            functions: vec![ModelFunction::ToolCalling],
+            functions: vec![ModelFunction::KeywordBiasing],
             ..Default::default()
         };
         let result = CapabilityCommands::resolve_provider_dependency(&mut ctx, &requirement, false)
