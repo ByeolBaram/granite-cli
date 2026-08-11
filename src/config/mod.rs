@@ -170,7 +170,13 @@ impl Config {
                     let id = config.config_id().to_string();
                     if id != file_name {
                         let type_name = std::any::type_name::<V>();
-                        alog_channel!(MessageLevel::Warning, "Found invalid config file {} with id \"{}\" (type: {})", file_name, id, type_name);
+                        alog_channel!(
+                            MessageLevel::Warning,
+                            "Found invalid config file {} with id \"{}\" (type: {})",
+                            file_name,
+                            id,
+                            type_name
+                        );
                     } else {
                         map.insert(into_key(&file_name), config);
                     }
