@@ -5,6 +5,34 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+trait ConfigId {
+    fn config_id(&self) -> &str;
+}
+
+impl ConfigId for ModelConfig {
+    fn config_id(&self) -> &str {
+        &self.model_id
+    }
+}
+
+impl ConfigId for ProviderConfig {
+    fn config_id(&self) -> &str {
+        &self.provider_id
+    }
+}
+
+impl ConfigId for CapabilityConfig {
+    fn config_id(&self) -> &str {
+        &self.capability_id
+    }
+}
+
+impl ConfigId for LauncherConfig {
+    fn config_id(&self) -> &str {
+        &self.launcher_id
+    }
+}
+
 use_channel!("CONF");
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -122,7 +150,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_dir<K: std::hash::Hash + Eq + ToString, V: serde::de::DeserializeOwned>(
+    fn load_dir<K: std::hash::Hash + Eq + ToString, V: serde::de::DeserializeOwned + ConfigId>(
         dir: &Path,
         into_key: impl Fn(&str) -> K + Copy,
     ) -> Result<HashMap<K, V>> {
@@ -139,7 +167,13 @@ impl Config {
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
                 if let Ok(config) = Self::load_yaml_from_file::<V>(&path) {
-                    map.insert(into_key(&file_name), config);
+                    let id = config.config_id().to_string();
+                    if id != file_name {
+                        let type_name = std::any::type_name::<V>();
+                        alog_channel!(MessageLevel::Warning, "Found invalid config file {} with id \"{}\" (type: {})", file_name, id, type_name);
+                    } else {
+                        map.insert(into_key(&file_name), config);
+                    }
                 }
             }
         }
