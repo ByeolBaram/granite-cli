@@ -80,7 +80,14 @@ impl Capability for AgentModelCapability {
         request: BindingRequest,
         models: &(dyn Configured<dyn Model> + Sync),
     ) -> anyhow::Result<Binding> {
-        let BindingRequest::AgentModel(AgentModelBindingRequest { api_type }) = request;
+        let api_type = match request {
+            BindingRequest::AgentModel(AgentModelBindingRequest { api_type }) => api_type,
+            #[allow(unreachable_patterns)] // Will remove once more variants are available
+            other => anyhow::bail!(
+                "AgentModelCapability does not handle {:?} binding requests",
+                other.binding_type()
+            ),
+        };
         let model_id = self.config.model_id.clone();
 
         let (_, model) = models
