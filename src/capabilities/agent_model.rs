@@ -443,7 +443,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("no"));
+        assert!(err.to_string().contains("no OpenAI endpoint for Chat"));
     }
 
     #[test]
