@@ -121,7 +121,7 @@ macro_rules! output_contract_tests {
 /// to concrete types at runtime via `downcast_ref::<T>()`. This enables
 /// test inspection of `CaptureUi` fields and allows prod code to
 /// access type-specific methods when necessary.
-pub trait Ui: ConfigConstructable + Send + Sync + Any {
+pub trait Ui: Send + Sync + Any {
     /// Render a tabular result (catalog, list, health).
     fn table(&self, title: &str, headers: &[&str], rows: &[Vec<String>]);
 
@@ -275,6 +275,8 @@ pub(crate) mod tests {
     }
 
     impl ConfigConstructable for CaptureUi {
+        type Config = crate::registry::NoConfig;
+
         fn new(_cfg: &serde_json::Value) -> Self {
             Self::default()
         }

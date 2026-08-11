@@ -121,7 +121,7 @@ impl std::fmt::Display for ApiEndpoint {
 /// Core trait for provider implementations.
 /// All providers must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Provider: ConfigConstructable + Send + Sync {
+pub trait Provider: Send + Sync {
     fn name(&self) -> &str;
 
     /// Returns the mapping of model functions to API endpoints this provider instance supports.
@@ -130,6 +130,15 @@ pub trait Provider: ConfigConstructable + Send + Sync {
 
     /// Returns the API types this provider implementation supports (type-level).
     fn supported_api_types(&self) -> Vec<ApiType>;
+
+    /// Returns the configured base URL for this provider instance.
+    fn base_url(&self) -> &str;
+
+    /// Returns the configured API key for this provider instance, if any.
+    fn api_key(&self) -> Option<&Secret>;
+
+    /// Returns whether this provider instance verifies SSL certificates.
+    fn verify_ssl(&self) -> bool;
 
     // Model support
     fn supported_formats(&self) -> Vec<ModelFormat>;

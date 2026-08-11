@@ -107,8 +107,40 @@ impl OllamaProvider {
         );
 
         map.insert(
+            ModelFunction::ToolCalling,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
+
+        map.insert(
+            ModelFunction::Thinking,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
+
+        map.insert(
+            ModelFunction::Guardian,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
+
+        map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings, ApiEndpoint::OllamaEmbeddings],
+        );
+
+        map.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
         );
 
         map
@@ -116,6 +148,8 @@ impl OllamaProvider {
 }
 
 impl ConfigConstructable for OllamaProvider {
+    type Config = OllamaProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: OllamaProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -150,6 +184,18 @@ impl Provider for OllamaProvider {
 
     fn supported_api_types(&self) -> Vec<ApiType> {
         vec![ApiType::OpenAI, ApiType::Ollama, ApiType::Anthropic]
+    }
+
+    fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    fn api_key(&self) -> Option<&Secret> {
+        self.config.api_key.as_ref()
+    }
+
+    fn verify_ssl(&self) -> bool {
+        self.config.verify_ssl
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
@@ -280,14 +326,6 @@ impl HasProviderMetadata for OllamaProvider {
                 "multi-api".to_string(),
             ],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(OllamaProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(OllamaProviderConfig::default()).unwrap_or_default()
     }
 }
 

@@ -97,6 +97,21 @@ impl LMStudioProvider {
         );
 
         map.insert(
+            ModelFunction::ToolCalling,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
+            ModelFunction::Thinking,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
+            ModelFunction::Guardian,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings],
         );
@@ -116,6 +131,8 @@ impl LMStudioProvider {
 }
 
 impl ConfigConstructable for LMStudioProvider {
+    type Config = LMStudioProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: LMStudioProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
@@ -142,6 +159,18 @@ impl Provider for LMStudioProvider {
 
     fn supported_api_types(&self) -> Vec<ApiType> {
         vec![ApiType::OpenAI, ApiType::Anthropic]
+    }
+
+    fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    fn api_key(&self) -> Option<&Secret> {
+        self.config.api_key.as_ref()
+    }
+
+    fn verify_ssl(&self) -> bool {
+        self.config.verify_ssl
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
@@ -286,14 +315,6 @@ impl HasProviderMetadata for LMStudioProvider {
             authentication: vec![AuthType::None, AuthType::BearerToken],
             tags,
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(LMStudioProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(LMStudioProviderConfig::default()).unwrap_or_default()
     }
 }
 

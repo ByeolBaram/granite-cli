@@ -93,7 +93,9 @@ pub struct ModelVariant {
 
 ### Supported Functions Mapping
 
-Functions are inferred from `model_type` by `scripts/utils/infer-functions.sh`:
+Functions are inferred from two sources by `scripts/utils/infer-functions.sh`.
+
+Base functions come from `model_type`:
 
 | model_type | supported_functions |
 |---|---|
@@ -102,7 +104,16 @@ Functions are inferred from `model_type` by `scripts/utils/infer-functions.sh`:
 | Speech | `[Chat, Transcription]` |
 | Embedding | `[Embeddings]` |
 
-These can be manually edited during review to add functions like `ToolCalling`, `Thinking`, etc.
+`ToolCalling` and `Thinking` are detected from the model's HF chat template (fetched by `scripts/utils/fetch-chat-template.sh` and analyzed by `detect_chat_template_signals` in `scripts/02-fetch-all-models.sh`), since that's the actual mechanism inference clients use to gate these behaviors:
+
+- **ToolCalling**: the template has a Jinja `if`/`elif` conditional on the bare `tools` variable (e.g. `{%- if tools %}`). A plain substring match on "tools" is not used — Granite Guardian's template mentions "tools" in role checks and risk-definition prose without actually gating on it, which would otherwise be a false positive.
+- **Thinking**: the template has a Jinja `if`/`elif` conditional on a bare `thinking` variable (Granite's own convention, e.g. `{%- elif thinking %}`), or contains `enable_thinking`, `reasoning_content`, or the literal `<think>` token (conventions used by other model families, kept for forward compatibility).
+
+The chat template lives in one of two places depending on model age: a standalone `chat_template.jinja` file at the repo root (newer models), or the `chat_template` field inside `tokenizer_config.json` (older models).
+
+**Granite Guardian is a special case** (`scripts/utils/infer-functions.sh`): Guardian models reuse their upstream instruct model's chat template purely to format the transcript being judged, so any `tools`/`thinking` gate the template happens to contain is an inherited artifact, not a real capability — Guardian models can't perform tool calls, and where Guardian's own thinking output exists (e.g. 4.1) it isn't driven by the chat template and requires client-side code, not automatic detection. Guardian models also can't hold a standard back-and-forth chat. So any model whose `family` is `"Granite Guardian"` gets `supported_functions: [Guardian]` only, overriding the `model_type`/chat-template-derived rules above entirely.
+
+These are still reviewable/correctable during Phase 2 if a model's template is unusual or malformed.
 
 ## Error Handling
 
@@ -111,6 +122,9 @@ If you encounter rate limits there are two things to try:
 
 1. Ask the user to provide a huggingface token (`export HF_TOKEN=<token>`)
 2. Increase delay between calls (`export HF_REQUEST_DELAY=2`)
+
+### Private Models
+When `HF_TOKEN` belongs to an account with org access, the collections API surfaces private/unreleased repos too. `scripts/02-fetch-all-models.sh` skips any collection item with `private: true` by default so unreleased models don't leak into `resources/models.yaml`. To include them anyway (e.g. prepping the catalog ahead of a launch), set `export HF_INCLUDE_PRIVATE=true`.
 
 ### Validation Failures
 ```bash
@@ -151,6 +165,9 @@ If you encounter rate limits there are two things to try:
 ### Issue: LM Studio search returns no results
 **Solution:** Model may not be in LM Studio's catalog yet (coverage is currently limited to the newest generations). Skip LM Studio integration for that model.
 
+### Issue: LM Studio variant's precision looks wrong or is `null`
+LM Studio's model page only exposes `compatibilityTypes` (a packaging *format* like `gguf`, not a quantization) and `minMemoryUsageBytes` — there's no real per-quant precision in the server-rendered page. `scripts/05-query-lmstudio.sh` infers precision by matching `minMemoryUsageBytes` against the closest-sized GGUF variant already fetched from HF's `-GGUF` sibling repo (by `scripts/03-fetch-quantized.sh`, which must run before this step). If a model has no GGUF variants yet, or LM Studio's manifest couldn't be parsed, precision comes back `null` — set it manually during review.
+
 ### Issue: Generated YAML has syntax errors
 **Solution:** Run `./scripts/07-validate-yaml.sh` to identify issues. Common causes:
 - Unescaped special characters in descriptions
@@ -176,10 +193,11 @@ If you encounter rate limits there are two things to try:
 
 | Script | Purpose |
 |--------|---------|
-| `infer-functions.sh` | Infer supported model functions from model type |
+| `infer-functions.sh` | Infer supported model functions from model type and chat-template signals |
 | `format-description.sh` | Generate description template |
 | `suggest-tags.sh` | Suggest tags based on model type |
 | `hf-curl.sh` | Run a curl call against huggingface with HF_TOKEN if available |
+| `fetch-chat-template.sh` | Fetch a model's chat template (jinja file or tokenizer_config.json) |
 
 ## Best Practices
 

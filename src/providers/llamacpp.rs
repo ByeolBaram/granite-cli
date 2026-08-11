@@ -121,8 +121,28 @@ impl LlamaCppProvider {
         );
 
         map.insert(
+            ModelFunction::ToolCalling,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
+            ModelFunction::Thinking,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
+            ModelFunction::Guardian,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings],
+        );
+
+        map.insert(
+            ModelFunction::Transcription,
+            vec![ApiEndpoint::OpenAIAudioTranscription],
         );
 
         map
@@ -261,6 +281,8 @@ impl LlamaCppProvider {
 }
 
 impl ConfigConstructable for LlamaCppProvider {
+    type Config = LlamaCppProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: LlamaCppProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
@@ -296,6 +318,18 @@ impl Provider for LlamaCppProvider {
 
     fn supported_api_types(&self) -> Vec<ApiType> {
         vec![ApiType::OpenAI, ApiType::Anthropic]
+    }
+
+    fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    fn api_key(&self) -> Option<&Secret> {
+        self.config.api_key.as_ref()
+    }
+
+    fn verify_ssl(&self) -> bool {
+        self.config.verify_ssl
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
@@ -387,14 +421,6 @@ impl HasProviderMetadata for LlamaCppProvider {
                 "high-performance".to_string(),
             ],
         }
-    }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(LlamaCppProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(LlamaCppProviderConfig::default()).unwrap_or_default()
     }
 }
 

@@ -2,6 +2,11 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
+
+use_channel!("PROVD");
+
 /*-- Provider Registry -------------------------------------------------------*/
 
 pub static PROVIDER_REGISTRY: LazyLock<base::ProviderFactory> = LazyLock::new(|| {
@@ -30,8 +35,16 @@ impl ProviderSource {
             .providers
             .values()
             .filter_map(|provider_config| {
-                PROVIDER_REGISTRY
-                    .construct(&provider_config.provider_type, &provider_config.config)
+                let result = PROVIDER_REGISTRY
+                    .construct(&provider_config.provider_type, &provider_config.config);
+                if result.is_err() {
+                    alog_channel!(
+                        MessageLevel::Warning,
+                        "Could not construct provider '{}'",
+                        provider_config.provider_type
+                    );
+                }
+                result
                     .ok()
                     .map(|provider| (provider_config.provider_id.clone(), provider))
             })

@@ -1,5 +1,5 @@
 // Standard
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // Third Party
@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 // Local
+use crate::capabilities::BindingType;
 use crate::define_factory;
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::Ui;
@@ -16,7 +17,7 @@ use crate::utils::ui::Ui;
 /// Core trait for launcher implementations.
 /// All launchers must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Launcher: ConfigConstructable + Send + Sync {
+pub trait Launcher: Send + Sync {
     fn name(&self) -> &str;
 
     /// The binary/command this instance will exec.
@@ -24,10 +25,10 @@ pub trait Launcher: ConfigConstructable + Send + Sync {
     /// lookup (e.g. `"claude"`) or an absolute path set by the user in config.
     fn command(&self) -> &str;
 
-    /// Capability IDs this launcher type supports.
+    /// Binding surfaces this launcher type supports.
     /// Default implementation delegates to `metadata()` so there is no need
     /// to duplicate the list on the instance.
-    fn supported_capabilities(&self) -> Vec<String>;
+    fn supported_capabilities(&self) -> HashSet<BindingType>;
 
     /// Resolve the binary to an absolute path.
     ///
@@ -127,8 +128,8 @@ pub struct LauncherMetadata {
     pub description: String,
     /// The default binary name used for PATH lookup (e.g. `"claude"`, `"bob"`).
     pub default_command: String,
-    /// Capability IDs this launcher type can make use of.
-    pub supported_capabilities: Vec<String>,
+    /// Binding surfaces this launcher type can make use of.
+    pub supported_capabilities: HashSet<BindingType>,
     pub tags: Vec<String>,
 }
 
@@ -176,6 +177,8 @@ pub(crate) mod tests {
     }
 
     impl ConfigConstructable for FakeLauncher {
+        type Config = crate::registry::NoConfig;
+
         fn new(cfg: &serde_json::Value) -> Self {
             let command_name = cfg
                 .get("command_name")
@@ -203,7 +206,7 @@ pub(crate) mod tests {
             &self.command_name
         }
 
-        fn supported_capabilities(&self) -> Vec<String> {
+        fn supported_capabilities(&self) -> HashSet<BindingType> {
             Self::metadata().supported_capabilities
         }
 
@@ -224,7 +227,7 @@ pub(crate) mod tests {
                 name: "Fake Launcher".to_string(),
                 description: "Test double".to_string(),
                 default_command: "fake-binary-that-does-not-exist".to_string(),
-                supported_capabilities: vec![],
+                supported_capabilities: HashSet::new(),
                 tags: vec![],
             }
         }
@@ -290,7 +293,7 @@ pub(crate) mod tests {
             name: "Test".to_string(),
             description: "A test launcher".to_string(),
             default_command: "test".to_string(),
-            supported_capabilities: vec![],
+            supported_capabilities: HashSet::new(),
             tags: vec![],
         };
         assert_eq!(meta.to_string(), "A test launcher");

@@ -5,6 +5,34 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+trait ConfigId {
+    fn config_id(&self) -> &str;
+}
+
+impl ConfigId for ModelConfig {
+    fn config_id(&self) -> &str {
+        &self.model_id
+    }
+}
+
+impl ConfigId for ProviderConfig {
+    fn config_id(&self) -> &str {
+        &self.provider_id
+    }
+}
+
+impl ConfigId for CapabilityConfig {
+    fn config_id(&self) -> &str {
+        &self.capability_id
+    }
+}
+
+impl ConfigId for LauncherConfig {
+    fn config_id(&self) -> &str {
+        &self.launcher_id
+    }
+}
+
 use_channel!("CONF");
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -30,20 +58,12 @@ pub struct ProviderConfig {
     pub config: serde_json::Value,
 }
 
-impl Default for ProviderConfig {
-    fn default() -> Self {
-        Self {
-            provider_id: String::new(),
-            provider_type: String::new(),
-            config: serde_json::Value::Object(serde_json::Map::new()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityConfig {
     pub capability_id: String,
-    pub config: HashMap<String, String>,
+    #[serde(rename = "type")]
+    pub capability_type: String,
+    pub config: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,17 +75,6 @@ pub struct LauncherConfig {
     pub enabled_capabilities: Vec<String>,
     /// Launcher-type-specific config passed to `ConfigConstructable::new`.
     pub config: serde_json::Value,
-}
-
-impl Default for LauncherConfig {
-    fn default() -> Self {
-        Self {
-            launcher_id: String::new(),
-            launcher_type: String::new(),
-            enabled_capabilities: vec![],
-            config: serde_json::Value::Object(serde_json::Map::new()),
-        }
-    }
 }
 
 impl Config {
@@ -141,7 +150,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_dir<K: std::hash::Hash + Eq + ToString, V: serde::de::DeserializeOwned>(
+    fn load_dir<K: std::hash::Hash + Eq + ToString, V: serde::de::DeserializeOwned + ConfigId>(
         dir: &Path,
         into_key: impl Fn(&str) -> K + Copy,
     ) -> Result<HashMap<K, V>> {
@@ -158,7 +167,19 @@ impl Config {
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
                 if let Ok(config) = Self::load_yaml_from_file::<V>(&path) {
-                    map.insert(into_key(&file_name), config);
+                    let id = config.config_id().to_string();
+                    if id != file_name {
+                        let type_name = std::any::type_name::<V>();
+                        alog_channel!(
+                            MessageLevel::Warning,
+                            "Found invalid config file {} with id \"{}\" (type: {})",
+                            file_name,
+                            id,
+                            type_name
+                        );
+                    } else {
+                        map.insert(into_key(&file_name), config);
+                    }
                 }
             }
         }
@@ -348,6 +369,42 @@ impl Config {
             self.save()
         } else {
             Ok(())
+        }
+    }
+}
+
+/*-- Tests -- */
+
+#[cfg(test)]
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            provider_id: String::new(),
+            provider_type: String::new(),
+            config: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for CapabilityConfig {
+    fn default() -> Self {
+        Self {
+            capability_id: String::new(),
+            capability_type: String::new(),
+            config: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for LauncherConfig {
+    fn default() -> Self {
+        Self {
+            launcher_id: String::new(),
+            launcher_type: String::new(),
+            enabled_capabilities: vec![],
+            config: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
 }

@@ -73,6 +73,9 @@ impl OpenAIProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
         map.insert(ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::ToolCalling, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::Thinking, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::Guardian, vec![ApiEndpoint::OpenAIChat]);
         map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings],
@@ -86,6 +89,8 @@ impl OpenAIProvider {
 }
 
 impl ConfigConstructable for OpenAIProvider {
+    type Config = OpenAIProviderConfig;
+
     fn new(cfg: &serde_json::Value) -> Self {
         let config: OpenAIProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -120,6 +125,18 @@ impl Provider for OpenAIProvider {
 
     fn supported_api_types(&self) -> Vec<ApiType> {
         vec![ApiType::OpenAI]
+    }
+
+    fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    fn api_key(&self) -> Option<&Secret> {
+        self.config.api_key.as_ref()
+    }
+
+    fn verify_ssl(&self) -> bool {
+        self.config.verify_ssl
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
@@ -230,14 +247,6 @@ impl HasProviderMetadata for OpenAIProvider {
             ],
         }
     }
-
-    fn config_schema() -> schemars::Schema {
-        schemars::schema_for!(OpenAIProviderConfig)
-    }
-
-    fn default_config() -> serde_json::Value {
-        serde_json::to_value(OpenAIProviderConfig::default()).unwrap_or_default()
-    }
 }
 
 /*-- tests -------------------------------------------------------------------*/
@@ -257,7 +266,10 @@ mod tests {
 
     #[test]
     fn test_provider_config_schema_reflects_real_config_struct() {
-        let schema = OpenAIProvider::config_schema();
+        use crate::providers::base::ProviderFactory;
+        let mut factory = ProviderFactory::new();
+        factory.register::<OpenAIProvider>("openai-compatible");
+        let schema = factory.config_schema("openai-compatible").unwrap();
         let properties = schema
             .get("properties")
             .and_then(|p| p.as_object())

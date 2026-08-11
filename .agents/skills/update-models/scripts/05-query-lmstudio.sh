@@ -36,7 +36,6 @@ import sys
 with open(sys.argv[1], encoding="utf-8", errors="ignore") as f:
     data = f.read()
 
-precision = None
 size_gb = None
 
 anchor = data.find("model.yaml is an open standard")
@@ -49,33 +48,55 @@ if anchor != -1:
     text = chunk.encode("utf-8", "ignore").decode("unicode_escape", "ignore")
     text = re.sub(r"<[^>]+>", "", text)
 
-    m = re.search(r"compatibilityTypes:\s*\n\s*-\s*(\w+)", text)
-    if m:
-        precision = m.group(1).upper()
-
+    # Note: the manifest's `compatibilityTypes` field (e.g. "gguf") is the
+    # packaging *format*, not a quantization/precision value, and LM Studio's
+    # server-rendered page has no per-quant listing at all -- precision is
+    # inferred separately in infer_precision() below.
     m = re.search(r"minMemoryUsageBytes:\s*([0-9]+)", text)
     if m:
         size_gb = round(int(m.group(1)) / 1e9, 3)
 
-json.dump({"precision": precision, "size_gb": size_gb}, sys.stdout)
+json.dump({"size_gb": size_gb}, sys.stdout)
 PYEOF
 }
 
+# Infers the LM Studio variant's quantization precision by finding the
+# closest-sized GGUF variant already known for this model (fetched from the
+# HF GGUF sibling repo by 03-fetch-quantized.sh) to LM Studio's reported
+# minMemoryUsageBytes. There's no real per-quant precision data to scrape.
+infer_precision() {
+    local model="$1" size_gb="$2"
+
+    if [ "$size_gb" = "null" ] || [ -z "$size_gb" ]; then
+        echo "null"
+        return
+    fi
+
+    echo "$model" | jq --argjson target "$size_gb" '
+        def dist: (.size_gb - $target) | if . < 0 then -. else . end;
+        ([.variants[]? | select(.format == "GGUF")] | sort_by(dist) | .[0].precision) // null
+    '
+}
+
 get_lmstudio_info() {
-    local owner="$1" name="$2"
+    local owner="$1" name="$2" model="$3"
     local url="https://lmstudio.ai/models/${owner}/${name}"
 
-    local page_file manifest
+    local page_file manifest size_gb precision
     page_file=$(mktemp)
     curl -sL "$url" -o "$page_file"
     manifest=$(extract_manifest "$page_file")
     rm -f "$page_file"
 
+    size_gb=$(echo "$manifest" | jq -r '.size_gb // "null"')
+    precision=$(infer_precision "$model" "$size_gb")
+
     jq -n \
         --arg name "$name" \
         --arg url "$url" \
         --argjson manifest "$manifest" \
-        '{name: $name, url: $url, size_gb: $manifest.size_gb, precision: $manifest.precision}'
+        --argjson precision "$precision" \
+        '{name: $name, url: $url, size_gb: $manifest.size_gb, precision: $precision}'
 }
 
 map_to_lmstudio() {
@@ -103,7 +124,7 @@ jq -c '.[]' "$MODELS_FILE" | while read -r model; do
     if [ "$http_code" = "404" ]; then
         lmstudio_info="[]"
     else
-        lmstudio_info="[$(get_lmstudio_info ibm "$candidate")]"
+        lmstudio_info="[$(get_lmstudio_info ibm "$candidate" "$model")]"
     fi
 
     echo "$model" | jq --argjson lmstudio "$lmstudio_info" '. + {lmstudio_info: $lmstudio}'
