@@ -1,5 +1,5 @@
 # Granite Models Catalog
-# Generated: 2026-08-05 20:29:08 UTC
+# Generated: 2026-08-11 20:09:59 UTC
 # Source: HuggingFace ibm-granite organization
 
 - id: granite-speech-4.1-2b
@@ -79,6 +79,7 @@
   supported_functions:
     - Chat
     - Transcription
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q4_K_M
@@ -197,6 +198,8 @@
   supported_functions:
     - Chat
     - Transcription
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -234,6 +237,8 @@
   supported_functions:
     - Chat
     - Transcription
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -271,6 +276,8 @@
   supported_functions:
     - Chat
     - Transcription
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -307,6 +314,7 @@
         count: 64
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -405,6 +413,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -503,6 +512,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -604,6 +614,7 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 3072, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -701,6 +712,7 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 1536, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -795,6 +807,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -889,6 +902,7 @@
         count: 28
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1061,6 +1075,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1162,6 +1177,7 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 4096, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1263,6 +1279,7 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 3072, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1364,6 +1381,7 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 8192, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1465,6 +1483,8 @@
         mamba: { d_conv: 4, d_state: 128, d_inner: 3072, n_groups: 1 }
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1555,6 +1575,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1650,6 +1672,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: GGUF
       precision: Q2_K
@@ -1746,6 +1770,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q4_K_M
@@ -1806,6 +1831,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: safetensors
       precision: null
@@ -1841,6 +1867,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q4_K_M
@@ -1902,6 +1929,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: safetensors
       precision: null
@@ -1943,6 +1971,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: safetensors
       precision: null
@@ -1976,6 +2005,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - ToolCalling
   variants:
     - format: safetensors
       precision: float32
@@ -2013,6 +2043,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2048,6 +2080,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2083,6 +2117,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2118,6 +2154,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2153,6 +2190,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2188,6 +2226,7 @@
         count: 32
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2223,6 +2262,7 @@
         count: 24
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2553,6 +2593,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2588,6 +2629,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2623,6 +2665,7 @@
         count: 32
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2658,6 +2701,7 @@
         count: 24
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2693,6 +2737,7 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
   variants:
     - format: GGUF
       precision: Q2_K
@@ -3143,6 +3188,8 @@
         count: 40
   supported_functions:
     - Chat
+    - ToolCalling
+    - Thinking
   variants:
     - format: safetensors
       precision: bfloat16
