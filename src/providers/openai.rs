@@ -73,6 +73,9 @@ impl OpenAIProvider {
     fn default_function_endpoints() -> HashMap<ModelFunction, Vec<ApiEndpoint>> {
         let mut map = HashMap::new();
         map.insert(ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::ToolCalling, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::Thinking, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::Guardian, vec![ApiEndpoint::OpenAIChat]);
         map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings],

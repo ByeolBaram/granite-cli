@@ -107,6 +107,11 @@ impl LMStudioProvider {
         );
 
         map.insert(
+            ModelFunction::Guardian,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings],
         );
