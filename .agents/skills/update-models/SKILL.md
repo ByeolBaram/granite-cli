@@ -160,6 +160,9 @@ If you encounter rate limits there are two things to try:
 ### Issue: LM Studio search returns no results
 **Solution:** Model may not be in LM Studio's catalog yet (coverage is currently limited to the newest generations). Skip LM Studio integration for that model.
 
+### Issue: LM Studio variant's precision looks wrong or is `null`
+LM Studio's model page only exposes `compatibilityTypes` (a packaging *format* like `gguf`, not a quantization) and `minMemoryUsageBytes` — there's no real per-quant precision in the server-rendered page. `scripts/05-query-lmstudio.sh` infers precision by matching `minMemoryUsageBytes` against the closest-sized GGUF variant already fetched from HF's `-GGUF` sibling repo (by `scripts/03-fetch-quantized.sh`, which must run before this step). If a model has no GGUF variants yet, or LM Studio's manifest couldn't be parsed, precision comes back `null` — set it manually during review.
+
 ### Issue: Generated YAML has syntax errors
 **Solution:** Run `./scripts/07-validate-yaml.sh` to identify issues. Common causes:
 - Unescaped special characters in descriptions
