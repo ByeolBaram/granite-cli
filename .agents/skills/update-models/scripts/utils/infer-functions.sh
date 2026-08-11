@@ -33,5 +33,18 @@ if [ "$model_type" = "Vision" ]; then
     functions+=("ImageUnderstanding")
 fi
 
+# ToolCalling/Thinking are detected from the model's chat template
+# (see detect_chat_template_signals in 02-fetch-all-models.sh)
+supports_tool_calling=$(echo "$model" | jq -r '.supports_tool_calling // false')
+supports_thinking=$(echo "$model" | jq -r '.supports_thinking // false')
+
+if [ "$supports_tool_calling" = "true" ]; then
+    functions+=("ToolCalling")
+fi
+
+if [ "$supports_thinking" = "true" ]; then
+    functions+=("Thinking")
+fi
+
 # Output as JSON array
 printf '%s\n' "${functions[@]}" | jq -R . | jq -s .

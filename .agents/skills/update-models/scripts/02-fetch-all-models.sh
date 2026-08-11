@@ -134,6 +134,29 @@ extract_architecture() {
         }'
 }
 
+# Detects tool-calling/thinking support by looking for the specific Jinja
+# if/elif gate each capability uses, not a bare substring (which also
+# matches unrelated usages, e.g. Guardian's tools-role check).
+detect_chat_template_signals() {
+    local template="$1"
+
+    local supports_tool_calling=false
+    if echo "$template" | grep -qE '\{%-?\s*(if|elif)\s+tools\b'; then
+        supports_tool_calling=true
+    fi
+
+    local supports_thinking=false
+    if echo "$template" | grep -qE '\{%-?\s*(if|elif)\s+thinking\b' \
+        || echo "$template" | grep -q 'enable_thinking' \
+        || echo "$template" | grep -q 'reasoning_content' \
+        || echo "$template" | grep -qF '<think>'; then
+        supports_thinking=true
+    fi
+
+    jq -n --argjson tools "$supports_tool_calling" --argjson thinking "$supports_thinking" \
+        '{supports_tool_calling: $tools, supports_thinking: $thinking}'
+}
+
 map_family() {
     local family="$1"
     if [[ "$family" =~ [0-9] ]]; then
@@ -193,6 +216,12 @@ fetch_model_metadata() {
     readme=$($SCRIPT_DIR/utils/hf-curl.sh $readme_url)
     description=$(echo -e "$readme" | awk '/\*\*Model Summary:\*\*/ {found=1; sub(/.*\*\*Model Summary:\*\*[[:space:]]*/, ""); if ($0 != "") {seen=1; print}; next} /## Model Summary/ {found=1; next} found && seen && /^$/ {exit} found && /^$/ {next} found && NF > 0 {seen=1; print}')
 
+    # Detect ToolCalling/Thinking support from the model's chat template
+    chat_template=$("${SCRIPT_DIR}/utils/fetch-chat-template.sh" "$repo")
+    capabilities=$(detect_chat_template_signals "$chat_template")
+    supports_tool_calling=$(echo "$capabilities" | jq -r '.supports_tool_calling')
+    supports_thinking=$(echo "$capabilities" | jq -r '.supports_thinking')
+
     # Infer model type from family
     if [[ "$family" == *"Vision"* ]] || [[ "$family" == *"Docling"* ]]; then
         model_type="Vision"
@@ -214,6 +243,8 @@ fetch_model_metadata() {
         --arg native_dtype "$native_dtype" \
         --argjson architecture "$architecture" \
         --argjson config "$config" \
+        --argjson supports_tool_calling "$supports_tool_calling" \
+        --argjson supports_thinking "$supports_thinking" \
         '{
             repo: $repo,
             family: $family,
@@ -224,7 +255,9 @@ fetch_model_metadata() {
             description: $description,
             native_dtype: $native_dtype,
             architecture: $architecture,
-            config: $config
+            config: $config,
+            supports_tool_calling: $supports_tool_calling,
+            supports_thinking: $supports_thinking
         }'
 
     sleep "$REQUEST_DELAY"

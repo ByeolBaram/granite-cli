@@ -93,7 +93,9 @@ pub struct ModelVariant {
 
 ### Supported Functions Mapping
 
-Functions are inferred from `model_type` by `scripts/utils/infer-functions.sh`:
+Functions are inferred from two sources by `scripts/utils/infer-functions.sh`.
+
+Base functions come from `model_type`:
 
 | model_type | supported_functions |
 |---|---|
@@ -102,7 +104,14 @@ Functions are inferred from `model_type` by `scripts/utils/infer-functions.sh`:
 | Speech | `[Chat, Transcription]` |
 | Embedding | `[Embeddings]` |
 
-These can be manually edited during review to add functions like `ToolCalling`, `Thinking`, etc.
+`ToolCalling` and `Thinking` are detected from the model's HF chat template (fetched by `scripts/utils/fetch-chat-template.sh` and analyzed by `detect_chat_template_signals` in `scripts/02-fetch-all-models.sh`), since that's the actual mechanism inference clients use to gate these behaviors:
+
+- **ToolCalling**: the template has a Jinja `if`/`elif` conditional on the bare `tools` variable (e.g. `{%- if tools %}`). A plain substring match on "tools" is not used — Granite Guardian's template mentions "tools" in role checks and risk-definition prose without actually gating on it, which would otherwise be a false positive.
+- **Thinking**: the template has a Jinja `if`/`elif` conditional on a bare `thinking` variable (Granite's own convention, e.g. `{%- elif thinking %}`), or contains `enable_thinking`, `reasoning_content`, or the literal `<think>` token (conventions used by other model families, kept for forward compatibility).
+
+The chat template lives in one of two places depending on model age: a standalone `chat_template.jinja` file at the repo root (newer models), or the `chat_template` field inside `tokenizer_config.json` (older models).
+
+These are still reviewable/correctable during Phase 2 if a model's template is unusual or malformed.
 
 ## Error Handling
 
@@ -176,10 +185,11 @@ If you encounter rate limits there are two things to try:
 
 | Script | Purpose |
 |--------|---------|
-| `infer-functions.sh` | Infer supported model functions from model type |
+| `infer-functions.sh` | Infer supported model functions from model type and chat-template signals |
 | `format-description.sh` | Generate description template |
 | `suggest-tags.sh` | Suggest tags based on model type |
 | `hf-curl.sh` | Run a curl call against huggingface with HF_TOKEN if available |
+| `fetch-chat-template.sh` | Fetch a model's chat template (jinja file or tokenizer_config.json) |
 
 ## Best Practices
 
