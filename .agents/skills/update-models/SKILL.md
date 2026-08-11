@@ -111,6 +111,8 @@ Base functions come from `model_type`:
 
 The chat template lives in one of two places depending on model age: a standalone `chat_template.jinja` file at the repo root (newer models), or the `chat_template` field inside `tokenizer_config.json` (older models).
 
+**Granite Guardian is a special case** (`scripts/utils/infer-functions.sh`): Guardian models reuse their upstream instruct model's chat template purely to format the transcript being judged, so any `tools`/`thinking` gate the template happens to contain is an inherited artifact, not a real capability — Guardian models can't perform tool calls, and where Guardian's own thinking output exists (e.g. 4.1) it isn't driven by the chat template and requires client-side code, not automatic detection. Guardian models also can't hold a standard back-and-forth chat. So any model whose `family` is `"Granite Guardian"` gets `supported_functions: [Guardian]` only, overriding the `model_type`/chat-template-derived rules above entirely.
+
 These are still reviewable/correctable during Phase 2 if a model's template is unusual or malformed.
 
 ## Error Handling
