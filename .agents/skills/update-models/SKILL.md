@@ -91,6 +91,28 @@ pub struct ModelVariant {
 }
 ```
 
+### MLX Variant Discovery
+
+In addition to the GGUF/safetensors variants found on the `ibm-granite` org itself, `find_mlx_variants` in `scripts/03-fetch-quantized.sh` looks for MLX conversions published by the `mlx-community` org (surfaced by Apple's MLX-based local inference tools, e.g. LM Studio on macOS). Rather than parsing the `<model-name>-mlx-<precision>` naming convention `mlx-community` mostly follows (repo names are inconsistent enough — `-MLX` suffixes, `-DWQ` suffixes, mixed case — to make that fragile), it queries HF's tag-based search directly:
+
+```
+${HF_API}/models?filter=base_model:<ibm-granite-repo>&author=mlx-community&limit=100
+```
+
+`mlx-community` tags every conversion with a `base_model:<owner>/<repo>` pointing back at the model it was converted from, so this reliably finds every conversion regardless of naming. Results are additionally filtered to `library_name == "mlx"` and non-private.
+
+**Precision** is derived, in order of preference:
+1. A repo name suffix matching `(mx|nv)fp\d+` (e.g. `mxfp4`, `nvfp4`, `mxfp8`) - these micro-scaled/NVIDIA float formats carry the same `"<bits>-bit"` tag as plain integer quantization at the same bit width (e.g. both `granite-4.1-30b-mxfp4` and `granite-4.1-30b-4bit` are tagged `4-bit`), so the tag alone can't distinguish them from plain int-N quantization, and neither the tags nor `config.quantization_config` name the scheme anywhere else. The repo name suffix is the only signal available.
+2. A `"<bits>-bit"` tag (e.g. `4-bit` → `4bit`) for quantized repos not covered by rule 1.
+3. `config.quantization_config.bits` (fallback if untagged).
+4. The dtype of the (single) key in `.safetensors.parameters` for full-precision repos (`BF16` → `bfloat16`, `F16`/`FP16` → `float16`, `F32` → `float32`).
+
+A repo where none of these resolve is skipped with a diagnostic on stderr.
+
+**Size** is computed from `.safetensors.parameters` (a dtype → element-count map on the HF model detail endpoint), not `.safetensors.total` — the latter is a *parameter count*, not a byte size, and using it directly (without multiplying by bytes-per-element) undercounts non-8-bit dtypes. Size in GB is `sum(count * bytes_per_element(dtype)) / 1e9` across every entry in the map.
+
+**Mistagged upstream repos**: `mlx-community`'s `base_model` tag is occasionally wrong (a repo named after one Granite variant has been seen tagged as derived from a different one). As a guard, a candidate is only accepted if its own repo name (minus an optional `ibm-` prefix) starts with the base model's name; mismatches are skipped with a diagnostic rather than silently attributed to the wrong model or silently dropped from both.
+
 ### Supported Functions Mapping
 
 Functions are inferred from two sources by `scripts/utils/infer-functions.sh`.
@@ -167,6 +189,9 @@ When `HF_TOKEN` belongs to an account with org access, the collections API surfa
 
 ### Issue: LM Studio variant's precision looks wrong or is `null`
 LM Studio's model page only exposes `compatibilityTypes` (a packaging *format* like `gguf`, not a quantization) and `minMemoryUsageBytes` — there's no real per-quant precision in the server-rendered page. `scripts/05-query-lmstudio.sh` infers precision by matching `minMemoryUsageBytes` against the closest-sized GGUF variant already fetched from HF's `-GGUF` sibling repo (by `scripts/03-fetch-quantized.sh`, which must run before this step). If a model has no GGUF variants yet, or LM Studio's manifest couldn't be parsed, precision comes back `null` — set it manually during review.
+
+### Issue: A model has no MLX variants even though one exists on hf.co/mlx-community
+The base model's `ibm-granite` repo may not be tagged as the `base_model` on the `mlx-community` conversion (upstream metadata issue), or the conversion may not set `library_name: mlx`. Check `https://huggingface.co/mlx-community/models?search=<model-name>` manually and add the variant to `resources/models.yaml` by hand if so.
 
 ### Issue: Generated YAML has syntax errors
 **Solution:** Run `./scripts/07-validate-yaml.sh` to identify issues. Common causes:
