@@ -148,7 +148,7 @@ impl Requirement<dyn Provider> for ProviderRequirement {
         let endpoints = instance.function_endpoints();
         self.admits(
             &instance.supported_api_types(),
-            |f| instance.supports_function(f),
+            |f| endpoints.contains_key(f),
             endpoints.values(),
         )
     }
