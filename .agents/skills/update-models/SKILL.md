@@ -123,6 +123,9 @@ If you encounter rate limits there are two things to try:
 1. Ask the user to provide a huggingface token (`export HF_TOKEN=<token>`)
 2. Increase delay between calls (`export HF_REQUEST_DELAY=2`)
 
+### Private Models
+When `HF_TOKEN` belongs to an account with org access, the collections API surfaces private/unreleased repos too. `scripts/02-fetch-all-models.sh` skips any collection item with `private: true` by default so unreleased models don't leak into `resources/models.yaml`. To include them anyway (e.g. prepping the catalog ahead of a launch), set `export HF_INCLUDE_PRIVATE=true`.
+
 ### Validation Failures
 ```bash
 # Validate generated YAML

@@ -280,12 +280,20 @@ jq -c '.[]' "$COLLECTIONS_FILE" | while read -r collection; do
 
     echo "Processing collection: $name" >&2
 
-    # Fetch models in collection
+    # Fetch models in collection. Keep each item's `private` flag alongside
+    # its id so private repos (visible here only because HF_TOKEN has org
+    # access) can be skipped below by default.
     collection_api="${HF_API}/collections/${slug}"
-    models=$($SCRIPT_DIR/utils/hf-curl.sh "$collection_api" 2>/dev/null | jq -r '.items[] | select(.type == "model") | .id' || echo "")
+    models=$($SCRIPT_DIR/utils/hf-curl.sh "$collection_api" 2>/dev/null | jq -c '.items[] | select(.type == "model") | {id, private: (.private // false)}' || echo "")
 
     # Process each model
-    while IFS= read -r repo; do
+    while IFS= read -r item; do
+        if [ -z "$item" ]; then
+            continue
+        fi
+        repo=$(echo "$item" | jq -r '.id')
+        private=$(echo "$item" | jq -r '.private')
+
         if [ -z "$repo" ]; then
             continue
         fi
@@ -295,6 +303,10 @@ jq -c '.[]' "$COLLECTIONS_FILE" | while read -r collection; do
         fi
         if [[ "$repo" =~ .*-lora-.* ]]; then
             echo "  Skipping lora adapter: $repo" >&2
+            continue
+        fi
+        if [ "$private" = "true" ] && [ "${HF_INCLUDE_PRIVATE:-false}" != "true" ]; then
+            echo "  Skipping private model: $repo (set HF_INCLUDE_PRIVATE=true to include)" >&2
             continue
         fi
 
