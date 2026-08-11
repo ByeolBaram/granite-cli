@@ -1,5 +1,5 @@
 # Granite Models Catalog
-# Generated: 2026-08-11 20:09:59 UTC
+# Generated: 2026-08-11 20:53:57 UTC
 # Source: HuggingFace ibm-granite organization
 
 - id: granite-speech-4.1-2b
@@ -385,7 +385,7 @@
       size_gb: 17
       url: "https://ollama.com/library/granite4.1:30b"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_K_M
       size_gb: 17.5
       url: "https://lmstudio.ai/models/ibm/granite-4.1-30b"
   description: |
@@ -484,7 +484,7 @@
       size_gb: 5.3
       url: "https://ollama.com/library/granite4.1:8b"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_K_M
       size_gb: 5.3
       url: "https://lmstudio.ai/models/ibm/granite-4.1-8b"
   description: |
@@ -583,7 +583,7 @@
       size_gb: 2.1
       url: "https://ollama.com/library/granite4.1:3b"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_K_M
       size_gb: 2.1
       url: "https://lmstudio.ai/models/ibm/granite-4.1-3b"
   description: |
@@ -1146,7 +1146,7 @@
       size_gb: 2.1
       url: "https://ollama.com/library/granite4:micro"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_1
       size_gb: 2.255
       url: "https://lmstudio.ai/models/ibm/granite-4-micro"
   description: |
@@ -1248,7 +1248,7 @@
       size_gb: 1.9
       url: "https://ollama.com/library/granite4:micro-h"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_1
       size_gb: 2.083
       url: "https://lmstudio.ai/models/ibm/granite-4-h-micro"
   description: |
@@ -1350,7 +1350,7 @@
       size_gb: 4.2
       url: "https://ollama.com/library/granite4:tiny-h"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_1
       size_gb: 4.542
       url: "https://lmstudio.ai/models/ibm/granite-4-h-tiny"
   description: |
@@ -1452,7 +1452,7 @@
       size_gb: 19
       url: "https://ollama.com/library/granite4:small-h"
     - format: LMStudio
-      precision: GGUF
+      precision: Q4_1
       size_gb: 20.938
       url: "https://lmstudio.ai/models/ibm/granite-4-h-small"
   description: |
@@ -1940,7 +1940,7 @@
       size_gb: 2.4
       url: "https://ollama.com/library/granite3.2-vision:2b"
     - format: LMStudio
-      precision: GGUF
+      precision: null
       size_gb: 1.7
       url: "https://lmstudio.ai/models/ibm/granite-vision-3.2-2b"
   description: |
@@ -2736,8 +2736,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
-    - ToolCalling
+    - Guardian
   variants:
     - format: GGUF
       precision: Q2_K
@@ -2834,7 +2833,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: GGUF
       precision: Q4_K_M
@@ -2891,7 +2890,7 @@
       - kind: full_attention
         count: 32
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2931,7 +2930,7 @@
       - kind: full_attention
         count: 28
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -2969,7 +2968,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -3009,7 +3008,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -3049,7 +3048,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -3085,7 +3084,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
@@ -3121,7 +3120,7 @@
       - kind: full_attention
         count: 12
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: float32
@@ -3154,7 +3153,7 @@
       - kind: full_attention
         count: 4
   supported_functions:
-    - Chat
+    - Guardian
   variants:
     - format: safetensors
       precision: float32
@@ -3187,9 +3186,7 @@
       - kind: full_attention
         count: 40
   supported_functions:
-    - Chat
-    - ToolCalling
-    - Thinking
+    - Guardian
   variants:
     - format: safetensors
       precision: bfloat16
