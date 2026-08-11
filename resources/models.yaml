@@ -50,7 +50,7 @@
     - format: safetensors
       precision: null
       size_gb: 2.313
-      url: "ibm-granite/granite-speech-4.1-2b"
+      url: "https://huggingface.co/ibm-granite/granite-speech-4.1-2b"
   description: |
     Granite Speech 4.1 2B is a compact and efficient speech-language model, specifically designed for multilingual automatic speech recognition (ASR) and bidirectional automatic speech translation (AST) for English, French, German, Spanish, Portuguese and Japanese.
   tags:
@@ -108,7 +108,7 @@
     - format: safetensors
       precision: null
       size_gb: 2.112
-      url: "ibm-granite/granite-speech-4.1-2b-plus"
+      url: "https://huggingface.co/ibm-granite/granite-speech-4.1-2b-plus"
   description: |
     Granite-Speech-4.1-2B-Plus has similar capabilities to the [Granite-Speech-4.1-2B](https://huggingface.co/ibm-granite/granite-speech-4.1-2b) model. The plus model adds two new community-requested rich transcription features that can be activated with a simple prompt change: speaker-attributed ASR (speaker labels and word transcripts) and word-level timing information. Unlike the base mode, the plus model doesn't provide punctuation and capitalization.
   tags:
@@ -165,7 +165,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 4.626
-      url: "ibm-granite/granite-4.0-1b-speech"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-1b-speech"
     - format: Ollama
       precision: BF16
       size_gb: 3.3
@@ -204,7 +204,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 17.297
-      url: "ibm-granite/granite-speech-3.3-8b"
+      url: "https://huggingface.co/ibm-granite/granite-speech-3.3-8b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
@@ -243,7 +243,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.019
-      url: "ibm-granite/granite-speech-3.3-2b"
+      url: "https://huggingface.co/ibm-granite/granite-speech-3.3-2b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.5
@@ -282,7 +282,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.967
-      url: "ibm-granite/granite-speech-3.2-8b"
+      url: "https://huggingface.co/ibm-granite/granite-speech-3.2-8b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
@@ -379,7 +379,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 57.731
-      url: "ibm-granite/granite-4.1-30b"
+      url: "https://huggingface.co/ibm-granite/granite-4.1-30b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 17
@@ -388,6 +388,38 @@
       precision: Q4_K_M
       size_gb: 17.5
       url: "https://lmstudio.ai/models/ibm/granite-4.1-30b"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 57.731
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-bf16"
+    - format: MLX
+      precision: mxfp4
+      size_gb: 16.238
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-mxfp4"
+    - format: MLX
+      precision: nvfp4
+      size_gb: 18.042
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-nvfp4"
+    - format: MLX
+      precision: 4bit
+      size_gb: 18.042
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 21.65
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 25.258
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-6bit"
+    - format: MLX
+      precision: mxfp8
+      size_gb: 29.768
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-mxfp8"
+    - format: MLX
+      precision: 8bit
+      size_gb: 32.474
+      url: "https://huggingface.co/mlx-community/granite-4.1-30b-8bit"
   description: |
     Granite-4.1-30B is a 30B parameter long-context instruct model finetuned from *Granite-4.1-30B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -478,7 +510,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 17.583
-      url: "ibm-granite/granite-4.1-8b"
+      url: "https://huggingface.co/ibm-granite/granite-4.1-8b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 5.3
@@ -487,6 +519,38 @@
       precision: Q4_K_M
       size_gb: 5.3
       url: "https://lmstudio.ai/models/ibm/granite-4.1-8b"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 16.761
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-bf16"
+    - format: MLX
+      precision: mxfp4
+      size_gb: 4.715
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-mxfp4"
+    - format: MLX
+      precision: nvfp4
+      size_gb: 5.238
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-nvfp4"
+    - format: MLX
+      precision: 4bit
+      size_gb: 5.238
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 6.286
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 7.333
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-6bit"
+    - format: MLX
+      precision: mxfp8
+      size_gb: 8.643
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-mxfp8"
+    - format: MLX
+      precision: 8bit
+      size_gb: 9.428
+      url: "https://huggingface.co/mlx-community/granite-4.1-8b-8bit"
   description: |
     Granite-4.1-8B is a 8B parameter long-context instruct model finetuned from *Granite-4.1-8B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -577,7 +641,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.806
-      url: "ibm-granite/granite-4.1-3b"
+      url: "https://huggingface.co/ibm-granite/granite-4.1-3b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 2.1
@@ -586,6 +650,38 @@
       precision: Q4_K_M
       size_gb: 2.1
       url: "https://lmstudio.ai/models/ibm/granite-4.1-3b"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 6.806
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-bf16"
+    - format: MLX
+      precision: mxfp4
+      size_gb: 1.914
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-mxfp4"
+    - format: MLX
+      precision: nvfp4
+      size_gb: 2.127
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-nvfp4"
+    - format: MLX
+      precision: 4bit
+      size_gb: 2.127
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 2.552
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 2.978
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-6bit"
+    - format: MLX
+      precision: mxfp8
+      size_gb: 3.509
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-mxfp8"
+    - format: MLX
+      precision: 8bit
+      size_gb: 3.828
+      url: "https://huggingface.co/mlx-community/granite-4.1-3b-8bit"
   description: |
     Granite-4.1-3B is a 3B parameter long-context instruct model finetuned from *Granite-4.1-3B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -679,11 +775,35 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 2.923
-      url: "ibm-granite/granite-4.0-h-1b"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-h-1b"
     - format: Ollama
       precision: Q8_0
       size_gb: 1.6
       url: "https://ollama.com/library/granite4:1b-h"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 2.923
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-bf16"
+    - format: MLX
+      precision: 3bit
+      size_gb: 0.641
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-3bit"
+    - format: MLX
+      precision: 4bit
+      size_gb: 0.823
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 1.006
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 1.188
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 1.554
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-1b-8bit"
   description: |
     Granite-4.0-H-1B is a lightweight instruct model finetuned from *Granite-4.0-H-1B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques including supervised finetuning, reinforcement learning, and model merging.
   tags:
@@ -777,11 +897,35 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.681
-      url: "ibm-granite/granite-4.0-h-350m"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-h-350m"
     - format: Ollama
       precision: Q8_0
       size_gb: 0.357
       url: "https://ollama.com/library/granite4:350m-h"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 0.681
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-bf16"
+    - format: MLX
+      precision: 3bit
+      size_gb: 0.149
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-3bit"
+    - format: MLX
+      precision: 4bit
+      size_gb: 0.192
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 0.234
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 0.277
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 0.362
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-350m-8bit"
   description: |
     Granite-4.0-H-350M is a lightweight instruct model finetuned from *Granite-4.0-H-350M-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques including supervised finetuning, reinforcement learning, and model merging.
   tags:
@@ -872,11 +1016,35 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 3.264
-      url: "ibm-granite/granite-4.0-1b"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-1b"
     - format: Ollama
       precision: BF16
       size_gb: 3.3
       url: "https://ollama.com/library/granite4:1b"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 3.264
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-bf16"
+    - format: MLX
+      precision: 3bit
+      size_gb: 0.714
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-3bit"
+    - format: MLX
+      precision: 4bit
+      size_gb: 0.918
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 1.122
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 1.326
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 1.734
+      url: "https://huggingface.co/mlx-community/granite-4.0-1b-8bit"
   description: |
     Granite-4.0-1B is a lightweight instruct model finetuned from *Granite-4.0-1B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques including supervised finetuning, reinforcement learning, and model merging. 
   tags:
@@ -967,11 +1135,35 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.705
-      url: "ibm-granite/granite-4.0-350m"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-350m"
     - format: Ollama
       precision: BF16
       size_gb: 0.691
       url: "https://ollama.com/library/granite4:350m"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 0.705
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-bf16"
+    - format: MLX
+      precision: 3bit
+      size_gb: 0.154
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-3bit"
+    - format: MLX
+      precision: 4bit
+      size_gb: 0.198
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-4bit"
+    - format: MLX
+      precision: 5bit
+      size_gb: 0.242
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 0.286
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 0.374
+      url: "https://huggingface.co/mlx-community/granite-4.0-350m-8bit"
   description: |
     Granite-4.0-350M is a lightweight instruct model finetuned from *Granite-4.0-350M-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques including supervised finetuning, reinforcement learning, and model merging.
   tags:
@@ -1014,7 +1206,7 @@
     - format: safetensors
       precision: null
       size_gb: 0.258
-      url: "ibm-granite/granite-docling-258M"
+      url: "https://huggingface.co/ibm-granite/granite-docling-258M"
   description: |
     Granite Docling 258M for visual analysis and image understanding.
   tags:
@@ -1047,7 +1239,7 @@
     - format: safetensors
       precision: null
       size_gb: 0.315
-      url: "ibm-granite/granite-docling-258M-mlx"
+      url: "https://huggingface.co/ibm-granite/granite-docling-258M-mlx"
   description: |
     Granite Docling 258M for visual analysis and image understanding.
   tags:
@@ -1140,7 +1332,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.806
-      url: "ibm-granite/granite-4.0-micro"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-micro"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 2.1
@@ -1149,6 +1341,10 @@
       precision: Q4_1
       size_gb: 2.255
       url: "https://lmstudio.ai/models/ibm/granite-4-micro"
+    - format: MLX
+      precision: 8bit
+      size_gb: 3.616
+      url: "https://huggingface.co/mlx-community/granite-4.0-micro-8bit"
   description: |
     Granite-4.0-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1242,7 +1438,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.383
-      url: "ibm-granite/granite-4.0-h-micro"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-h-micro"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.9
@@ -1251,6 +1447,18 @@
       precision: Q4_1
       size_gb: 2.083
       url: "https://lmstudio.ai/models/ibm/granite-4-h-micro"
+    - format: MLX
+      precision: 4bit
+      size_gb: 1.797
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-micro-4bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 2.594
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-micro-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 3.392
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-micro-8bit"
   description: |
     Granite-4.0-H-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-H-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1344,7 +1552,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 13.878
-      url: "ibm-granite/granite-4.0-h-tiny"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-h-tiny"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.2
@@ -1353,6 +1561,26 @@
       precision: Q4_1
       size_gb: 4.542
       url: "https://lmstudio.ai/models/ibm/granite-4-h-tiny"
+    - format: MLX
+      precision: 3bit
+      size_gb: 3.04
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-tiny-3bit-MLX"
+    - format: MLX
+      precision: 4bit
+      size_gb: 3.906
+      url: "https://huggingface.co/mlx-community/Granite-4.0-H-Tiny-4bit-DWQ"
+    - format: MLX
+      precision: 5bit
+      size_gb: 4.773
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-tiny-5bit-MLX"
+    - format: MLX
+      precision: 6bit
+      size_gb: 5.64
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-tiny-6bit-MLX"
+    - format: MLX
+      precision: 8bit
+      size_gb: 7.374
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-tiny-8bit"
   description: |
     Granite-4.0-H-Tiny is a 7B parameter long-context instruct model finetuned from *Granite-4.0-H-Tiny-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1446,7 +1674,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 64.415
-      url: "ibm-granite/granite-4.0-h-small"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-h-small"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 19
@@ -1455,6 +1683,14 @@
       precision: Q4_1
       size_gb: 20.938
       url: "https://lmstudio.ai/models/ibm/granite-4-h-small"
+    - format: MLX
+      precision: 4bit
+      size_gb: 18.126
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-small-4bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 34.222
+      url: "https://huggingface.co/mlx-community/granite-4.0-h-small-8bit"
   description: |
     Granite-4.0-H-Small is a 32B parameter long-context instruct model finetuned from *Granite-4.0-H-Small-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -1549,7 +1785,15 @@
     - format: safetensors
       precision: null
       size_gb: 6.672
-      url: "ibm-granite/granite-4.0-tiny-preview"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-tiny-preview"
+    - format: MLX
+      precision: 4bit
+      size_gb: 3.756
+      url: "https://huggingface.co/mlx-community/granite-4.0-tiny-preview-4bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 7.089
+      url: "https://huggingface.co/mlx-community/granite-4.0-tiny-preview-8bit"
   description: |
     Granite-4-Tiny-Preview is a 7B parameter fine-grained hybrid mixture-of-experts (MoE) instruct model fine-tuned from Granite-4.0-Tiny-Base-Preview using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets tailored for solving long context problems. This model is developed using a diverse set of techniques with a structured chat format, including supervised fine-tuning, and model alignment using reinforcement learning.
   tags:
@@ -1641,11 +1885,27 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.067
-      url: "ibm-granite/granite-3.3-2b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.5
       url: "https://ollama.com/library/granite3.3:2b"
+    - format: MLX
+      precision: float16
+      size_gb: 5.067
+      url: "https://huggingface.co/mlx-community/granite-3.3-2b-instruct-fp16"
+    - format: MLX
+      precision: 4bit
+      size_gb: 1.425
+      url: "https://huggingface.co/mlx-community/granite-3.3-2b-instruct-4bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 2.059
+      url: "https://huggingface.co/mlx-community/granite-3.3-2b-instruct-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 2.692
+      url: "https://huggingface.co/mlx-community/granite-3.3-2b-instruct-8bit"
   description: |
     Granite-3.3-2B-Instruct is a 2-billion parameter 128K context length language model fine-tuned for improved reasoning and instruction-following capabilities. Built on top of Granite-3.3-2B-Base, the model delivers significant gains on benchmarks for measuring generic performance including AlpacaEval-2.0 and Arena-Hard, and improvements in mathematics, coding, and instruction following. It supports structured reasoning through \<think\>\<\/think\> and \<response\>\<\/response\> tags, providing clear separation between internal thoughts and final outputs. The model has been trained on a carefully balanced combination of permissively licensed data and curated synthetic tasks.
   tags:
@@ -1738,11 +1998,27 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-3.3-8b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.3-8b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
       url: "https://ollama.com/library/granite3.3:8b"
+    - format: MLX
+      precision: float16
+      size_gb: 16.342
+      url: "https://huggingface.co/mlx-community/granite-3.3-8b-instruct-fp16"
+    - format: MLX
+      precision: 4bit
+      size_gb: 4.597
+      url: "https://huggingface.co/mlx-community/granite-3.3-8b-instruct-4bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 6.639
+      url: "https://huggingface.co/mlx-community/granite-3.3-8b-instruct-6bit"
+    - format: MLX
+      precision: 8bit
+      size_gb: 8.682
+      url: "https://huggingface.co/mlx-community/granite-3.3-8b-instruct-8bit"
   description: |
     Granite-3.3-8B-Instruct is a 8-billion parameter 128K context length language model fine-tuned for improved reasoning and instruction-following capabilities. Built on top of Granite-3.3-8B-Base, the model delivers significant gains on benchmarks for measuring generic performance including AlpacaEval-2.0 and Arena-Hard, and improvements in mathematics, coding, and instruction following. It supports structured reasoning through \<think\>\<\/think\> and \<response\>\<\/response\> tags, providing clear separation between internal thoughts and final outputs. The model has been trained on a carefully balanced combination of permissively licensed data and curated synthetic tasks.
   tags:
@@ -1799,7 +2075,7 @@
     - format: safetensors
       precision: null
       size_gb: 3.997
-      url: "ibm-granite/granite-vision-4.1-4b"
+      url: "https://huggingface.co/ibm-granite/granite-vision-4.1-4b"
   description: |
     Granite Vision 4.1 4B is a vision-language model (VLM) that delivers frontier-level
     performance on structured document extraction tasks — chart extraction, table extraction,
@@ -1836,7 +2112,35 @@
     - format: safetensors
       precision: null
       size_gb: 3.997
-      url: "ibm-granite/granite-4.0-3b-vision"
+      url: "https://huggingface.co/ibm-granite/granite-4.0-3b-vision"
+    - format: MLX
+      precision: 4bit
+      size_gb: 3.01
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-4bit"
+    - format: MLX
+      precision: mxfp4
+      size_gb: 3.01
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-mxfp4"
+    - format: MLX
+      precision: nvfp4
+      size_gb: 3.249
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-nvfp4"
+    - format: MLX
+      precision: 5bit
+      size_gb: 3.488
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 3.966
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-6bit"
+    - format: MLX
+      precision: mxfp8
+      size_gb: 4.803
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-mxfp8"
+    - format: MLX
+      precision: 8bit
+      size_gb: 4.923
+      url: "https://huggingface.co/mlx-community/granite-4.0-3b-vision-8bit"
   description: |
     Granite-4.0-3B-Vision is a vision-language model (VLM) designed for enterprise-grade
     document data extraction. It focuses on specialized, complex extraction tasks that
@@ -1896,7 +2200,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.951
-      url: "ibm-granite/granite-vision-3.3-2b"
+      url: "https://huggingface.co/ibm-granite/granite-vision-3.3-2b"
     - format: Ollama
       precision: Q8_0
       size_gb: 3.6
@@ -1934,7 +2238,7 @@
     - format: safetensors
       precision: null
       size_gb: 2.975
-      url: "ibm-granite/granite-vision-3.2-2b"
+      url: "https://huggingface.co/ibm-granite/granite-vision-3.2-2b"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 2.4
@@ -1943,6 +2247,38 @@
       precision: null
       size_gb: 1.7
       url: "https://lmstudio.ai/models/ibm/granite-vision-3.2-2b"
+    - format: MLX
+      precision: bfloat16
+      size_gb: 6.152
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-bf16"
+    - format: MLX
+      precision: 4bit
+      size_gb: 2.346
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-4bit"
+    - format: MLX
+      precision: mxfp4
+      size_gb: 2.346
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-mxfp4"
+    - format: MLX
+      precision: nvfp4
+      size_gb: 2.512
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-nvfp4"
+    - format: MLX
+      precision: 5bit
+      size_gb: 2.677
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-5bit"
+    - format: MLX
+      precision: 6bit
+      size_gb: 3.008
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-6bit"
+    - format: MLX
+      precision: mxfp8
+      size_gb: 3.587
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-mxfp8"
+    - format: MLX
+      precision: 8bit
+      size_gb: 3.67
+      url: "https://huggingface.co/mlx-community/granite-vision-3.2-2b-8bit"
   description: |
     granite-vision-3.2-2b is a compact and efficient vision-language model, specifically designed for visual document understanding, enabling automated content extraction from tables, charts, infographics, plots, diagrams, and more. The model was trained on a meticulously curated instruction-following dataset, comprising diverse public datasets and synthetic datasets tailored to support a wide range of document understanding and general image tasks. It was trained by fine-tuning a Granite large language model with both image and text modalities.
   tags:
@@ -1976,7 +2312,7 @@
     - format: safetensors
       precision: null
       size_gb: 2.975
-      url: "ibm-granite/granite-vision-3.1-2b-preview"
+      url: "https://huggingface.co/ibm-granite/granite-vision-3.1-2b-preview"
   description: |
     granite-vision-3.1-2b-preview is a compact and efficient vision-language model, specifically designed for visual document understanding, enabling automated content extraction from tables, charts, infographics, plots, diagrams, and more. The model was trained on a meticulously curated instruction-following dataset, comprising diverse public datasets and synthetic datasets tailored to support a wide range of document understanding and general image tasks. It was trained by fine-tuning a Granite large language model (https://huggingface.co/ibm-granite/granite-3.1-2b-instruct) with both image and text modalities.
   tags:
@@ -2010,7 +2346,7 @@
     - format: safetensors
       precision: float32
       size_gb: 11.903
-      url: "ibm-granite/granite-vision-3.3-2b-embedding"
+      url: "https://huggingface.co/ibm-granite/granite-vision-3.3-2b-embedding"
     - format: Ollama
       precision: Q8_0
       size_gb: 3.6
@@ -2049,7 +2385,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.067
-      url: "ibm-granite/granite-3.2-2b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.2-2b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.5
@@ -2086,7 +2422,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-3.2-8b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.2-8b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
@@ -2123,7 +2459,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-3.2-8b-instruct-preview"
+      url: "https://huggingface.co/ibm-granite/granite-3.2-8b-instruct-preview"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
@@ -2159,7 +2495,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-3.1-8b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.1-8b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 5.0
@@ -2195,7 +2531,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.067
-      url: "ibm-granite/granite-3.1-2b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.1-2b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.6
@@ -2231,7 +2567,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.598
-      url: "ibm-granite/granite-3.1-3b-a800m-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.1-3b-a800m-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 2.0
@@ -2267,7 +2603,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 2.669
-      url: "ibm-granite/granite-3.1-1b-a400m-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.1-1b-a400m-instruct"
     - format: Ollama
       precision: Q8_0
       size_gb: 1.4
@@ -2302,7 +2638,7 @@
     - format: safetensors
       precision: null
       size_gb: 0.312
-      url: "ibm-granite/granite-embedding-311m-multilingual-r2"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2"
   description: |
     Granite-Embedding-311M-Multilingual-R2 is a 311M parameter dense embedding model from the Granite Embeddings collection for high-quality multilingual text embeddings. It produces 768-dimensional vectors with a context length of up to 32,768 tokens. The model supports **200+ languages** (based on the multilingual pretraining corpus of the underlying encoder), with enhanced support for 52 languages and programming code that receive explicit retrieval-pair and cross-lingual training. All training data uses permissive, enterprise-friendly licenses, plus IBM-collected and IBM-generated datasets.
   tags:
@@ -2333,7 +2669,7 @@
     - format: safetensors
       precision: null
       size_gb: 0.097
-      url: "ibm-granite/granite-embedding-97m-multilingual-r2"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-97m-multilingual-r2"
   description: |
     Granite-Embedding-97M-Multilingual-R2 is a 97M parameter dense embedding model from the Granite Embeddings collection for high-quality multilingual text embeddings at minimal compute cost. It produces 384-dimensional vectors with a context length of up to 32,768 tokens. The model supports **200+ languages** (based on the multilingual pretraining corpus of the underlying encoder), with **enhanced support for 52 languages and programming code** that receive explicit retrieval-pair and cross-lingual training. All training data uses permissive, enterprise-friendly licenses, plus IBM-collected and IBM-generated datasets.
   tags:
@@ -2364,7 +2700,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.298
-      url: "ibm-granite/granite-embedding-english-r2"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-english-r2"
   description: |
     Granite-embedding-english-r2 is a 149M parameter dense biencoder embedding model from the Granite Embeddings collection that can be used to generate high quality text embeddings. This model produces embedding vectors of size 768 based on context length of upto 8192 tokens. Compared to most other open-source models, this model was only trained using open-source relevance-pair datasets with permissive, enterprise-friendly license, plus IBM collected and generated datasets. 
   tags:
@@ -2395,7 +2731,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.095
-      url: "ibm-granite/granite-embedding-small-english-r2"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-small-english-r2"
   description: |
     Granite-embedding-small-english-r2 is a 47M parameter dense biencoder embedding model from the Granite Embeddings collection that can be used to generate high quality text embeddings. This model produces embedding vectors of size 384 based on context length of upto 8192 tokens. Compared to most other open-source models, this model was only trained using open-source relevance-pair datasets with permissive, enterprise-friendly license, plus IBM collected and generated datasets. 
   tags:
@@ -2426,7 +2762,7 @@
     - format: safetensors
       precision: float32
       size_gb: 0.598
-      url: "ibm-granite/granite-embedding-reranker-english-r2"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-reranker-english-r2"
   description: |
     _granite-embedding-reranker-english-r2_ is a 149M parameter dense cross-encoder model from the Granite Embeddings collection that can be used to generate high quality text embeddings. This model produces embedding vectors of size 768 based on context length of upto 8192 tokens. Compared to most other open-source models, this model was only trained using open-source relevance-pair datasets with permissive, enterprise-friendly license, plus IBM collected and generated datasets. 
   tags:
@@ -2457,7 +2793,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.556
-      url: "ibm-granite/granite-embedding-278m-multilingual"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual"
     - format: Ollama
       precision: F16
       size_gb: 0.550
@@ -2492,7 +2828,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.214
-      url: "ibm-granite/granite-embedding-107m-multilingual"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-107m-multilingual"
     - format: Ollama
       precision: F16
       size_gb: 0.216
@@ -2527,7 +2863,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.061
-      url: "ibm-granite/granite-embedding-30m-english"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-30m-english"
     - format: Ollama
       precision: F16
       size_gb: 0.062
@@ -2562,7 +2898,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 0.249
-      url: "ibm-granite/granite-embedding-125m-english"
+      url: "https://huggingface.co/ibm-granite/granite-embedding-125m-english"
     - format: Ollama
       precision: F16
       size_gb: 0.245
@@ -2598,7 +2934,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-3.0-8b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.0-8b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 4.9
@@ -2634,7 +2970,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.268
-      url: "ibm-granite/granite-3.0-2b-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.0-2b-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 1.6
@@ -2670,7 +3006,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.749
-      url: "ibm-granite/granite-3.0-3b-a800m-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.0-3b-a800m-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 2.1
@@ -2706,7 +3042,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 2.669
-      url: "ibm-granite/granite-3.0-1b-a400m-instruct"
+      url: "https://huggingface.co/ibm-granite/granite-3.0-1b-a400m-instruct"
     - format: Ollama
       precision: Q4_K_M
       size_gb: 0.803
@@ -2801,7 +3137,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.761
-      url: "ibm-granite/granite-guardian-4.1-8b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-4.1-8b"
     - format: Ollama
       precision: Q6_K
       size_gb: 6.9
@@ -2858,7 +3194,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-guardian-3.3-8b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.3-8b"
     - format: Ollama
       precision: Q6_K
       size_gb: 6.7
@@ -2895,7 +3231,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 6.598
-      url: "ibm-granite/granite-guardian-3.2-3b-a800m"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.2-3b-a800m"
     - format: Ollama
       precision: Q6_K
       size_gb: 2.7
@@ -2935,7 +3271,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 11.56
-      url: "ibm-granite/granite-guardian-3.2-5b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.2-5b"
     - format: Ollama
       precision: Q6_K
       size_gb: 4.7
@@ -2973,7 +3309,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-guardian-3.1-8b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.1-8b"
     - format: Ollama
       precision: Q6_K
       size_gb: 6.7
@@ -3013,7 +3349,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.067
-      url: "ibm-granite/granite-guardian-3.1-2b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.1-2b"
     - format: Ollama
       precision: Q6_K
       size_gb: 2.1
@@ -3053,7 +3389,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-guardian-3.0-8b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.0-8b"
   description: |
     **Granite Guardian 3.0 8B** is a fine-tuned Granite 3.0 8B Instruct model designed to detect risks in prompts and responses.
     It can help with risk detection along many key dimensions catalogued in the [IBM AI Risk Atlas](https://www.ibm.com/docs/en/watsonx/saas?topic=ai-risk-atlas).
@@ -3089,7 +3425,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 5.067
-      url: "ibm-granite/granite-guardian-3.0-2b"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.0-2b"
   description: |
     **Granite Guardian 3.0 2B** is a fine-tuned Granite 3.0 2B Instruct model designed to detect risks in prompts and responses.
     It can help with risk detection along many key dimensions catalogued in the [IBM AI Risk Atlas](https://www.ibm.com/docs/en/watsonx/saas?topic=ai-risk-atlas).
@@ -3125,7 +3461,7 @@
     - format: safetensors
       precision: float32
       size_gb: 0.499
-      url: "ibm-granite/granite-guardian-hap-125m"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-hap-125m"
   description: |
     This model is IBM's 12-layer toxicity binary classifier for English, intended to be used as a guardrail for any large language model. It has been trained on several benchmark datasets in English, specifically for detecting hateful, abusive, profane and other toxic content in plain text. 
   tags:
@@ -3158,7 +3494,7 @@
     - format: safetensors
       precision: float32
       size_gb: 0.154
-      url: "ibm-granite/granite-guardian-hap-38m"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-hap-38m"
   description: |
     This model is IBM's lightweight, 4-layer toxicity binary classifier for English. Its latency characteristics make it a suitable guardrail for any large language model. It can also be used for bulk processing of data where high throughput is needed. It has been trained on several benchmark datasets in English, specifically for detecting hateful, abusive, profane and other toxic content in plain text.
   tags:
@@ -3191,7 +3527,7 @@
     - format: safetensors
       precision: bfloat16
       size_gb: 16.342
-      url: "ibm-granite/granite-guardian-3.2-8b-factuality-detection"
+      url: "https://huggingface.co/ibm-granite/granite-guardian-3.2-8b-factuality-detection"
   description: |
     **Granite Guardian 3.2 8B Factuality Detection** is a model based on [ibm-granite/granite-3.2-8b-instruct](https://huggingface.co/ibm-granite/granite-3.2-8b-instruct), fine-tuned to safely detect an LLM response as unfactual.
   tags:
