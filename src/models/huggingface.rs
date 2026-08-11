@@ -1,10 +1,13 @@
 //! Parsing helpers for the two shapes `ModelVariant.url` takes for
-//! HuggingFace-hosted variants: a bare repo id (safetensors variants) or a
-//! full blob URL (GGUF variants, e.g.
-//! `https://huggingface.co/{owner}/{repo}/blob/{branch}/{filename}`).
+//! HuggingFace-hosted variants: a repo URL (safetensors/MLX variants, e.g.
+//! `https://huggingface.co/{owner}/{repo}`) or a full blob URL (GGUF
+//! variants, e.g.
+//! `https://huggingface.co/{owner}/{repo}/blob/{branch}/{filename}`). A bare
+//! `"owner/repo"` id is also accepted for robustness, though generated data
+//! always uses a full URL.
 
-/// Extract `"owner/repo"` from a bare HF repo id or a HF blob URL.
-/// Returns `None` if `url` doesn't look like a HuggingFace reference
+/// Extract `"owner/repo"` from a HF repo URL, a HF blob URL, or a bare repo
+/// id. Returns `None` if `url` doesn't look like a HuggingFace reference
 /// (e.g. an `ollama.com` library URL).
 pub fn hf_repo_id(url: &str) -> Option<&str> {
     let rest = if url.starts_with("http") {
@@ -41,6 +44,14 @@ mod tests {
     fn hf_repo_id_from_bare_repo() {
         assert_eq!(
             hf_repo_id("ibm-granite/granite-speech-4.1-2b"),
+            Some("ibm-granite/granite-speech-4.1-2b")
+        );
+    }
+
+    #[test]
+    fn hf_repo_id_from_repo_url() {
+        assert_eq!(
+            hf_repo_id("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
             Some("ibm-granite/granite-speech-4.1-2b")
         );
     }
