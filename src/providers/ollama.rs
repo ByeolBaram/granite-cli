@@ -107,6 +107,24 @@ impl OllamaProvider {
         );
 
         map.insert(
+            ModelFunction::ToolCalling,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
+
+        map.insert(
+            ModelFunction::Thinking,
+            vec![
+                ApiEndpoint::OpenAIChat,
+                ApiEndpoint::OllamaChat,
+                ApiEndpoint::AnthropicMessages,
+            ],
+        );
+
+        map.insert(
             ModelFunction::Embeddings,
             vec![ApiEndpoint::OpenAIEmbeddings, ApiEndpoint::OllamaEmbeddings],
         );
