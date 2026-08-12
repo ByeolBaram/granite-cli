@@ -7,13 +7,13 @@ use crate::capabilities::base::{
     CapabilityMetadata, Dependency, HasCapabilityMetadata,
 };
 use crate::capabilities::requirement::ModelRequirement;
-use crate::dependency::Configured;
 use crate::models::{Model, ModelFunction};
 use crate::registry::ConfigConstructable;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_valid::Validate;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /*-- AgentModelCapabilityConfig ---------------------------------------------------*/
 
@@ -27,6 +27,7 @@ pub struct AgentModelCapabilityConfig {
 
 pub struct AgentModelCapability {
     config: AgentModelCapabilityConfig,
+    model: Arc<dyn Model>,
 }
 
 impl ConfigConstructable for AgentModelCapability {
@@ -35,7 +36,19 @@ impl ConfigConstructable for AgentModelCapability {
     fn new(cfg: &serde_json::Value) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        Self { config }
+        let model = crate::models::MODEL_REGISTRY
+            .construct(&config.model_id, &serde_json::json!({}))
+            .expect("model must be in registry");
+        Self {
+            config,
+            model: Arc::from(model),
+        }
+    }
+}
+
+impl AgentModelCapability {
+    pub fn configured_model_id(&self) -> &str {
+        &self.config.model_id
     }
 }
 
@@ -65,11 +78,7 @@ impl Capability for AgentModelCapability {
         HashSet::from([BindingType::AgentModel])
     }
 
-    async fn bind(
-        &self,
-        request: BindingRequest,
-        models: &(dyn Configured<dyn Model> + Sync),
-    ) -> anyhow::Result<Binding> {
+    async fn bind(&self, request: BindingRequest) -> anyhow::Result<Binding> {
         let api_type = match request {
             BindingRequest::AgentModel(AgentModelBindingRequest { api_type }) => api_type,
             #[allow(unreachable_patterns)] // Will remove once more variants are available
@@ -78,15 +87,10 @@ impl Capability for AgentModelCapability {
                 other.binding_type()
             ),
         };
-        let model_id = self.config.model_id.clone();
+        let model_id = &self.config.model_id;
 
-        let (_, model) = models
-            .instances()
-            .into_iter()
-            .find(|(id, _)| id == &model_id)
-            .ok_or_else(|| anyhow::anyhow!("model '{model_id}' not configured"))?;
-
-        let provider = model
+        let provider = self
+            .model
             .provider()
             .map_err(|e| anyhow::anyhow!("model '{model_id}' has no usable provider: {e}"))?;
 
@@ -97,7 +101,9 @@ impl Capability for AgentModelCapability {
         );
         // Defensive only: setup-time resolution already guarantees these.
         anyhow::ensure!(
-            model.supported_functions().contains(&ModelFunction::Chat),
+            self.model
+                .supported_functions()
+                .contains(&ModelFunction::Chat),
             "model '{model_id}' does not support Chat"
         );
         anyhow::ensure!(
@@ -118,7 +124,7 @@ impl Capability for AgentModelCapability {
         Ok(Binding::AgentModel(AgentModelBinding {
             api_type,
             base_url: provider.base_url().to_string(),
-            model_name: model_id,
+            model_name: model_id.to_string(),
             endpoint_path: endpoint.path().to_string(),
             api_key: provider.api_key().cloned(),
             verify_ssl: provider.verify_ssl(),
@@ -156,6 +162,7 @@ mod tests {
     };
     use crate::registry::Secret;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     #[derive(Clone)]
     struct FakeProvider {
@@ -202,12 +209,12 @@ mod tests {
         }
     }
 
-    struct FakeModel {
+    struct TestModel {
         supported_functions: Vec<ModelFunction>,
-        provider_result: Result<FakeProvider, String>,
+        provider: FakeProvider,
     }
 
-    impl ConfigConstructable for FakeModel {
+    impl ConfigConstructable for TestModel {
         type Config = crate::registry::NoConfig;
 
         fn new(_cfg: &serde_json::Value) -> Self {
@@ -215,9 +222,9 @@ mod tests {
         }
     }
 
-    impl Model for FakeModel {
+    impl Model for TestModel {
         fn family(&self) -> &str {
-            "Fake"
+            "Test"
         }
         fn version(&self) -> &str {
             "1.0"
@@ -232,7 +239,7 @@ mod tests {
             &crate::models::ModelType::Text
         }
         fn huggingface_repo(&self) -> &str {
-            "fake/fake"
+            "test/test"
         }
         fn native_dtype(&self) -> &str {
             "bfloat16"
@@ -253,41 +260,7 @@ mod tests {
             &self.supported_functions
         }
         fn provider(&self) -> anyhow::Result<Box<dyn Provider>> {
-            self.provider_result
-                .clone()
-                .map(|p| Box::new(p) as Box<dyn Provider>)
-                .map_err(|e| anyhow::anyhow!(e))
-        }
-    }
-
-    struct FakeSource<T: ?Sized> {
-        instances: Vec<(String, Box<T>)>,
-    }
-
-    impl Configured<dyn Model> for FakeSource<dyn Model> {
-        fn instances(&self) -> Vec<(String, &(dyn Model + 'static))> {
-            self.instances
-                .iter()
-                .map(|(id, m)| (id.clone(), m.as_ref()))
-                .collect()
-        }
-        fn catalog(&self) -> HashMap<&'static str, crate::models::ModelMetadata> {
-            HashMap::new()
-        }
-        fn config_schema(&self, _type_name: &str) -> Option<schemars::Schema> {
-            None
-        }
-    }
-
-    fn capability() -> AgentModelCapability {
-        AgentModelCapability::new(&serde_json::json!({
-            "model_id": "my-model",
-        }))
-    }
-
-    fn models_with(model: FakeModel) -> FakeSource<dyn Model> {
-        FakeSource {
-            instances: vec![("my-model".to_string(), Box::new(model))],
+            Ok(Box::new(self.provider.clone()))
         }
     }
 
@@ -295,104 +268,95 @@ mod tests {
         api_types: Vec<ApiType>,
         function: ModelFunction,
         endpoint: ApiEndpoint,
-    ) -> Result<FakeProvider, String> {
+    ) -> FakeProvider {
         let mut endpoints = HashMap::new();
         endpoints.insert(function, vec![endpoint]);
-        Ok(FakeProvider {
+        FakeProvider {
             base_url: "http://localhost:11434".to_string(),
             api_key: None,
             verify_ssl: true,
             api_types,
             endpoints,
-        })
+        }
+    }
+
+    fn capability_with_model(
+        functions: Vec<ModelFunction>,
+        provider: FakeProvider,
+    ) -> AgentModelCapability {
+        let mut cap = AgentModelCapability::new(&serde_json::json!({
+            "model_id": "granite-3.1-8b-instruct",
+        }));
+        cap.model = Arc::new(TestModel {
+            supported_functions: functions,
+            provider,
+        });
+        cap
     }
 
     #[tokio::test]
     async fn bind_succeeds_for_matching_provider_and_model() {
-        let cap = capability();
-        let models = models_with(FakeModel {
-            supported_functions: vec![ModelFunction::Chat],
-            provider_result: ok_provider(
+        let cap = capability_with_model(
+            vec![ModelFunction::Chat],
+            ok_provider(
                 vec![ApiType::OpenAI],
                 ModelFunction::Chat,
                 ApiEndpoint::OpenAIChat,
             ),
-        });
+        );
 
         let binding = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
+            .bind(BindingRequest::AgentModel(AgentModelBindingRequest {
+                api_type: ApiType::OpenAI,
+            }))
             .await
             .unwrap();
 
         let Binding::AgentModel(binding) = binding;
         assert_eq!(binding.base_url, "http://localhost:11434");
-        assert_eq!(binding.model_name, "my-model");
+        assert_eq!(binding.model_name, "granite-3.1-8b-instruct");
         assert_eq!(binding.endpoint_path, "/v1/chat/completions");
         assert_eq!(binding.api_type, ApiType::OpenAI);
         assert!(binding.verify_ssl);
     }
 
     #[tokio::test]
-    async fn bind_fails_when_model_not_configured() {
-        let cap = capability();
-        let models: FakeSource<dyn Model> = FakeSource { instances: vec![] };
-
-        let err = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("not configured"));
-    }
-
-    #[tokio::test]
     async fn bind_fails_when_model_has_no_provider() {
-        let cap = capability();
-        let models = models_with(FakeModel {
-            supported_functions: vec![ModelFunction::Chat],
-            provider_result: Err("no provider configured".to_string()),
-        });
+        let cap = capability_with_model(
+            vec![ModelFunction::Chat],
+            FakeProvider {
+                base_url: "http://localhost:11434".to_string(),
+                api_key: None,
+                verify_ssl: true,
+                api_types: vec![ApiType::OpenAI],
+                endpoints: HashMap::new(),
+            },
+        );
 
         let err = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
+            .bind(BindingRequest::AgentModel(AgentModelBindingRequest {
+                api_type: ApiType::OpenAI,
+            }))
             .await
             .unwrap_err();
-        assert!(err.to_string().contains("no usable provider"));
+        assert!(err.to_string().contains("does not support"));
     }
 
     #[tokio::test]
     async fn bind_fails_when_provider_lacks_api_type() {
-        let cap = capability();
-        let models = models_with(FakeModel {
-            supported_functions: vec![ModelFunction::Chat],
-            provider_result: ok_provider(
+        let cap = capability_with_model(
+            vec![ModelFunction::Chat],
+            ok_provider(
                 vec![ApiType::Ollama],
                 ModelFunction::Chat,
                 ApiEndpoint::OllamaChat,
             ),
-        });
+        );
 
         let err = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
+            .bind(BindingRequest::AgentModel(AgentModelBindingRequest {
+                api_type: ApiType::OpenAI,
+            }))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("does not support"));
@@ -400,23 +364,19 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_model_lacks_function() {
-        let cap = capability();
-        let models = models_with(FakeModel {
-            supported_functions: vec![ModelFunction::Embeddings],
-            provider_result: ok_provider(
+        let cap = capability_with_model(
+            vec![ModelFunction::Embeddings],
+            ok_provider(
                 vec![ApiType::OpenAI],
                 ModelFunction::Chat,
                 ApiEndpoint::OpenAIChat,
             ),
-        });
+        );
 
         let err = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
+            .bind(BindingRequest::AgentModel(AgentModelBindingRequest {
+                api_type: ApiType::OpenAI,
+            }))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("does not support"));
@@ -424,23 +384,19 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_no_matching_endpoint() {
-        let cap = capability();
-        let models = models_with(FakeModel {
-            supported_functions: vec![ModelFunction::Chat],
-            provider_result: ok_provider(
+        let cap = capability_with_model(
+            vec![ModelFunction::Chat],
+            ok_provider(
                 vec![ApiType::OpenAI, ApiType::Ollama],
                 ModelFunction::Chat,
                 ApiEndpoint::OllamaChat,
             ),
-        });
+        );
 
         let err = cap
-            .bind(
-                BindingRequest::AgentModel(AgentModelBindingRequest {
-                    api_type: ApiType::OpenAI,
-                }),
-                &models,
-            )
+            .bind(BindingRequest::AgentModel(AgentModelBindingRequest {
+                api_type: ApiType::OpenAI,
+            }))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("no OpenAI endpoint for Chat"));
@@ -448,7 +404,9 @@ mod tests {
 
     #[test]
     fn binding_types_reports_agent_model() {
-        let cap = capability();
+        let cap = AgentModelCapability::new(&serde_json::json!({
+            "model_id": "granite-3.1-8b-instruct",
+        }));
         assert_eq!(
             cap.binding_types(),
             HashSet::from([BindingType::AgentModel])
@@ -457,12 +415,14 @@ mod tests {
 
     #[test]
     fn dependencies_carry_resolved_model_id() {
-        let cap = capability();
+        let cap = AgentModelCapability::new(&serde_json::json!({
+            "model_id": "granite-3.1-8b-instruct",
+        }));
         let deps = cap.dependencies();
         assert_eq!(deps.len(), 1);
         assert!(deps.iter().any(|d| matches!(
             d,
-            Dependency::Model { resolved_id: Some(id), .. } if id == "my-model"
+            Dependency::Model { resolved_id: Some(id), .. } if id == "granite-3.1-8b-instruct"
         )));
     }
 
