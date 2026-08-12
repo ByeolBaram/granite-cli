@@ -123,6 +123,15 @@ impl Ui for JsonOutput {
         base::non_interactive()
     }
 
+    fn multi_select(
+        &self,
+        _prompt: &str,
+        _items: &[String],
+        _defaults: &[bool],
+    ) -> anyhow::Result<Vec<usize>> {
+        base::non_interactive()
+    }
+
     fn confirm(&self, _prompt: &str, _default: bool) -> anyhow::Result<bool> {
         base::non_interactive()
     }
