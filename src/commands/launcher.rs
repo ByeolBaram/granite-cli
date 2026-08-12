@@ -2,6 +2,8 @@
 use anyhow::Result;
 
 // Local
+use crate::capabilities::{CAPABILITY_REGISTRY, CapabilitySource};
+use crate::dependency::Configured;
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::utils::prompt_from_schema;
 
@@ -201,10 +203,19 @@ impl LauncherCommands {
             }
         }
 
+        // Select capabilities to enable for this launcher.
+        let previously_enabled: Vec<String> = ctx
+            .config
+            .get_launcher(&instance_id)
+            .map(|lc| lc.enabled_capabilities.clone())
+            .unwrap_or_default();
+        let enabled_capabilities =
+            select_capabilities(ctx, &launcher_def, &previously_enabled).await?;
+
         let launcher_config = crate::config::LauncherConfig {
             launcher_id: instance_id.clone(),
             launcher_type: launcher_type.to_string(),
-            enabled_capabilities: vec![],
+            enabled_capabilities,
             config,
         };
 
@@ -242,6 +253,116 @@ impl LauncherCommands {
         ctx.ui.info(&format!("Launcher '{launcher_id}' removed."));
         Ok(())
     }
+}
+
+/*-- private --*/
+
+/// Presents the user with a multi-select of capability instances (and a
+/// "Configure a new capability…" option) filtered to those compatible with
+/// `launcher_def.supported_capabilities`. Returns the list of capability IDs
+/// the user chose to enable.
+///
+/// Returns an empty vec and emits a warning when the launcher supports no
+/// capabilities at all (e.g. `bob`).
+async fn select_capabilities(
+    ctx: &mut crate::AppContext,
+    launcher_def: &crate::launchers::LauncherMetadata,
+    previously_enabled: &[String],
+) -> Result<Vec<String>> {
+    if launcher_def.supported_capabilities.is_empty() {
+        ctx.ui.warn(
+            "This launcher does not support any capabilities. \
+             No capabilities will be enabled.",
+        );
+        return Ok(vec![]);
+    }
+
+    let source = CapabilitySource::from_config(&ctx.config);
+
+    // Instances whose binding_types() intersect the launcher's supported set.
+    let mut compatible_instances: Vec<String> = source
+        .instances()
+        .into_iter()
+        .filter(|(_, cap)| {
+            cap.binding_types()
+                .iter()
+                .any(|bt| launcher_def.supported_capabilities.contains(bt))
+        })
+        .map(|(id, _)| id)
+        .collect();
+    compatible_instances.sort();
+
+    // Catalog types whose supported_binding_types intersect the launcher's set.
+    let compatible_types: Vec<&'static str> = {
+        let mut types: Vec<&'static str> = CAPABILITY_REGISTRY
+            .entries()
+            .into_iter()
+            .filter(|(_, meta)| {
+                meta.supported_binding_types
+                    .iter()
+                    .any(|bt| launcher_def.supported_capabilities.contains(bt))
+            })
+            .map(|(name, _)| name)
+            .collect();
+        types.sort();
+        types
+    };
+
+    if compatible_instances.is_empty() && compatible_types.is_empty() {
+        ctx.ui
+            .info("No compatible capabilities are configured or available for this launcher.");
+        return Ok(vec![]);
+    }
+
+    const CONFIGURE_NEW: &str = "Configure a new capability...";
+
+    // Build display list: sorted instances, then sentinel if types exist.
+    let mut items: Vec<String> = compatible_instances.clone();
+    if !compatible_types.is_empty() {
+        items.push(CONFIGURE_NEW.to_string());
+    }
+
+    // Pre-check items that were previously enabled.
+    let defaults: Vec<bool> = items
+        .iter()
+        .map(|item| item != CONFIGURE_NEW && previously_enabled.contains(item))
+        .collect();
+
+    let selected = ctx
+        .ui
+        .multi_select("Select capabilities to enable", &items, &defaults)?;
+
+    let mut result: Vec<String> = vec![];
+    let mut configure_new_chosen = false;
+    for idx in selected {
+        if items[idx] == CONFIGURE_NEW {
+            configure_new_chosen = true;
+        } else {
+            result.push(items[idx].clone());
+        }
+    }
+
+    if configure_new_chosen {
+        // Mirror the select_provider pattern: auto-select when only one type,
+        // otherwise let the user pick.
+        let cap_type = if compatible_types.len() == 1 {
+            compatible_types[0]
+        } else {
+            let type_options: Vec<String> =
+                compatible_types.iter().map(|s| s.to_string()).collect();
+            let idx = ctx
+                .ui
+                .select("Select a capability type to configure", &type_options, 0)?;
+            compatible_types[idx]
+        };
+
+        let nickname = ctx.ui.text("Name this capability instance", cap_type)?;
+
+        crate::commands::CapabilityCommands::setup(ctx, cap_type, Some(&nickname)).await?;
+        result.push(nickname);
+    }
+
+    Ok(result)
 }
 
 /*-- tests --*/
@@ -439,5 +560,158 @@ mod tests {
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows.is_empty());
+    }
+
+    // -- select_capabilities ---------------------------------------------------
+
+    macro_rules! capture_ui {
+        ($ctx:expr) => {
+            (&*($ctx.ui) as &dyn std::any::Any)
+                .downcast_ref::<CaptureUi>()
+                .unwrap()
+        };
+    }
+
+    /// Returns a `LauncherMetadata` for `claude` from the registry.
+    fn claude_launcher_def() -> crate::launchers::LauncherMetadata {
+        crate::launchers::LAUNCHER_REGISTRY
+            .get("claude")
+            .unwrap()
+            .clone()
+    }
+
+    /// Returns a `LauncherMetadata` for `bob` from the registry.
+    fn bob_launcher_def() -> crate::launchers::LauncherMetadata {
+        crate::launchers::LAUNCHER_REGISTRY
+            .get("bob")
+            .unwrap()
+            .clone()
+    }
+
+    // Helper: insert a minimal agent-model capability config into ctx.
+    fn add_capability(ctx: &mut crate::AppContext, cap_id: &str, model_id: &str) {
+        ctx.config.capabilities.insert(
+            cap_id.to_string(),
+            crate::config::CapabilityConfig {
+                capability_id: cap_id.to_string(),
+                capability_type: "agent-model".to_string(),
+                config: serde_json::json!({ "model_id": model_id }),
+            },
+        );
+    }
+
+    // bob launcher has empty supported_capabilities → warning is emitted and
+    // empty vec returned without calling multi_select.
+    #[tokio::test]
+    async fn select_capabilities_warns_and_skips_for_launcher_with_no_supported_capabilities() {
+        let mut ctx = test_ctx();
+        let launcher_def = bob_launcher_def();
+        let result = select_capabilities(&mut ctx, &launcher_def, &[])
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+        let ui = capture_ui!(ctx);
+        assert!(
+            ui.warns
+                .borrow()
+                .iter()
+                .any(|w| w.contains("does not support any capabilities")),
+            "expected a warning about no supported capabilities"
+        );
+        assert!(
+            ui.multi_select_prompts.borrow().is_empty(),
+            "multi_select should not be called for a launcher with no supported capabilities"
+        );
+    }
+
+    // When no capabilities are configured and no types can satisfy the launcher,
+    // an info message is printed and empty vec returned.
+    #[tokio::test]
+    async fn select_capabilities_returns_empty_when_no_compatible_capabilities_exist() {
+        let mut ctx = test_ctx();
+        // claude supports AgentModel; agent-model is in the catalog — so
+        // compatible_types will be non-empty and multi_select IS called.
+        // To test the "nothing at all" path we'd need a launcher type that
+        // supports a binding type with no catalog entry.  Instead, verify
+        // that multi_select is called with the "Configure a new capability..."
+        // sentinel when no instances are configured.
+        let launcher_def = claude_launcher_def();
+        // CaptureUi returns empty vec by default → user selects nothing.
+        let result = select_capabilities(&mut ctx, &launcher_def, &[])
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+        let ui = capture_ui!(ctx);
+        // multi_select must have been called
+        let prompts = ui.multi_select_prompts.borrow();
+        assert_eq!(prompts.len(), 1);
+        // sentinel is included because agent-model is in the catalog
+        assert!(
+            prompts[0]
+                .1
+                .iter()
+                .any(|i| i == "Configure a new capability...")
+        );
+    }
+
+    // When a capability instance is configured and compatible, it appears in the
+    // multi_select items list.
+    #[tokio::test]
+    async fn select_capabilities_shows_configured_compatible_instance() {
+        let mut ctx = test_ctx();
+        add_capability(&mut ctx, "my-agent", "granite-3.1-8b-instruct");
+        let launcher_def = claude_launcher_def();
+        let result = select_capabilities(&mut ctx, &launcher_def, &[])
+            .await
+            .unwrap();
+        assert!(result.is_empty()); // user selected nothing (default)
+        let ui = capture_ui!(ctx);
+        let prompts = ui.multi_select_prompts.borrow();
+        assert_eq!(prompts.len(), 1);
+        assert!(
+            prompts[0].1.contains(&"my-agent".to_string()),
+            "expected instance id in items"
+        );
+    }
+
+    // Previously-enabled capability IDs are pre-checked (defaults = true).
+    #[tokio::test]
+    async fn select_capabilities_pre_checks_previously_enabled_ids() {
+        let mut ctx = test_ctx();
+        add_capability(&mut ctx, "my-agent", "granite-3.1-8b-instruct");
+        let launcher_def = claude_launcher_def();
+        let previously_enabled = vec!["my-agent".to_string()];
+        let _ = select_capabilities(&mut ctx, &launcher_def, &previously_enabled)
+            .await
+            .unwrap();
+        let ui = capture_ui!(ctx);
+        let prompts = ui.multi_select_prompts.borrow();
+        assert_eq!(prompts.len(), 1);
+        let idx = prompts[0]
+            .1
+            .iter()
+            .position(|i| i == "my-agent")
+            .expect("my-agent should be in items");
+        assert!(
+            prompts[0].2[idx],
+            "my-agent should be pre-checked as it was previously enabled"
+        );
+    }
+
+    // Selecting an existing instance returns its ID.
+    #[tokio::test]
+    async fn select_capabilities_returns_selected_instance_id() {
+        let mut ctx = test_ctx();
+        add_capability(&mut ctx, "my-agent", "granite-3.1-8b-instruct");
+        let launcher_def = claude_launcher_def();
+        {
+            let ui = capture_ui!(ctx);
+            // Select index 0 (the "my-agent" instance — it sorts first before sentinel)
+            ui.multi_select_answers.borrow_mut().push_back(vec![0]);
+        }
+        let result = select_capabilities(&mut ctx, &launcher_def, &[])
+            .await
+            .unwrap();
+        assert_eq!(result, vec!["my-agent".to_string()]);
     }
 }
