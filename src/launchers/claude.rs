@@ -19,6 +19,7 @@ pub struct ClaudeLauncherConfig {
 
 pub struct ClaudeLauncher {
     config: ClaudeLauncherConfig,
+    bound_binding: Option<crate::capabilities::AgentModelBinding>,
 }
 
 impl ConfigConstructable for ClaudeLauncher {
@@ -26,7 +27,10 @@ impl ConfigConstructable for ClaudeLauncher {
 
     fn new(cfg: &serde_json::Value) -> Self {
         let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
-        Self { config }
+        Self {
+            config,
+            bound_binding: None,
+        }
     }
 }
 
@@ -40,7 +44,11 @@ impl Launcher for ClaudeLauncher {
         self.config.command_path.as_deref().unwrap_or("claude")
     }
 
-    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
+    async fn bind_capability(
+        &mut self,
+        capability: &dyn Capability,
+        models: &(dyn crate::dependency::Configured<dyn crate::models::Model> + Sync),
+    ) -> anyhow::Result<()> {
         let supported = Self::metadata().supported_capabilities;
         let capability_types = capability.binding_types();
         if !capability_types.is_subset(&supported) {
@@ -48,6 +56,20 @@ impl Launcher for ClaudeLauncher {
                 "capability supports {:?} which this launcher does not support",
                 capability_types.difference(&supported).collect::<Vec<_>>()
             );
+        }
+
+        // Claude knows it expects Anthropic API type
+        let request = crate::capabilities::BindingRequest::AgentModel(
+            crate::capabilities::AgentModelBindingRequest {
+                api_type: crate::providers::ApiType::Anthropic,
+            },
+        );
+
+        let binding = capability.bind(request, models).await?;
+        match binding {
+            crate::capabilities::Binding::AgentModel(binding) => {
+                self.bound_binding = Some(binding);
+            }
         }
         Ok(())
     }
@@ -57,7 +79,22 @@ impl Launcher for ClaudeLauncher {
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
-        Ok(vec![])
+        if let Some(binding) = &self.bound_binding {
+            let bindings = vec![
+                EnvBinding {
+                    key: "ANTHROPIC_BASE_URL".to_string(),
+                    value: binding.base_url.clone(),
+                },
+                EnvBinding {
+                    key: "ANTHROPIC_MODEL".to_string(),
+                    value: binding.model_name.clone(),
+                },
+            ];
+            // verify_ssl is dropped per user's note
+            Ok(bindings)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
