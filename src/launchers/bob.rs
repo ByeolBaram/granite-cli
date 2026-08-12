@@ -40,11 +40,7 @@ impl Launcher for BobLauncher {
         self.config.command_path.as_deref().unwrap_or("bob")
     }
 
-    async fn bind_capability(
-        &mut self,
-        _capability: &dyn Capability,
-        _models: &(dyn crate::dependency::Configured<dyn crate::models::Model> + Sync),
-    ) -> anyhow::Result<()> {
+    async fn bind_capability(&mut self, _capability: &dyn Capability) -> anyhow::Result<()> {
         anyhow::bail!("bob launcher does not support any capabilities")
     }
 

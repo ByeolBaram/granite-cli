@@ -44,11 +44,7 @@ impl Launcher for ClaudeLauncher {
         self.config.command_path.as_deref().unwrap_or("claude")
     }
 
-    async fn bind_capability(
-        &mut self,
-        capability: &dyn Capability,
-        models: &(dyn crate::dependency::Configured<dyn crate::models::Model> + Sync),
-    ) -> anyhow::Result<()> {
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
         let supported = Self::metadata().supported_capabilities;
         let capability_types = capability.binding_types();
         if !capability_types.is_subset(&supported) {
@@ -65,7 +61,7 @@ impl Launcher for ClaudeLauncher {
             },
         );
 
-        let binding = capability.bind(request, models).await?;
+        let binding = capability.bind(request).await?;
         match binding {
             crate::capabilities::Binding::AgentModel(binding) => {
                 self.bound_binding = Some(binding);
