@@ -638,6 +638,7 @@ async fn run_launch(
     args: &[String],
     dry_run: bool,
 ) -> anyhow::Result<()> {
+    use crate::capabilities::CAPABILITY_REGISTRY;
     use crate::launchers::LAUNCHER_REGISTRY;
     use crate::launchers::LaunchContext;
 
@@ -651,9 +652,23 @@ async fn run_launch(
         )
     })?;
 
-    let launcher = LAUNCHER_REGISTRY
+    let mut launcher = LAUNCHER_REGISTRY
         .construct(&lc.launcher_type, &lc.config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
+
+    // Bind each enabled capability to the launcher before launching.
+    for cap_id in &lc.enabled_capabilities {
+        let cap_cfg = config.get_capability(cap_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Launcher '{launcher_id}' references capability '{cap_id}' \
+                 which is not configured. Run `granite-cli capability setup` first."
+            )
+        })?;
+        let capability = CAPABILITY_REGISTRY
+            .construct(&cap_cfg.capability_type, &cap_cfg.config)
+            .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?;
+        launcher.bind_capability(capability.as_ref()).await?;
+    }
 
     let launch_ctx = LaunchContext {
         launcher_id: launcher_id.to_string(),
