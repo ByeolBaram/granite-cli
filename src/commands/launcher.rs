@@ -500,6 +500,11 @@ mod tests {
 
     #[tokio::test]
     async fn setup_warns_on_same_type_existing_instance() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let home = tmp.path().join("granite-cli-test-launcher-setup");
+        // SAFETY: single-threaded test; no other thread reads this var.
+        unsafe { std::env::set_var("GRANITE_CLI_HOME", &home) };
+
         // Pre-populate a "claude" instance named "claude-old"
         let mut ctx = ctx_with_launcher("claude-old", "claude");
         // CaptureUi confirm always returns false → user declines update and
@@ -512,6 +517,8 @@ mod tests {
             infos.iter().any(|m| m.contains("claude-old")),
             "expected clash warning to mention the existing instance"
         );
+
+        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
     }
 
     #[tokio::test]
