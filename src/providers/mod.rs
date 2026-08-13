@@ -36,7 +36,7 @@ impl ProviderSource {
             .values()
             .filter_map(|provider_config| {
                 let result = PROVIDER_REGISTRY
-                    .construct(&provider_config.provider_type, &provider_config.config);
+                    .construct(&provider_config.provider_type, &provider_config.config, config);
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,

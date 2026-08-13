@@ -283,7 +283,7 @@ impl LlamaCppProvider {
 impl ConfigConstructable for LlamaCppProvider {
     type Config = LlamaCppProviderConfig;
 
-    fn new(cfg: &serde_json::Value) -> Self {
+    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let config: LlamaCppProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -458,21 +458,21 @@ mod tests {
             "base_url": "http://example.com:9000",
             "timeout_secs": 30
         });
-        let provider = LlamaCppProvider::new(&cfg);
+        let provider = LlamaCppProvider::new(&cfg, &crate::config::Config::default());
         assert_eq!(provider.config.base_url, "http://example.com:9000");
         assert_eq!(provider.config.timeout_secs, 30);
     }
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider = LlamaCppProvider::new(&serde_json::json!({}));
+        let provider = LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_gguf() {
-        let provider = LlamaCppProvider::new(&serde_json::json!({}));
+        let provider = LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }

@@ -173,7 +173,7 @@ pub trait Model: Send + Sync {
             .provider_config()
             .ok_or_else(|| anyhow::anyhow!("model has no configured provider"))?;
         crate::providers::PROVIDER_REGISTRY
-            .construct(&pc.provider_type, &pc.config)
+            .construct(&pc.provider_type, &pc.config, &crate::config::Config::default())
             .map_err(|e| anyhow::anyhow!(e))
     }
 }

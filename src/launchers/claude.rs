@@ -25,7 +25,7 @@ pub struct ClaudeLauncher {
 impl ConfigConstructable for ClaudeLauncher {
     type Config = ClaudeLauncherConfig;
 
-    fn new(cfg: &serde_json::Value) -> Self {
+    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self {
             config,
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn command_defaults_to_claude() {
-        let l = ClaudeLauncher::new(&serde_json::json!({}));
+        let l = ClaudeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
         assert_eq!(l.command(), "claude");
     }
 
@@ -142,7 +142,7 @@ mod tests {
     fn command_uses_explicit_path_when_set() {
         let l = ClaudeLauncher::new(&serde_json::json!({
             "command_path": "/opt/bin/claude"
-        }));
+        }), &crate::config::Config::default());
         assert_eq!(l.command(), "/opt/bin/claude");
     }
 
@@ -150,7 +150,7 @@ mod tests {
     fn validate_command_err_for_nonexistent_explicit_path() {
         let l = ClaudeLauncher::new(&serde_json::json!({
             "command_path": "/no/such/path/claude"
-        }));
+        }), &crate::config::Config::default());
         assert!(l.validate_command().is_err());
     }
 
@@ -158,7 +158,7 @@ mod tests {
     fn validate_command_falls_back_to_path_for_bare_command_name() {
         let l = ClaudeLauncher::new(&serde_json::json!({
             "command_path": "ls"
-        }));
+        }), &crate::config::Config::default());
         assert!(l.validate_command().is_ok());
     }
 

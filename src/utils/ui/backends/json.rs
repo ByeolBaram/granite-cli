@@ -68,7 +68,7 @@ impl Write for SharedWriter {
 impl ConfigConstructable for JsonOutput {
     type Config = NoConfig;
 
-    fn new(_cfg: &serde_json::Value) -> Self {
+    fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         Self {
             writer: Mutex::new(Box::new(std::io::stdout())),
             buf: None,

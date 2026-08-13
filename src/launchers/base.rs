@@ -190,7 +190,7 @@ pub(crate) mod tests {
     impl ConfigConstructable for FakeLauncher {
         type Config = crate::registry::NoConfig;
 
-        fn new(cfg: &serde_json::Value) -> Self {
+        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             let command_name = cfg
                 .get("command_name")
                 .and_then(|v| v.as_str())
@@ -251,7 +251,7 @@ pub(crate) mod tests {
     fn validate_command_returns_err_for_unknown_binary() {
         let launcher = FakeLauncher::new(&serde_json::json!({
             "command_name": "this-binary-absolutely-does-not-exist-9x7z"
-        }));
+        }), &crate::config::Config::default());
         assert!(launcher.validate_command().is_err());
     }
 
@@ -260,7 +260,7 @@ pub(crate) mod tests {
         let launcher = FakeLauncher::new(&serde_json::json!({
             "command_name": "fake",
             "command_path": "/this/path/does/not/exist/fake"
-        }));
+        }), &crate::config::Config::default());
         assert!(launcher.validate_command().is_err());
     }
 
@@ -268,13 +268,13 @@ pub(crate) mod tests {
     fn validate_command_falls_back_to_path_for_bare_command_name() {
         let launcher = FakeLauncher::new(&serde_json::json!({
             "command_path": "ls"
-        }));
+        }), &crate::config::Config::default());
         assert!(launcher.validate_command().is_ok());
     }
 
     #[tokio::test]
     async fn env_overlay_default_is_empty() {
-        let launcher = FakeLauncher::new(&serde_json::json!({}));
+        let launcher = FakeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
         let ctx = LaunchContext {
             launcher_id: "test".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -297,7 +297,7 @@ pub(crate) mod tests {
     fn launcher_factory_construct() {
         let mut factory = LauncherFactory::new();
         factory.register::<FakeLauncher>("fake");
-        let result = factory.construct("fake", &serde_json::json!({}));
+        let result = factory.construct("fake", &serde_json::json!({}), &crate::config::Config::default());
         assert!(result.is_ok());
     }
 

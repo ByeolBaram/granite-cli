@@ -10,7 +10,7 @@ pub struct MarkdownOutput;
 impl ConfigConstructable for MarkdownOutput {
     type Config = NoConfig;
 
-    fn new(_cfg: &serde_json::Value) -> Self {
+    fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         Self
     }
 }
@@ -123,7 +123,7 @@ mod tests {
     use super::*;
     use crate::utils::ui::base::tests::CaptureUi;
 
-    crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({})));
+    crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({}), &crate::config::Config::default()));
 
     #[test]
     fn markdown_table_contains_pipe_chars() {
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn markdown_table_has_header_separator() {
         // Invoke the real MarkdownOutput (print-only) — just verifies no panic
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}), &crate::config::Config::default());
         md.table(
             "T",
             &["ID", "NAME"],
@@ -151,13 +151,13 @@ mod tests {
 
     #[test]
     fn markdown_detail_is_two_column_table() {
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}), &crate::config::Config::default());
         md.detail("My Item", &[("Family", "Granite 3.1".to_string())]);
     }
 
     #[test]
     fn markdown_status_ok_contains_checkmark() {
-        let md = MarkdownOutput::new(&serde_json::json!({}));
+        let md = MarkdownOutput::new(&serde_json::json!({}), &crate::config::Config::default());
         md.status("my-service", true, "");
         md.status("my-service", false, "timeout");
     }

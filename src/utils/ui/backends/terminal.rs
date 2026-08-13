@@ -29,7 +29,7 @@ pub struct TerminalOutput {
 impl ConfigConstructable for TerminalOutput {
     type Config = NoConfig;
 
-    fn new(_cfg: &serde_json::Value) -> Self {
+    fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let (is_tty, width) = match crossterm::terminal::size() {
             Ok((cols, _rows)) => (true, Some(cols.max(20))),
             Err(_) => (false, None),

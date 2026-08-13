@@ -301,7 +301,7 @@ pub struct AppContext {
 /// `main` that still reports via `eprintln!` rather than `ctx.ui`.
 fn construct_ui(output: &str) -> Box<dyn Ui> {
     UI_REGISTRY
-        .construct(output, &serde_json::json!({}))
+        .construct(output, &serde_json::json!({}), &crate::config::Config::default())
         .unwrap_or_else(|_| {
             eprintln!("Unknown output format '{output}'. Valid: terminal, plain, json, markdown");
             std::process::exit(1);
@@ -653,7 +653,7 @@ async fn run_launch(
     })?;
 
     let mut launcher = LAUNCHER_REGISTRY
-        .construct(&lc.launcher_type, &lc.config)
+        .construct(&lc.launcher_type, &lc.config, &config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
     // Bind each enabled capability to the launcher before launching.
@@ -664,18 +664,9 @@ async fn run_launch(
                  which is not configured. Run `granite-cli capability setup` first."
             )
         })?;
-        let capability: Box<dyn crate::capabilities::Capability> = if cap_cfg.capability_type
-            == "agent-model"
-        {
-            Box::new(crate::capabilities::AgentModelCapability::with_config(
-                &cap_cfg.config,
-                &config,
-            ))
-        } else {
-            CAPABILITY_REGISTRY
-                .construct(&cap_cfg.capability_type, &cap_cfg.config)
-                .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?
-        };
+        let capability = CAPABILITY_REGISTRY
+            .construct(&cap_cfg.capability_type, &cap_cfg.config, &config)
+            .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?;
         launcher.bind_capability(capability.as_ref()).await?;
     }
 
