@@ -86,7 +86,7 @@ macro_rules! define_factory {
 
                 /// Construct an instance with the given config and global application config
                 #[allow(unused)]
-                fn construct(&self, cfg: &serde_json::Value, global_config: &crate::config::Config) -> Box<dyn $trait>;
+                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait>;
 
                 /// JSON schema of the config this implementation expects
                 #[allow(unused)]
@@ -119,7 +119,7 @@ macro_rules! define_factory {
                     T::metadata()
                 }
 
-                fn construct(&self, cfg: &serde_json::Value, global_config: &crate::config::Config) -> Box<dyn $trait> {
+                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait> {
                     Box::new(T::new(cfg, global_config))
                 }
 
@@ -192,7 +192,7 @@ macro_rules! define_factory {
                     &self,
                     name: &str,
                     cfg: &serde_json::Value,
-                    global_config: &crate::config::Config,
+                    global_config: &$crate::config::Config,
                 ) -> Result<Box<dyn $trait>, String> {
                     self.registry
                         .get(name)
