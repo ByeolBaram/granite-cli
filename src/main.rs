@@ -301,7 +301,11 @@ pub struct AppContext {
 /// `main` that still reports via `eprintln!` rather than `ctx.ui`.
 fn construct_ui(output: &str) -> Box<dyn Ui> {
     UI_REGISTRY
-        .construct(output, &serde_json::json!({}), &crate::config::Config::default())
+        .construct(
+            output,
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        )
         .unwrap_or_else(|_| {
             eprintln!("Unknown output format '{output}'. Valid: terminal, plain, json, markdown");
             std::process::exit(1);

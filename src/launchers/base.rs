@@ -249,26 +249,35 @@ pub(crate) mod tests {
 
     #[test]
     fn validate_command_returns_err_for_unknown_binary() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_name": "this-binary-absolutely-does-not-exist-9x7z"
-        }), &crate::config::Config::default());
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_name": "this-binary-absolutely-does-not-exist-9x7z"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_returns_err_for_nonexistent_explicit_path() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_name": "fake",
-            "command_path": "/this/path/does/not/exist/fake"
-        }), &crate::config::Config::default());
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_name": "fake",
+                "command_path": "/this/path/does/not/exist/fake"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_path": "ls"
-        }), &crate::config::Config::default());
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_path": "ls"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_ok());
     }
 
@@ -297,7 +306,11 @@ pub(crate) mod tests {
     fn launcher_factory_construct() {
         let mut factory = LauncherFactory::new();
         factory.register::<FakeLauncher>("fake");
-        let result = factory.construct("fake", &serde_json::json!({}), &crate::config::Config::default());
+        let result = factory.construct(
+            "fake",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(result.is_ok());
     }
 

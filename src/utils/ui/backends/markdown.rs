@@ -123,7 +123,10 @@ mod tests {
     use super::*;
     use crate::utils::ui::base::tests::CaptureUi;
 
-    crate::output_contract_tests!(MarkdownOutput::new(&serde_json::json!({}), &crate::config::Config::default()));
+    crate::output_contract_tests!(MarkdownOutput::new(
+        &serde_json::json!({}),
+        &crate::config::Config::default()
+    ));
 
     #[test]
     fn markdown_table_contains_pipe_chars() {

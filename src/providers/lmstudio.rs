@@ -359,21 +359,24 @@ mod tests {
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider = LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_supported() {
-        let provider = LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }
 
     #[test]
     fn test_mlx_formats_on_macos() {
-        let provider = LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         let formats = provider.supported_formats();
 
         #[cfg(target_os = "macos")]
@@ -385,7 +388,8 @@ mod tests {
 
     #[test]
     fn test_can_run_mlx_model() {
-        let provider = LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LMStudioProvider::new(&serde_json::json!({}), &crate::config::Config::default());
 
         #[cfg(target_os = "macos")]
         assert!(provider.can_run_model("mlx", "fp16"));

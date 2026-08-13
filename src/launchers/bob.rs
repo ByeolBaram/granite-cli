@@ -83,25 +83,34 @@ mod tests {
 
     #[test]
     fn command_uses_explicit_path_when_set() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "/opt/bin/bob"
-        }), &crate::config::Config::default());
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "/opt/bin/bob"
+            }),
+            &crate::config::Config::default(),
+        );
         assert_eq!(l.command(), "/opt/bin/bob");
     }
 
     #[test]
     fn validate_command_err_for_nonexistent_explicit_path() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "/no/such/path/bob"
-        }), &crate::config::Config::default());
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "/no/such/path/bob"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "ls"
-        }), &crate::config::Config::default());
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "ls"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_ok());
     }
 

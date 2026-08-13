@@ -430,14 +430,16 @@ mod tests {
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_gguf() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }
@@ -581,7 +583,8 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_library_ref_for_ollama_variant() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         let variant = ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
@@ -596,7 +599,8 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_org_scoped_ref_for_org_url() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         let variant = ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
@@ -611,7 +615,8 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_none_for_non_ollama_variant() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         let variant = ModelVariant {
             format: "GGUF".to_string(),
             precision: "Q4_K_M".to_string(),
@@ -623,7 +628,8 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_none_when_no_variant() {
-        let provider = OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert_eq!(provider.model_alias(None), None);
     }
 

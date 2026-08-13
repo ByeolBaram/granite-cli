@@ -134,5 +134,8 @@ impl HasUiMetadata for PlainOutput {
 mod tests {
     use super::*;
 
-    crate::output_contract_tests!(PlainOutput::new(&serde_json::json!({}), &crate::config::Config::default()));
+    crate::output_contract_tests!(PlainOutput::new(
+        &serde_json::json!({}),
+        &crate::config::Config::default()
+    ));
 }

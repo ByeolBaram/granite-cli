@@ -465,14 +465,16 @@ mod tests {
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider = LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_gguf() {
-        let provider = LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider =
+            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }

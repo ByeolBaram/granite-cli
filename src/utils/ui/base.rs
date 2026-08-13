@@ -480,7 +480,11 @@ pub(crate) mod tests {
 
     #[test]
     fn ui_registry_construct_unknown_returns_err() {
-        let result = UI_REGISTRY.construct("nonexistent", &serde_json::json!({}), &crate::config::Config::default());
+        let result = UI_REGISTRY.construct(
+            "nonexistent",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(result.is_err());
     }
 
