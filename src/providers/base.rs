@@ -1,4 +1,4 @@
-use crate::models::ModelFunction;
+use crate::models::{ModelFunction, ModelVariant};
 use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -144,6 +144,15 @@ pub trait Provider: Send + Sync {
     fn supported_formats(&self) -> Vec<ModelFormat>;
     fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
         true
+    }
+
+    /// Returns the provider-specific model name for the given variant, if it
+    /// differs from the catalog model ID. Providers whose server uses a different
+    /// naming convention (e.g. Ollama's `granite4.1:8b` vs the catalog ID
+    /// `granite-4.1-8b`) override this to derive the alias from the variant URL.
+    /// The default returns `None`, meaning the catalog ID should be used as-is.
+    fn model_alias(&self, _variant: Option<&ModelVariant>) -> Option<String> {
+        None
     }
 
     // Health
