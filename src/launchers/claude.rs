@@ -76,6 +76,10 @@ impl Launcher for ClaudeLauncher {
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
         if let Some(binding) = &self.bound_binding {
+            let api_key_val = match &binding.api_key {
+                Some(api_key) => api_key.clone().0,
+                _ => "unset".to_string(),
+            };
             let bindings = vec![
                 EnvBinding {
                     key: "ANTHROPIC_BASE_URL".to_string(),
@@ -85,6 +89,14 @@ impl Launcher for ClaudeLauncher {
                     key: "ANTHROPIC_MODEL".to_string(),
                     value: binding.model_name.clone(),
                 },
+                EnvBinding {
+                    key: "CLAUDE_CODE_MAX_CONTEXT_TOKENS".to_string(),
+                    value: binding.context_length.to_string(),
+                },
+                EnvBinding {
+                    key: "ANTHROPIC_AUTH_TOKEN".to_string(),
+                    value: api_key_val,
+                }
             ];
             // verify_ssl is dropped per user's note
             Ok(bindings)
