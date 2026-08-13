@@ -120,7 +120,7 @@ impl LMStudioProvider {
     }
 
     fn default_formats() -> Vec<ModelFormat> {
-        let mut formats = vec![ModelFormat::GGUF];
+        let mut formats = vec![ModelFormat::GGUF, ModelFormat::LMStudio];
 
         if cfg!(target_os = "macos") {
             formats.push(ModelFormat::MLX);
@@ -179,7 +179,7 @@ impl Provider for LMStudioProvider {
 
     fn can_run_model(&self, variant_format: &str, _variant_precision: &str) -> bool {
         let format = variant_format.to_lowercase();
-        matches!(format.as_str(), "gguf" | "mlx" if format != "mlx" || cfg!(target_os = "macos"))
+        matches!(format.as_str(), "gguf" | "lmstudio" | "mlx" if format != "mlx" || cfg!(target_os = "macos"))
     }
 
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
@@ -289,7 +289,7 @@ impl Provider for LMStudioProvider {
 
 impl HasProviderMetadata for LMStudioProvider {
     fn metadata() -> ProviderMetadata {
-        let mut formats = vec![ModelFormat::GGUF];
+        let mut formats = vec![ModelFormat::GGUF, ModelFormat::LMStudio];
         let mut tags = vec![
             "lm-studio".to_string(),
             "local".to_string(),

@@ -296,6 +296,7 @@ pub enum ModelFormat {
     GGUF,
     ONNX,
     MLX,
+    LMStudio,
 }
 
 impl std::fmt::Display for ModelFormat {
@@ -306,6 +307,7 @@ impl std::fmt::Display for ModelFormat {
             ModelFormat::GGUF => write!(f, "GGUF"),
             ModelFormat::ONNX => write!(f, "ONNX"),
             ModelFormat::MLX => write!(f, "MLX"),
+            ModelFormat::LMStudio => write!(f, "LMStudio"),
         }
     }
 }
