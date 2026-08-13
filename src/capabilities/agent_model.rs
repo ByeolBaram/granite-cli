@@ -35,14 +35,16 @@ pub struct AgentModelCapability {
     configured_variant: Option<String>,
 }
 
-impl AgentModelCapability {
-    /// Construct from capability config, using the provided global config to
-    /// resolve the model's provider (so `model.provider()` works at bind time).
+impl ConfigConstructable for AgentModelCapability {
+    type Config = AgentModelCapabilityConfig;
+
+    /// Constructs the capability using the global config to resolve the model's
+    /// provider (so `model.provider()` works at bind time).
     ///
-    /// `cfg` contains the capability's config (e.g. `{"model_id": "my-model"}`)
-    /// where `model_id` is the key into `global_config.models`.  The resolved
+    /// `cfg` contains the capability's instance config (e.g. `{"model_id": "my-model"}`)
+    /// where `model_id` is the key into `global_config.models`. The resolved
     /// `ModelConfig` supplies the catalog model ID and the provider ID.
-    pub fn with_config(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self {
+    fn new(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
         let model_cfg = global_config
@@ -62,34 +64,12 @@ impl AgentModelCapability {
             .unwrap_or_else(|| serde_json::json!({}));
         let configured_variant = model_cfg.variant.clone();
         let model = crate::models::MODEL_REGISTRY
-            .construct(&model_cfg.model_id, &provider_cfg)
+            .construct(&model_cfg.model_id, &provider_cfg, global_config)
             .expect("model must be in registry");
         Self {
             config,
             model: Arc::from(model),
             configured_variant,
-        }
-    }
-}
-
-impl ConfigConstructable for AgentModelCapability {
-    type Config = AgentModelCapabilityConfig;
-
-    fn new(cfg: &serde_json::Value) -> Self {
-        // This path is used by CAPABILITY_REGISTRY.construct() which is
-        // called in a few non-launch contexts (e.g. tests). It constructs
-        // the model without provider config, so `model.provider()` will
-        // fail at bind time — callers that need a working provider should
-        // use `AgentModelCapability::with_config()` directly.
-        let config: AgentModelCapabilityConfig =
-            serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let model = crate::models::MODEL_REGISTRY
-            .construct(&config.model_id, &serde_json::json!({}))
-            .expect("model must be in registry");
-        Self {
-            config,
-            model: Arc::from(model),
-            configured_variant: None,
         }
     }
 }
@@ -244,7 +224,7 @@ mod tests {
     impl ConfigConstructable for FakeProvider {
         type Config = crate::registry::NoConfig;
 
-        fn new(_cfg: &serde_json::Value) -> Self {
+        fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             unimplemented!("not used in tests")
         }
     }
@@ -298,7 +278,7 @@ mod tests {
     }
 
     /// Create an AgentModelCapability with a custom test model and provider.
-    /// Uses a real registry model ID so `with_config` can construct the model.
+    /// Uses a real registry model ID so the model can be looked up in global config.
     fn capability_with_test_model(
         functions: Vec<ModelFunction>,
         provider: FakeProvider,
@@ -326,7 +306,7 @@ mod tests {
                 variant: variant_str.clone(),
             },
         );
-        let cap = AgentModelCapability::with_config(
+        let cap = AgentModelCapability::new(
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );
@@ -352,7 +332,7 @@ mod tests {
 
     impl ConfigConstructable for TestModelWithVariants {
         type Config = crate::registry::NoConfig;
-        fn new(_cfg: &serde_json::Value) -> Self {
+        fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             unimplemented!("not used in tests")
         }
     }
@@ -519,7 +499,7 @@ mod tests {
                 variant: None,
             },
         );
-        let cap = AgentModelCapability::with_config(
+        let cap = AgentModelCapability::new(
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );
@@ -540,7 +520,7 @@ mod tests {
                 variant: None,
             },
         );
-        let cap = AgentModelCapability::with_config(
+        let cap = AgentModelCapability::new(
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );

@@ -29,19 +29,11 @@ impl CapabilitySource {
             .capabilities
             .values()
             .filter_map(|capability_config| {
-                let result = match capability_config.capability_type.as_str() {
-                    "agent-model" => {
-                        let cap = agent_model::AgentModelCapability::with_config(
-                            &capability_config.config,
-                            config,
-                        );
-                        Ok(Box::new(cap) as Box<dyn crate::capabilities::Capability>)
-                    }
-                    _ => CAPABILITY_REGISTRY.construct(
-                        &capability_config.capability_type,
-                        &capability_config.config,
-                    ),
-                };
+                let result = CAPABILITY_REGISTRY.construct(
+                    &capability_config.capability_type,
+                    &capability_config.config,
+                    config,
+                );
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,
