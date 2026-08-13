@@ -76,10 +76,13 @@ impl Launcher for ClaudeLauncher {
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
         if let Some(binding) = &self.bound_binding {
-            let api_key_val = match &binding.api_key {
+            let mut api_key_val = match &binding.api_key {
                 Some(api_key) => api_key.clone().0,
-                _ => "unset".to_string(),
+                _ => "".to_string(),
             };
+            if api_key_val.is_empty() {
+                api_key_val = "unset".to_string(); // Claude treats empty strings like unset
+            }
             let bindings = vec![
                 EnvBinding {
                     key: "ANTHROPIC_BASE_URL".to_string(),
