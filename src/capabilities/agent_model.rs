@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
 pub struct AgentModelCapabilityConfig {
+    /// Key into the configured models map (the user-chosen instance ID).
     #[validate(min_length = 1)]
     pub model_id: String,
 }
@@ -30,10 +31,50 @@ pub struct AgentModelCapability {
     model: Arc<dyn Model>,
 }
 
+impl AgentModelCapability {
+    /// Construct from capability config, using the provided global config to
+    /// resolve the model's provider (so `model.provider()` works at bind time).
+    ///
+    /// `cfg` contains the capability's config (e.g. `{"model_id": "my-model"}`)
+    /// where `model_id` is the key into `global_config.models`.  The resolved
+    /// `ModelConfig` supplies the catalog model ID and the provider ID.
+    pub fn with_config(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self {
+        let config: AgentModelCapabilityConfig =
+            serde_json::from_value(cfg.clone()).unwrap_or_default();
+        let model_cfg = global_config
+            .models
+            .get(&config.model_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Configured model '{}' not found in config.models",
+                    config.model_id
+                )
+            });
+        let provider_cfg = model_cfg
+            .provider_id
+            .as_deref()
+            .and_then(|pid| global_config.get_provider(pid))
+            .map(|pc| serde_json::json!({ "provider_config": pc }))
+            .unwrap_or_else(|| serde_json::json!({}));
+        let model = crate::models::MODEL_REGISTRY
+            .construct(&model_cfg.model_id, &provider_cfg)
+            .expect("model must be in registry");
+        Self {
+            config,
+            model: Arc::from(model),
+        }
+    }
+}
+
 impl ConfigConstructable for AgentModelCapability {
     type Config = AgentModelCapabilityConfig;
 
     fn new(cfg: &serde_json::Value) -> Self {
+        // This path is used by CAPABILITY_REGISTRY.construct() which is
+        // called in a few non-launch contexts (e.g. tests). It constructs
+        // the model without provider config, so `model.provider()` will
+        // fail at bind time — callers that need a working provider should
+        // use `AgentModelCapability::with_config()` directly.
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
         let model = crate::models::MODEL_REGISTRY
@@ -128,6 +169,7 @@ impl Capability for AgentModelCapability {
             endpoint_path: endpoint.path().to_string(),
             api_key: provider.api_key().cloned(),
             verify_ssl: provider.verify_ssl(),
+            context_length: self.model.context_length(),
         }))
     }
 }
@@ -157,6 +199,7 @@ impl HasCapabilityMetadata for AgentModelCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, ModelConfig};
     use crate::providers::{
         ApiEndpoint, ApiType, HealthStatus, ModelFormat, Provider, ProviderError,
     };
@@ -164,13 +207,20 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    #[derive(Clone)]
-    struct FakeProvider {
-        base_url: String,
-        api_key: Option<Secret>,
-        verify_ssl: bool,
-        api_types: Vec<ApiType>,
-        endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
+    // Re-export TestModel as pub(crate) so test helpers can use it.
+    #[derive(Default)]
+    pub(crate) struct TestModel {
+        pub(crate) supported_functions: Vec<ModelFunction>,
+        pub(crate) provider: FakeProvider,
+    }
+
+    #[derive(Clone, Default)]
+    pub(crate) struct FakeProvider {
+        pub(crate) base_url: String,
+        pub(crate) api_key: Option<Secret>,
+        pub(crate) verify_ssl: bool,
+        pub(crate) api_types: Vec<ApiType>,
+        pub(crate) endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
     }
 
     impl ConfigConstructable for FakeProvider {
@@ -207,11 +257,6 @@ mod tests {
         async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
             unimplemented!("not used in tests")
         }
-    }
-
-    struct TestModel {
-        supported_functions: Vec<ModelFunction>,
-        provider: FakeProvider,
     }
 
     impl ConfigConstructable for TestModel {
@@ -280,23 +325,39 @@ mod tests {
         }
     }
 
-    fn capability_with_model(
+    /// Create an AgentModelCapability with a custom test model and provider.
+    /// Uses a real registry model ID so `with_config` can construct the model.
+    fn capability_with_test_model(
         functions: Vec<ModelFunction>,
         provider: FakeProvider,
     ) -> AgentModelCapability {
-        let mut cap = AgentModelCapability::new(&serde_json::json!({
-            "model_id": "granite-3.1-8b-instruct",
-        }));
-        cap.model = Arc::new(TestModel {
-            supported_functions: functions,
-            provider,
-        });
+        let mut config = Config::default();
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
+        let cap = AgentModelCapability::with_config(
+            &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
+            &config,
+        );
+        // Replace the real model with our test double that has a custom provider.
+        let cap = AgentModelCapability {
+            config: cap.config,
+            model: Arc::new(TestModel {
+                supported_functions: functions,
+                provider,
+            }),
+        };
         cap
     }
 
     #[tokio::test]
     async fn bind_succeeds_for_matching_provider_and_model() {
-        let cap = capability_with_model(
+        let cap = capability_with_test_model(
             vec![ModelFunction::Chat],
             ok_provider(
                 vec![ApiType::OpenAI],
@@ -322,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_model_has_no_provider() {
-        let cap = capability_with_model(
+        let cap = capability_with_test_model(
             vec![ModelFunction::Chat],
             FakeProvider {
                 base_url: "http://localhost:11434".to_string(),
@@ -344,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_provider_lacks_api_type() {
-        let cap = capability_with_model(
+        let cap = capability_with_test_model(
             vec![ModelFunction::Chat],
             ok_provider(
                 vec![ApiType::Ollama],
@@ -364,7 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_model_lacks_function() {
-        let cap = capability_with_model(
+        let cap = capability_with_test_model(
             vec![ModelFunction::Embeddings],
             ok_provider(
                 vec![ApiType::OpenAI],
@@ -384,7 +445,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_fails_when_no_matching_endpoint() {
-        let cap = capability_with_model(
+        let cap = capability_with_test_model(
             vec![ModelFunction::Chat],
             ok_provider(
                 vec![ApiType::OpenAI, ApiType::Ollama],
@@ -404,9 +465,19 @@ mod tests {
 
     #[test]
     fn binding_types_reports_agent_model() {
-        let cap = AgentModelCapability::new(&serde_json::json!({
-            "model_id": "granite-3.1-8b-instruct",
-        }));
+        let mut config = Config::default();
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
+        let cap = AgentModelCapability::with_config(
+            &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
+            &config,
+        );
         assert_eq!(
             cap.binding_types(),
             HashSet::from([BindingType::AgentModel])
@@ -415,9 +486,19 @@ mod tests {
 
     #[test]
     fn dependencies_carry_resolved_model_id() {
-        let cap = AgentModelCapability::new(&serde_json::json!({
-            "model_id": "granite-3.1-8b-instruct",
-        }));
+        let mut config = Config::default();
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
+        let cap = AgentModelCapability::with_config(
+            &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
+            &config,
+        );
         let deps = cap.dependencies();
         assert_eq!(deps.len(), 1);
         assert!(deps.iter().any(|d| matches!(

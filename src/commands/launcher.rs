@@ -596,7 +596,17 @@ mod tests {
     }
 
     // Helper: insert a minimal agent-model capability config into ctx.
+    // Also adds the model to config.models so CapabilitySource::from_config
+    // can construct the underlying AgentModelCapability.
     fn add_capability(ctx: &mut crate::AppContext, cap_id: &str, model_id: &str) {
+        ctx.config.models.insert(
+            model_id.to_string(),
+            crate::config::ModelConfig {
+                model_id: model_id.to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
         ctx.config.capabilities.insert(
             cap_id.to_string(),
             crate::config::CapabilityConfig {

@@ -29,10 +29,19 @@ impl CapabilitySource {
             .capabilities
             .values()
             .filter_map(|capability_config| {
-                let result = CAPABILITY_REGISTRY.construct(
-                    &capability_config.capability_type,
-                    &capability_config.config,
-                );
+                let result = match capability_config.capability_type.as_str() {
+                    "agent-model" => {
+                        let cap = agent_model::AgentModelCapability::with_config(
+                            &capability_config.config,
+                            config,
+                        );
+                        Ok(Box::new(cap) as Box<dyn crate::capabilities::Capability>)
+                    }
+                    _ => CAPABILITY_REGISTRY.construct(
+                        &capability_config.capability_type,
+                        &capability_config.config,
+                    ),
+                };
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,
@@ -85,15 +94,15 @@ pub use agent_model::{AgentModelCapability, AgentModelCapabilityConfig};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CapabilityConfig, Config};
+    use crate::config::{CapabilityConfig, Config, ModelConfig};
     use crate::dependency::Configured;
 
-    fn agent_model_config(id: &str, model_id: &str) -> CapabilityConfig {
+    fn agent_model_config(id: &str, model_key: &str) -> CapabilityConfig {
         CapabilityConfig {
             capability_id: id.to_string(),
             capability_type: "agent-model".to_string(),
             config: serde_json::json!({
-                "model_id": model_id,
+                "model_id": model_key,
             }),
         }
     }
@@ -101,6 +110,15 @@ mod tests {
     #[test]
     fn capability_source_constructs_one_instance_per_named_capability() {
         let mut config = Config::default();
+        // Add the model entry that the capability will look up.
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
         config.capabilities.insert(
             "chat".to_string(),
             agent_model_config("chat", "granite-3.1-8b-instruct"),
