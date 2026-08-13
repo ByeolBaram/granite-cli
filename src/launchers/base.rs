@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // Third Party
-use alog::{alog_channel, use_channel, MessageLevel};
+use alog::{MessageLevel, alog_channel, use_channel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

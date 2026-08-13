@@ -201,10 +201,12 @@ pub trait Ui: Send + Sync + Any {
             .items(items)
             .defaults(defaults)
             .interact_opt()?
-            .ok_or_else(|| anyhow::anyhow!(
-                "interactive prompts are not supported outside of a terminal; \
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "interactive prompts are not supported outside of a terminal; \
                  rerun with --output=terminal or --output=plain"
-            ))
+                )
+            })
     }
 
     /// Ask a yes/no question.

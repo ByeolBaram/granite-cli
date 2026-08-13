@@ -96,7 +96,7 @@ impl Launcher for ClaudeLauncher {
                 EnvBinding {
                     key: "ANTHROPIC_AUTH_TOKEN".to_string(),
                     value: api_key_val,
-                }
+                },
             ];
             // verify_ssl is dropped per user's note
             Ok(bindings)

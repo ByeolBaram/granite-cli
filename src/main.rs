@@ -664,17 +664,18 @@ async fn run_launch(
                  which is not configured. Run `granite-cli capability setup` first."
             )
         })?;
-        let capability: Box<dyn crate::capabilities::Capability> =
-            if cap_cfg.capability_type == "agent-model" {
-                Box::new(crate::capabilities::AgentModelCapability::with_config(
-                    &cap_cfg.config,
-                    &config,
-                ))
-            } else {
-                CAPABILITY_REGISTRY
-                    .construct(&cap_cfg.capability_type, &cap_cfg.config)
-                    .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?
-            };
+        let capability: Box<dyn crate::capabilities::Capability> = if cap_cfg.capability_type
+            == "agent-model"
+        {
+            Box::new(crate::capabilities::AgentModelCapability::with_config(
+                &cap_cfg.config,
+                &config,
+            ))
+        } else {
+            CAPABILITY_REGISTRY
+                .construct(&cap_cfg.capability_type, &cap_cfg.config)
+                .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?
+        };
         launcher.bind_capability(capability.as_ref()).await?;
     }
 
