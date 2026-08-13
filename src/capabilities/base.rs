@@ -91,6 +91,7 @@ pub struct AgentModelBinding {
     pub endpoint_path: String,
     pub api_key: Option<Secret>,
     pub verify_ssl: bool,
+    pub context_length: u64,
 }
 
 define_bindings! {
