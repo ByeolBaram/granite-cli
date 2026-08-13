@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // Third Party
+use alog::{alog_channel, use_channel, MessageLevel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,8 @@ use crate::capabilities::BindingType;
 use crate::define_factory;
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::Ui;
+
+use_channel!("LNCHR");
 
 /*-- public --*/
 
@@ -68,6 +71,7 @@ pub trait Launcher: Send + Sync {
     ) -> anyhow::Result<std::process::ExitStatus> {
         let binary = self.validate_command()?;
         let overlay = self.env_overlay(ctx).await?;
+        alog_channel!(MessageLevel::Debug2, "Env Overlay: {:#?}", overlay);
         run_command(binary, &overlay, args, ctx, ui).await
     }
 }
@@ -159,6 +163,7 @@ pub struct LaunchContext {
 }
 
 /// A single environment variable binding contributed to the subprocess overlay.
+#[derive(Debug)]
 pub struct EnvBinding {
     pub key: String,
     pub value: String,
