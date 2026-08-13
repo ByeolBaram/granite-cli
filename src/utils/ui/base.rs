@@ -197,7 +197,7 @@ pub trait Ui: Send + Sync + Any {
         // an Err instead of blocking — matching the behaviour of dialoguer's
         // Select/Confirm/Input which all error on non-TTY via interact().
         dialoguer::MultiSelect::new()
-            .with_prompt(prompt)
+            .with_prompt(format!("{} {}", prompt, self.detail_mark("[SPACE]")))
             .items(items)
             .defaults(defaults)
             .interact_opt()?
