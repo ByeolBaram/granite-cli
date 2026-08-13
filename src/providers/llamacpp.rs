@@ -340,6 +340,12 @@ impl Provider for LlamaCppProvider {
         variant_format.eq_ignore_ascii_case("gguf")
     }
 
+    fn model_alias(&self, variant: Option<&crate::models::ModelVariant>) -> Option<String> {
+        let v = variant?;
+        let repo = hf_repo_id(&v.url)?;
+        Some(format!("{}:{}", repo, v.precision))
+    }
+
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
         http_health_check(
             &self.client,
@@ -477,6 +483,42 @@ mod tests {
             LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
+    }
+
+    #[test]
+    fn test_model_alias_returns_hf_ref_for_gguf_variant() {
+        let provider =
+            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let variant = ModelVariant {
+            format: "GGUF".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: 5.3,
+            url: "https://huggingface.co/ibm-granite/granite-4.1-8b-GGUF/blob/main/granite-4.1-8b-Q4_K_M.gguf".to_string(),
+        };
+        assert_eq!(
+            provider.model_alias(Some(&variant)),
+            Some("ibm-granite/granite-4.1-8b-GGUF:Q4_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn test_model_alias_returns_none_for_ollama_url() {
+        let provider =
+            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let variant = ModelVariant {
+            format: "Ollama".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: 5.3,
+            url: "https://ollama.com/library/granite4.1:8b".to_string(),
+        };
+        assert_eq!(provider.model_alias(Some(&variant)), None);
+    }
+
+    #[test]
+    fn test_model_alias_returns_none_when_no_variant() {
+        let provider =
+            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        assert_eq!(provider.model_alias(None), None);
     }
 
     #[test]
