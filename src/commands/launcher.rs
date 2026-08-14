@@ -428,13 +428,14 @@ mod tests {
     }
 
     #[test]
-    fn catalog_contains_claude_and_bob() {
+    fn catalog_contains_claude_bob_and_pi() {
         let ctx = test_ctx();
         LauncherCommands::catalog(&ctx).unwrap();
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows.iter().any(|r| r[0] == "claude"));
         assert!(rows.iter().any(|r| r[0] == "bob"));
+        assert!(rows.iter().any(|r| r[0] == "pi"));
     }
 
     // -- list ------------------------------------------------------------------
