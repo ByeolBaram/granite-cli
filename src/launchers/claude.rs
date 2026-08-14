@@ -18,6 +18,7 @@ pub struct ClaudeLauncherConfig {
 }
 
 pub struct ClaudeLauncher {
+    instance_id: String,
     config: ClaudeLauncherConfig,
     bound_binding: Option<crate::capabilities::AgentModelBinding>,
 }
@@ -25,12 +26,23 @@ pub struct ClaudeLauncher {
 impl ConfigConstructable for ClaudeLauncher {
     type Config = ClaudeLauncherConfig;
 
-    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        _global_config: &crate::config::Config,
+    ) -> Self {
         let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self {
+            instance_id: instance_id.to_string(),
             config,
             bound_binding: None,
         }
+    }
+}
+
+impl crate::registry::Named for ClaudeLauncher {
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
@@ -134,13 +146,18 @@ mod tests {
 
     #[test]
     fn command_defaults_to_claude() {
-        let l = ClaudeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
+        let l = ClaudeLauncher::new(
+            "my-claude",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert_eq!(l.command(), "claude");
     }
 
     #[test]
     fn command_uses_explicit_path_when_set() {
         let l = ClaudeLauncher::new(
+            "my-claude",
             &serde_json::json!({
                 "command_path": "/opt/bin/claude"
             }),
@@ -152,6 +169,7 @@ mod tests {
     #[test]
     fn validate_command_err_for_nonexistent_explicit_path() {
         let l = ClaudeLauncher::new(
+            "my-claude",
             &serde_json::json!({
                 "command_path": "/no/such/path/claude"
             }),
@@ -163,6 +181,7 @@ mod tests {
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
         let l = ClaudeLauncher::new(
+            "my-claude",
             &serde_json::json!({
                 "command_path": "ls"
             }),

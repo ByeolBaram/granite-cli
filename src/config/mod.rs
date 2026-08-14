@@ -129,6 +129,16 @@ impl Config {
         Ok(Self::config_dir()?.join("launchers"))
     }
 
+    /// Directory a launcher may materialize generated state into -- config files
+    /// it must put on disk for the tool it wraps. Kept under `GRANITE_CLI_HOME`
+    /// so wrapping a tool never means editing that tool's own global config.
+    ///
+    /// The path is returned without being created; callers create it when they
+    /// actually write, so a dry run leaves no trace.
+    pub fn launcher_state_dir(launcher_id: &str) -> Result<PathBuf> {
+        Ok(Self::config_dir()?.join("launcher-state").join(launcher_id))
+    }
+
     fn ensure_directories() -> Result<()> {
         let config_dir = Self::config_dir()?;
         if !config_dir.exists() {

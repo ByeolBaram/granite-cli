@@ -1108,6 +1108,7 @@ mod tests {
             precision: "bfloat16".to_string(),
         };
         let provider = crate::providers::OpenAIProvider::new(
+            "my-openai",
             &serde_json::json!({ "base_url": "http://localhost:8080" }),
             &crate::config::Config::default(),
         );

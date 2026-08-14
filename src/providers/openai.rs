@@ -64,6 +64,7 @@ impl Default for OpenAIProviderConfig {
 /*-- OpenAI Provider Implementation ------------------------------------------*/
 
 pub struct OpenAIProvider {
+    instance_id: String,
     config: OpenAIProviderConfig,
     client: reqwest::Client,
     function_endpoints: HashMap<ModelFunction, Vec<ApiEndpoint>>,
@@ -91,7 +92,11 @@ impl OpenAIProvider {
 impl ConfigConstructable for OpenAIProvider {
     type Config = OpenAIProviderConfig;
 
-    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        _global_config: &crate::config::Config,
+    ) -> Self {
         let config: OpenAIProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
@@ -106,10 +111,17 @@ impl ConfigConstructable for OpenAIProvider {
             .unwrap_or_else(Self::default_function_endpoints);
 
         Self {
+            instance_id: instance_id.to_string(),
             config,
             client,
             function_endpoints,
         }
+    }
+}
+
+impl crate::registry::Named for OpenAIProvider {
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
@@ -306,7 +318,7 @@ mod tests {
             "api_key": "test-key",
             "timeout_secs": 30
         });
-        let provider = OpenAIProvider::new(&cfg, &crate::config::Config::default());
+        let provider = OpenAIProvider::new("my-openai", &cfg, &crate::config::Config::default());
         assert_eq!(provider.config.base_url, "http://example.com:8080");
         assert_eq!(
             provider.config.api_key,
@@ -318,7 +330,7 @@ mod tests {
     #[test]
     fn test_provider_function_endpoints() {
         let cfg = serde_json::json!({});
-        let provider = OpenAIProvider::new(&cfg, &crate::config::Config::default());
+        let provider = OpenAIProvider::new("my-openai", &cfg, &crate::config::Config::default());
         let endpoints = provider.function_endpoints();
         assert!(endpoints.contains_key(&ModelFunction::Chat));
         assert!(endpoints.contains_key(&ModelFunction::Embeddings));
@@ -331,7 +343,7 @@ mod tests {
         let cfg = serde_json::json!({
             "base_url": "http://example.com:8080"
         });
-        let provider = OpenAIProvider::new(&cfg, &crate::config::Config::default());
+        let provider = OpenAIProvider::new("my-openai", &cfg, &crate::config::Config::default());
         let endpoints = provider.function_endpoints();
         // Default config has all three functions
         assert!(endpoints.contains_key(&ModelFunction::Chat));

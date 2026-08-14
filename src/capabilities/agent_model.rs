@@ -27,6 +27,7 @@ pub struct AgentModelCapabilityConfig {
 /*-- AgentModelCapability ---------------------------------------------------------*/
 
 pub struct AgentModelCapability {
+    instance_id: String,
     config: AgentModelCapabilityConfig,
     model: Arc<dyn Model>,
     /// The raw `"format/precision"` string from `ModelConfig.variant`, if the
@@ -44,8 +45,13 @@ impl ConfigConstructable for AgentModelCapability {
     /// transparently wraps the model in a local tracking proxy.
     ///
     /// `cfg` contains the capability's instance config (e.g. `{"model_id": "my-model"}`)
-    /// where `model_id` is the key into `global_config.models`.
-    fn new(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self {
+    /// where `model_id` is the key into `global_config.models`. The resolved
+    /// `ModelConfig` supplies the catalog model ID and the provider ID.
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        global_config: &crate::config::Config,
+    ) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
         let mut source = crate::models::ModelSource::from_config(global_config);
@@ -60,10 +66,17 @@ impl ConfigConstructable for AgentModelCapability {
             .get(&config.model_id)
             .and_then(|mc| mc.variant.clone());
         Self {
+            instance_id: instance_id.to_string(),
             config,
             model,
             configured_variant,
         }
+    }
+}
+
+impl crate::registry::Named for AgentModelCapability {
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
@@ -160,6 +173,7 @@ impl Capability for AgentModelCapability {
 
         Ok(Binding::AgentModel(AgentModelBinding {
             api_type,
+            provider_name: provider.instance_id().to_string(),
             base_url: provider.base_url().to_string(),
             model_name,
             endpoint_path: endpoint.path().to_string(),
@@ -205,6 +219,7 @@ mod tests {
 
     #[derive(Clone, Default)]
     pub(crate) struct FakeProvider {
+        pub(crate) instance_id: String,
         pub(crate) base_url: String,
         pub(crate) api_key: Option<Secret>,
         pub(crate) verify_ssl: bool,
@@ -217,8 +232,18 @@ mod tests {
     impl ConfigConstructable for FakeProvider {
         type Config = crate::registry::NoConfig;
 
-        fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+        fn new(
+            _instance_id: &str,
+            _cfg: &serde_json::Value,
+            _global_config: &crate::config::Config,
+        ) -> Self {
             unimplemented!("not used in tests")
+        }
+    }
+
+    impl crate::registry::Named for FakeProvider {
+        fn instance_id(&self) -> &str {
+            &self.instance_id
         }
     }
 
@@ -261,6 +286,7 @@ mod tests {
         let mut endpoints = HashMap::new();
         endpoints.insert(function, vec![endpoint]);
         FakeProvider {
+            instance_id: "my-ollama".to_string(),
             base_url: "http://localhost:11434".to_string(),
             api_key: None,
             verify_ssl: true,
@@ -300,12 +326,14 @@ mod tests {
             },
         );
         let cap = AgentModelCapability::new(
+            "my-agent",
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );
         // Replace the real model with our test double that has a custom provider
         // and the specified variants list.
         AgentModelCapability {
+            instance_id: cap.instance_id,
             config: cap.config,
             configured_variant: variant_str,
             model: Arc::new(TestModelWithVariants {
@@ -325,8 +353,18 @@ mod tests {
 
     impl ConfigConstructable for TestModelWithVariants {
         type Config = crate::registry::NoConfig;
-        fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+        fn new(
+            _instance_id: &str,
+            _cfg: &serde_json::Value,
+            _global_config: &crate::config::Config,
+        ) -> Self {
             unimplemented!("not used in tests")
+        }
+    }
+
+    impl crate::registry::Named for TestModelWithVariants {
+        fn instance_id(&self) -> &str {
+            "granite-3.1-8b-instruct"
         }
     }
 
@@ -403,6 +441,7 @@ mod tests {
         let cap = capability_with_test_model(
             vec![ModelFunction::Chat],
             FakeProvider {
+                instance_id: "my-ollama".to_string(),
                 base_url: "http://localhost:11434".to_string(),
                 api_key: None,
                 verify_ssl: true,
@@ -493,6 +532,7 @@ mod tests {
             },
         );
         let cap = AgentModelCapability::new(
+            "my-agent",
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );
@@ -514,6 +554,7 @@ mod tests {
             },
         );
         let cap = AgentModelCapability::new(
+            "my-agent",
             &serde_json::json!({ "model_id": "granite-3.1-8b-instruct" }),
             &config,
         );

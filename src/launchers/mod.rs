@@ -13,6 +13,7 @@ pub static LAUNCHER_REGISTRY: LazyLock<base::LauncherFactory> = LazyLock::new(||
     let mut factory = base::LauncherFactory::new();
     factory.register::<claude::ClaudeLauncher>("claude");
     factory.register::<bob::BobLauncher>("bob");
+    factory.register::<pi::PiLauncher>("pi");
     factory
 });
 
@@ -33,7 +34,12 @@ impl LauncherSource {
             .launchers
             .values()
             .filter_map(|lc| {
-                let result = LAUNCHER_REGISTRY.construct(&lc.launcher_type, &lc.config, config);
+                let result = LAUNCHER_REGISTRY.construct(
+                    &lc.launcher_type,
+                    &lc.launcher_id,
+                    &lc.config,
+                    config,
+                );
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,
@@ -72,10 +78,12 @@ impl crate::dependency::Configured<dyn Launcher> for LauncherSource {
 mod base;
 pub mod bob;
 pub mod claude;
+pub mod pi;
 
 pub use base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 pub use bob::{BobLauncher, BobLauncherConfig};
 pub use claude::{ClaudeLauncher, ClaudeLauncherConfig};
+pub use pi::{PiLauncher, PiLauncherConfig};
 
 /*-- tests -------------------------------------------------------------------*/
 
@@ -99,9 +107,10 @@ mod tests {
     }
 
     #[test]
-    fn registry_contains_claude_and_bob() {
+    fn registry_contains_claude_bob_and_pi() {
         assert!(LAUNCHER_REGISTRY.get("claude").is_some());
         assert!(LAUNCHER_REGISTRY.get("bob").is_some());
+        assert!(LAUNCHER_REGISTRY.get("pi").is_some());
         assert!(LAUNCHER_REGISTRY.get("nonexistent").is_none());
     }
 
@@ -144,6 +153,7 @@ mod tests {
         let catalog = source.catalog();
         assert!(catalog.contains_key("claude"));
         assert!(catalog.contains_key("bob"));
+        assert!(catalog.contains_key("pi"));
     }
 
     #[test]
@@ -152,6 +162,7 @@ mod tests {
         let source = LauncherSource::from_config(&config);
         assert!(source.config_schema("claude").is_some());
         assert!(source.config_schema("bob").is_some());
+        assert!(source.config_schema("pi").is_some());
         assert!(source.config_schema("nonexistent").is_none());
     }
 }

@@ -236,6 +236,7 @@ impl ProviderCommands {
         let provider = PROVIDER_REGISTRY
             .construct(
                 &provider_config.provider_type,
+                &provider_config.provider_id,
                 &provider_config.config,
                 &ctx.config,
             )

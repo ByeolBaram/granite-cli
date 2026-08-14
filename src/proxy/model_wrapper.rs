@@ -70,6 +70,12 @@ impl UsageTrackingModel {
     }
 }
 
+impl crate::registry::Named for UsageTrackingModel {
+    fn instance_id(&self) -> &str {
+        self.inner.instance_id()
+    }
+}
+
 impl Model for UsageTrackingModel {
     fn family(&self) -> &str {
         self.inner.family()
@@ -124,6 +130,12 @@ impl Model for UsageTrackingModel {
 struct UsageTrackingProvider {
     inner: Box<dyn Provider>,
     local_base_url: String,
+}
+
+impl crate::registry::Named for UsageTrackingProvider {
+    fn instance_id(&self) -> &str {
+        self.inner.instance_id()
+    }
 }
 
 #[async_trait]
@@ -183,6 +195,12 @@ mod tests {
         api_key: Option<Secret>,
     }
 
+    impl crate::registry::Named for FakeProvider {
+        fn instance_id(&self) -> &str {
+            "so fake!"
+        }
+    }
+
     #[async_trait]
     impl Provider for FakeProvider {
         fn name(&self) -> &str {
@@ -213,6 +231,12 @@ mod tests {
 
     struct FakeModel {
         provider: FakeProvider,
+    }
+
+    impl crate::registry::Named for FakeModel {
+        fn instance_id(&self) -> &str {
+            "Mr. McFake"
+        }
     }
 
     impl Model for FakeModel {

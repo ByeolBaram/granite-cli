@@ -187,7 +187,7 @@ impl LauncherCommands {
         // Validate the binary now so the user gets immediate feedback.
         // validate_command respects command_path when set; falls back to PATH.
         let launcher = LAUNCHER_REGISTRY
-            .construct(launcher_type, &config, &ctx.config)
+            .construct(launcher_type, &instance_id, &config, &ctx.config)
             .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
         match launcher.validate_command() {
@@ -428,13 +428,14 @@ mod tests {
     }
 
     #[test]
-    fn catalog_contains_claude_and_bob() {
+    fn catalog_contains_claude_bob_and_pi() {
         let ctx = test_ctx();
         LauncherCommands::catalog(&ctx).unwrap();
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows.iter().any(|r| r[0] == "claude"));
         assert!(rows.iter().any(|r| r[0] == "bob"));
+        assert!(rows.iter().any(|r| r[0] == "pi"));
     }
 
     // -- list ------------------------------------------------------------------
