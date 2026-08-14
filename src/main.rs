@@ -4,6 +4,7 @@ pub mod config;
 pub mod dependency;
 pub mod launchers;
 pub mod models;
+pub mod proxy;
 pub mod registry;
 pub mod utils;
 pub mod version {
@@ -94,6 +95,12 @@ struct LaunchWithOutput {
     /// Show overlay without launching
     #[arg(long)]
     dry_run: bool,
+
+    /// Track token usage (input, output, and cache where available) via a
+    /// local proxy sitting between the launched agent and its configured
+    /// model. Off by default.
+    #[arg(short = 'u', long = "usage-tracking")]
+    usage_tracking: bool,
 
     /// Additional arguments to pass to the launcher
     #[arg(trailing_var_arg = true)]
@@ -493,6 +500,7 @@ async fn main() {
                 &wrapper.launcher_id,
                 &wrapper.args,
                 wrapper.dry_run,
+                wrapper.usage_tracking,
             )
             .await
             .map_err(|e| ctx.ui.error(&e.to_string()))
@@ -641,20 +649,42 @@ async fn run_launch(
     launcher_id: &str,
     args: &[String],
     dry_run: bool,
+    usage_tracking: bool,
 ) -> anyhow::Result<()> {
     use crate::capabilities::CAPABILITY_REGISTRY;
     use crate::launchers::LAUNCHER_REGISTRY;
     use crate::launchers::LaunchContext;
+    use crate::proxy::{ProxyServer, UsageTracker, UsageTrackingContext};
+    use std::sync::Mutex;
 
     // Load config fresh so we always pick up the latest saved state.
-    let config = crate::config::Config::new()?;
+    let mut config = crate::config::Config::new()?;
 
-    let lc = config.get_launcher(launcher_id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "No launcher configured with id '{launcher_id}'. \
-             Run `granite-cli launcher setup {launcher_id}` first."
-        )
-    })?;
+    let lc = config
+        .get_launcher(launcher_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No launcher configured with id '{launcher_id}'. \
+                 Run `granite-cli launcher setup {launcher_id}` first."
+            )
+        })?
+        .clone();
+
+    // Usage tracking is skipped under `dry_run`: there's no subprocess to
+    // point a proxy at, and showing the real upstream URL in the overlay is
+    // more useful than a not-yet-running one. When active, this session is
+    // threaded through `config.usage_tracking` so that any capability which
+    // resolves its model through `ModelSource` (see `AgentModelCapability::new`)
+    // is transparently tracked -- no per-capability wrapping needed here.
+    let track_usage = usage_tracking && !dry_run;
+    let tracker = Arc::new(UsageTracker::new());
+    let proxy_servers: Arc<Mutex<Vec<ProxyServer>>> = Arc::new(Mutex::new(Vec::new()));
+    if track_usage {
+        config.usage_tracking = Some(UsageTrackingContext {
+            tracker: Arc::clone(&tracker),
+            servers: Arc::clone(&proxy_servers),
+        });
+    }
 
     let mut launcher = LAUNCHER_REGISTRY
         .construct(&lc.launcher_type, &lc.config, &config)
@@ -682,6 +712,15 @@ async fn run_launch(
     };
 
     let status = launcher.launch(args, &launch_ctx, ui).await?;
+
+    if track_usage {
+        let started: Vec<ProxyServer> = proxy_servers.lock().unwrap().drain(..).collect();
+        for server in started {
+            server.shutdown().await;
+        }
+        print_usage_summary(ui, &tracker);
+    }
+
     if !status.success() {
         anyhow::bail!(
             "'{}' exited with status {}",
@@ -690,4 +729,60 @@ async fn run_launch(
         );
     }
     Ok(())
+}
+
+/// Print a per-binding + total usage table, skipped entirely if nothing was
+/// recorded (e.g. the launched agent never made a request).
+fn print_usage_summary(ui: &dyn Ui, tracker: &proxy::UsageTracker) {
+    let snapshot = tracker.snapshot();
+    if snapshot.is_empty() {
+        return;
+    }
+
+    let mut rows: Vec<Vec<String>> = snapshot
+        .iter()
+        .map(|(label, s)| {
+            vec![
+                label.clone(),
+                s.requests.to_string(),
+                s.input_tokens.to_string(),
+                s.output_tokens.to_string(),
+                s.cache_creation_tokens.to_string(),
+                s.cache_read_tokens.to_string(),
+            ]
+        })
+        .collect();
+    rows.sort_by(|a, b| a[0].cmp(&b[0]));
+
+    let total = snapshot
+        .values()
+        .fold(proxy::UsageStats::default(), |mut acc, s| {
+            acc.requests += s.requests;
+            acc.input_tokens += s.input_tokens;
+            acc.output_tokens += s.output_tokens;
+            acc.cache_creation_tokens += s.cache_creation_tokens;
+            acc.cache_read_tokens += s.cache_read_tokens;
+            acc
+        });
+    rows.push(vec![
+        "Total".to_string(),
+        total.requests.to_string(),
+        total.input_tokens.to_string(),
+        total.output_tokens.to_string(),
+        total.cache_creation_tokens.to_string(),
+        total.cache_read_tokens.to_string(),
+    ]);
+
+    ui.table(
+        "Usage",
+        &[
+            "Binding",
+            "Requests",
+            "Input Tokens",
+            "Output Tokens",
+            "Cache Write",
+            "Cache Read",
+        ],
+        &rows,
+    );
 }
