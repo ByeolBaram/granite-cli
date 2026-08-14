@@ -19,20 +19,37 @@ a goal; it does not hold once tracking requests-in-flight is a stated
 requirement. The proxy introduced here is strictly additive and turned off by
 default, so it does not otherwise change the launch model described there.
 
-**Design: decorator over `Capability`, not a `Launcher` change.** The
-existing binding flow is `Capability::bind(request) -> Binding`, and
-`AgentModelBinding` already carries everything a launcher needs to talk to a
-model (`base_url`, `api_key`, `api_type`, ...). Usage tracking is implemented
-as `UsageTrackingCapability`, a `Capability` decorator that wraps any other
-capability, calls through to it in `bind()`, and — only when the result is a
-`Binding::AgentModel` — starts a local `ProxyServer` for that binding's
-upstream and rewrites the returned binding to point at `127.0.0.1:<ephemeral
-port>` instead, with `api_key` cleared (the proxy holds the real credential
-and injects it upstream; the launched process never sees it). Every other
-`Capability` method delegates straight to the inner capability. This means
-`run_launch` decides whether to wrap, and nothing in `Launcher`,
-`ClaudeLauncher`, `BobLauncher`, or the `Capability` trait itself needs to
-know tracking exists.
+**Design: intercept model construction at `ModelSource::from_config`, not a
+`Capability` or `Launcher` change.** `Model::provider()` (default body in
+`src/models/base.rs`) is the only place a `Model` produces connection
+details — `base_url`/`api_key`/`verify_ssl` live on the `Provider` it
+returns, not on `Model` itself. `ModelSource` (`src/models/mod.rs`) is the
+single place any config-driven model comes into existence: it eagerly
+constructs every model in `config.models`, and callers pull one out by id via
+`ModelSource::take`. Usage tracking hooks in exactly there: when a
+usage-tracking session is active (threaded through a new, non-persisted
+`Config::usage_tracking` field, set once per `launch` invocation), `take()`
+wraps the requested model in `UsageTrackingModel`
+(`src/proxy/model_wrapper.rs`) before returning it. `UsageTrackingModel`
+delegates every metadata method to the real model unchanged, and overrides
+only `provider()` to return a `UsageTrackingProvider` that points
+`base_url()` at a local `ProxyServer` (started synchronously inside `take()`)
+and clears `api_key()` (the proxy holds the real credential and injects it
+upstream; the launched process never sees it). Every other `Provider` method
+delegates straight to the real provider.
+
+This means `AgentModelCapability::bind()` — and any future capability that
+resolves its model through `ModelSource` — needs zero tracking-specific code:
+it already does exactly `self.model.provider()` →
+`base_url()`/`api_key()`/`verify_ssl()`, so wrapping happens transparently
+underneath it. Nothing about the `Capability` trait, `Launcher` trait, or any
+concrete launcher changes. (An earlier iteration of this design wrapped
+`Capability` itself via a decorator, `UsageTrackingCapability`, that
+special-cased `Binding::AgentModel` in `bind()`; that coupled tracking to
+`AgentModelCapability` specifically, since a future model-backed capability
+would need its own case added to the wrapper. Wrapping at `ModelSource`
+instead makes tracking a property of *how a model is obtained*, not of any
+particular capability.)
 
 **Unified streaming/non-streaming handling.** Anthropic and OpenAI report
 usage over SSE (`data: {...}` lines); Ollama reports it as NDJSON, one JSON
@@ -58,14 +75,13 @@ requests.
 ## Out of Scope (Future Work)
 
 **MCP servers.** The issue asks for tracking "any/all model or MCP
-endpoint," but granite-cli has no MCP configuration surface today — there is
-no existing `Capability`/`Binding` shape to decorate, and inventing one from
-scratch is a separate, larger design problem (MCP's framing is JSON-RPC over
-stdio or SSE, not a simple HTTP request/response token-usage schema). This
-plan covers `Binding::AgentModel` only. The `UsageTrackingCapability`
-decorator pattern and the `ProxyServer`/`UsageTracker` split in `src/proxy/`
-are written generically enough that a future MCP binding type could plug into
-the same `tracker`/`servers` plumbing, but no MCP-specific code is added now.
+endpoint," but granite-cli has no MCP configuration surface today, and MCP's
+framing (JSON-RPC over stdio or SSE) is not a simple HTTP
+request/response token-usage schema anyway. This plan covers models resolved
+through `ModelSource` only. The `ProxyServer`/`UsageTracker` split in
+`src/proxy/` is written generically enough that a future MCP-backed source
+could plug into the same `tracker`/`servers` plumbing, but no MCP-specific
+code is added now.
 
 **Per-request / live usage display.** The summary is a single table printed
 after the launched process exits (`ui.table` from `UsageTracker::snapshot()`
@@ -77,13 +93,11 @@ cache read) are tracked, per the issue's own scope ("keeping track of token
 usage"). Mapping counts to a dollar cost would require a pricing table per
 model/provider that does not exist anywhere in granite-cli today.
 
-**Multiple `AgentModel` capabilities racing for one proxy.** If a launcher is
-ever configured with more than one enabled `AgentModel`-binding capability
-(already an unenforced edge case per `docs/specs/0018-capability-binding-plan.md`),
-usage tracking simply starts one `ProxyServer` per `bind()` call and records
-each under its own capability-id label — no special handling is added or
-needed here, but no attempt is made to detect or warn about the underlying
-over-selection either.
+**Multiple capabilities sharing one model.** `ModelSource::take` removes and
+wraps the model on first request, so each `model_id` is only ever wrapped
+(and proxied) once per `launch` invocation, regardless of how many
+capabilities are configured — no special handling is added or needed for
+this case.
 
 ---
 
@@ -106,18 +120,23 @@ logic is unit-testable without spinning up a server.
 - `UsageTracker`: `Mutex<HashMap<String, UsageStats>>` keyed by a caller-
   supplied label (the capability id); `record(label, delta)` adds one request
   plus `delta`'s fields; `snapshot()` returns a point-in-time clone.
-- Per-`ApiType` parsing functions, each returning `Option<UsageStats>` so a
-  non-matching shape is silently skipped rather than treated as an error:
-  `parse_json_body` (whole-body, non-streaming), `parse_sse_event` (one
-  decoded SSE payload), `parse_ndjson_line` (one decoded NDJSON line).
-  Anthropic checks `.message.usage` (on `message_start`) and top-level
-  `.usage` (on `message_delta`); OpenAI reads `.usage.{prompt,completion}_tokens`
-  and `.usage.prompt_tokens_details.cached_tokens` (only present when the
-  caller sets `stream_options.include_usage`); Ollama reads top-level
-  `prompt_eval_count`/`eval_count`, present only on the line with `done: true`.
+- A single `pub fn parse_usage(value: &serde_json::Value) -> Option<UsageStats>`
+  that sniffs the JSON shape rather than being told which provider produced
+  it — no `ApiType` argument needed, since this layer doesn't have one to
+  give it (see Sub-Task 2). It checks `.message.usage` (Anthropic
+  `message_start`) or top-level `.usage` (Anthropic `message_delta` /
+  OpenAI / any non-streaming body) first, trying Anthropic's key names
+  (`input_tokens`/`output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`)
+  then OpenAI's (`prompt_tokens`/`completion_tokens`/`prompt_tokens_details.cached_tokens`,
+  the latter only present when the caller sets `stream_options.include_usage`) —
+  the two key sets are disjoint, so trying both in turn is unambiguous. If
+  neither matches, it falls through to Ollama's top-level
+  `prompt_eval_count`/`eval_count` (present only on the line with
+  `done: true`, or on a non-streaming body); Ollama never nests its counts
+  under a `usage` key, so checking it last is safe. A non-matching shape
+  returns `None` rather than an error.
 
 **Relevant Context**
-- `src/providers/base.rs`: `ApiType` enum (`OpenAI`, `Ollama`, `Anthropic`)
 - Anthropic Messages API streaming events: `message_start` (usage nested
   under `message`), `message_delta` (usage at top level)
 - OpenAI Chat Completions streaming: usage only on the final chunk, and only
@@ -132,24 +151,33 @@ logic is unit-testable without spinning up a server.
 ### Sub-Task 2 — Reverse proxy server (`src/proxy/server.rs`)
 
 **Intent**
-Stand up a real localhost HTTP server per `AgentModelBinding` that forwards
-every request/response byte-for-byte to the real upstream while feeding
-response bytes through the Sub-Task 1 parsers as they pass through, and
-injecting the real API key so the launched process never has to hold it.
+Stand up a real localhost HTTP server per tracked model that forwards every
+request/response byte-for-byte to the real upstream while feeding response
+bytes through the Sub-Task 1 parser as they pass through, and injecting the
+real API key so the launched process never has to hold it. Synchronous, so
+it can be started from inside sync code (`ModelSource::take`, itself reached
+from the sync, infallible `ConfigConstructable::new`) as long as a Tokio
+runtime is already running somewhere up the call stack.
 
 **Expected Outcomes**
-- `ProxyServer::start(binding, tracker, label)` binds `127.0.0.1:0` (OS-chosen
-  ephemeral port — avoids port collisions across concurrent launches), builds
-  a `reqwest::Client` honoring `binding.verify_ssl`, and spawns an `axum`
+- `ProxyServer::start(base_url, api_key, verify_ssl, tracker, label) ->
+  anyhow::Result<Self>` — no longer `async`. Binds `127.0.0.1:0` via a plain
+  OS `std::net::TcpListener::bind` call (OS-chosen ephemeral port — avoids
+  port collisions across concurrent launches) + `set_nonblocking(true)`, then
+  hands it to `tokio::net::TcpListener::from_std` and `tokio::spawn` — both
+  ordinary sync calls that only need an *ambient* runtime, not an `.await`.
+  Builds a `reqwest::Client` honoring `verify_ssl`, and spawns an `axum`
   server (`Router::new().fallback(any(proxy_handler))`) on a background
-  task. `local_base_url` is exposed for the caller to substitute into the
-  rewritten binding.
+  task. `local_base_url` is exposed for the caller (`UsageTrackingModel::wrap`,
+  Sub-Task 3) to point the wrapped provider at.
 - `ProxyServer::shutdown(self)` signals graceful shutdown via a
   `oneshot::Sender` and awaits the server task's `JoinHandle`.
-- `forward()` builds the outbound request to `binding.base_url +
-  <incoming path/query>`, strips hop-by-hop and auth headers
-  (`is_forbidden_request_header`) before copying the rest, then injects the
-  real key as `x-api-key` (Anthropic) or a bearer token (OpenAI/Ollama).
+- `forward()` builds the outbound request to `base_url + <incoming
+  path/query>`, strips hop-by-hop and auth headers
+  (`is_forbidden_request_header`) before copying the rest, then — since this
+  layer has no `ApiType` to pick a single header scheme with — injects the
+  real key as both `x-api-key` and a bearer token; a real upstream only
+  reads the header scheme it understands, so sending both is harmless.
   Response headers that describe framing we're about to replace
   (`content-length`, `transfer-encoding`, `connection`, `keep-alive`) are
   dropped (`is_forbidden_response_header`); everything else is copied
@@ -168,8 +196,6 @@ injecting the real API key so the launched process never has to hold it.
   unchanged; only accounting is best-effort.
 
 **Relevant Context**
-- `src/capabilities/base.rs`: `AgentModelBinding` fields consumed here
-  (`base_url`, `api_key`, `api_type`, `verify_ssl`)
 - `src/registry/secret.rs`: `Secret` — masked in `Debug`, held only inside
   `ProxyServer`/`UpstreamState`, never forwarded to the client
 - `axum` 0.8, added as a new direct dependency for the inbound listener (this
@@ -181,29 +207,51 @@ injecting the real API key so the launched process never has to hold it.
 
 ---
 
-### Sub-Task 3 — `Capability` decorator (`src/proxy/capability_wrapper.rs`)
+### Sub-Task 3 — Model wrapper (`src/proxy/model_wrapper.rs`) + `ModelSource::take` (`src/models/mod.rs`)
 
 **Intent**
-Make usage tracking a property of *how a capability is bound*, so no
-`Launcher` implementation needs to know it exists.
+Make usage tracking a property of *how a model is obtained*, so no
+`Capability` or `Launcher` implementation needs to know it exists, and any
+future capability that resolves its model through `ModelSource` is
+trackable for free.
 
 **Expected Outcomes**
-- `UsageTrackingCapability { inner: Box<dyn Capability>, label: String,
-  tracker: Arc<UsageTracker>, servers: Arc<Mutex<Vec<ProxyServer>>> }`.
-- Every `Capability` method except `bind` delegates straight to `inner`.
-- `bind()` calls `inner.bind(request)`, and if the result is
-  `Binding::AgentModel(agent_model)`, starts a `ProxyServer` for it, pushes
-  the server into `servers` (so the caller can drain and shut all of them
-  down later), and returns a rewritten `Binding::AgentModel` with `base_url`
-  pointed at the proxy's `local_base_url` and `api_key` cleared.
+- `UsageTrackingContext { tracker: Arc<UsageTracker>, servers:
+  Arc<Mutex<Vec<ProxyServer>>> }` — `Clone` (its fields are `Arc`), with a
+  hand-written `Debug` (`ProxyServer` isn't `Debug`). Carried on
+  `Config::usage_tracking` (Sub-Task 4) and cloned into every
+  `UsageTrackingModel::wrap` call.
+- `UsageTrackingModel { inner: Arc<dyn Model>, local_base_url: String }`.
+  `UsageTrackingModel::wrap(inner, label, ctx) -> anyhow::Result<Self>` calls
+  `inner.provider()?`, starts a `ProxyServer` for that provider's real
+  `base_url`/`api_key`/`verify_ssl` (Sub-Task 2), pushes it into
+  `ctx.servers`, and stores the proxy's `local_base_url`. Every `Model`
+  method except `provider()` delegates straight to `inner`; `provider()`
+  returns a `UsageTrackingProvider` wrapping the real provider.
+- `UsageTrackingProvider { inner: Box<dyn Provider>, local_base_url: String }`
+  — every `Provider` method except `base_url`/`api_key`/`verify_ssl`
+  delegates to `inner`; `base_url()` returns `local_base_url`, `api_key()`
+  returns `None` (the proxy holds the real credential), `verify_ssl()`
+  returns `true` (the local proxy is plain `http`).
+- `ModelSource` gains a `usage_tracking: Option<UsageTrackingContext>` field,
+  set from `config.usage_tracking` in `from_config`, and a new
+  `take(&mut self, model_id: &str) -> Option<Arc<dyn Model>>` that removes
+  and returns the constructed model for `model_id`, wrapping it via
+  `UsageTrackingModel::wrap` first when a tracking session is active. If the
+  proxy fails to start, `take()` falls back to the untracked model with a
+  logged warning rather than failing construction over an accounting
+  feature. `AgentModelCapability::new` (Sub-Task 4) calls this instead of
+  resolving a provider inline, which both makes it trackable and
+  deduplicates the provider-resolution logic into one place.
 
 **Relevant Context**
-- `src/capabilities/base.rs`: `Capability` trait, `Binding`,
-  `AgentModelBinding`
-- Binding today has exactly one variant (`AgentModel`) since
-  `docs/specs/0018-capability-binding-plan.md` — the `match` in `bind()` is
-  written to make adding a future variant (e.g. an MCP binding) a compile
-  error at the match, not a silent no-op
+- `src/models/base.rs`: `Model::provider()`'s default body — the only place
+  a `Model` produces connection details, and therefore the only method
+  `UsageTrackingModel` needs to override
+- `src/capabilities/agent_model.rs`: `AgentModelCapability::bind()` — already
+  does exactly `self.model.provider()` →
+  `base_url()`/`api_key()`/`verify_ssl()`, so wrapping at this layer requires
+  no change there at all
 
 **Status** — `[x] done`
 
@@ -222,9 +270,13 @@ the issue, and surface what was tracked once the launched process exits.
   only when `usage_tracking && !dry_run` — under `--dry-run` there is no
   subprocess to point a proxy at, and showing the real upstream URL in the
   dry-run overlay is more informative than a not-yet-running proxy URL.
-- When enabled, each capability is wrapped in `UsageTrackingCapability::new(capability,
-  cap_id.clone(), Arc::clone(&tracker), Arc::clone(&proxy_servers))` before
-  `bind_capability` is called, instead of passing the raw capability through.
+- When enabled, `config.usage_tracking` is set to a
+  `proxy::UsageTrackingContext { tracker: Arc::clone(&tracker), servers:
+  Arc::clone(&proxy_servers) }` once, before any capability or the launcher
+  is constructed. Nothing else about the capability-construction loop
+  changes — no per-capability branching or wrapping call at the
+  `bind_capability` site; any capability whose model comes through
+  `ModelSource::take` (Sub-Task 3) is tracked transparently.
 - After `launcher.launch(...)` returns (regardless of whether the launched
   process's own exit status was successful), every started `ProxyServer` is
   drained from `proxy_servers` and shut down, and `print_usage_summary`
@@ -272,12 +324,12 @@ runtime of the chance to poll the proxy server's connections concurrently.
 
 **Intent**
 Cover parsing correctness, accumulation semantics, end-to-end proxying, and
-the capability-decorator rewrite — without needing a real provider.
+the model-wrapper rewrite — without needing a real provider.
 
 **Expected Outcomes**
-- `src/proxy/usage.rs`: per-`ApiType` parse tests (Anthropic streaming +
-  non-streaming, OpenAI with cached tokens, Ollama done/non-done lines),
-  `merge_max` vs `add` semantics, `UsageTracker::record`/`snapshot`
+- `src/proxy/usage.rs`: `parse_usage` tests covering every shape (Anthropic
+  streaming + non-streaming, OpenAI with cached tokens, Ollama done/non-done
+  lines), `merge_max` vs `add` semantics, `UsageTracker::record`/`snapshot`
   accumulation across labels.
 - `src/proxy/server.rs`: `scan_line` recognizes SSE and NDJSON framing and
   ignores the `[DONE]` sentinel; `finalize_leftover` parses a full
@@ -285,10 +337,17 @@ the capability-decorator rewrite — without needing a real provider.
   chunks through `futures_util::stream::iter` and asserting the tracker
   records exactly one request with the right totals; forbidden-header
   filtering in both directions.
-- `src/proxy/capability_wrapper.rs`: a `FakeCapability` test double confirms
-  `bind()` starts a real `ProxyServer` (bound to an actual ephemeral port),
-  rewrites `base_url` to it, and clears `api_key`; a second test confirms
-  every non-`bind` method still delegates to `inner`.
+- `src/proxy/model_wrapper.rs`: `FakeModel`/`FakeProvider` test doubles
+  confirm `UsageTrackingModel::wrap` starts a real `ProxyServer` (bound to an
+  actual ephemeral port) and the wrapped model's `provider().base_url()`
+  points at it rather than the real upstream, with `api_key()` cleared to
+  `None`; metadata methods (`family`, `context_length`, etc.) still return
+  the inner model's real values unchanged.
+- `src/models/mod.rs`: `ModelSource::take` tests — returns `Some` for a
+  configured model id and removes it (a second `take` of the same id returns
+  `None`), returns `None` for an unknown id, and — with `usage_tracking` set
+  to a real context — returns a model whose `provider().base_url()` points
+  at `127.0.0.1` rather than the configured upstream.
 
 **Relevant Context**
 - `futures_util::stream::iter`, `stream::unfold` — used to drive fake
