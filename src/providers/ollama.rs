@@ -76,12 +76,35 @@ pub struct OllamaProvider {
     stream_client: reqwest::Client,
 }
 
-/// Extract the Ollama library model reference (e.g. `"granite4:1b"`) from a
-/// `https://ollama.com/library/...` variant URL.
-fn ollama_library_ref(url: &str) -> Option<&str> {
-    url.strip_prefix("https://ollama.com/library/")
-        .or_else(|| url.strip_prefix("ollama.com/library/"))
-        .filter(|s| !s.is_empty())
+/// Extract the Ollama model reference from an `https://ollama.com/...` variant URL.
+///
+/// Two URL conventions are supported:
+/// - `https://ollama.com/library/<name>[:<tag>]` → `<name>[:<tag>]`
+///   (the `library` org is implicit and omitted in the ref)
+/// - `https://ollama.com/<org>/<name>[:<tag>]` → `<org>/<name>[:<tag>]`
+///   (explicit org is preserved in the ref)
+///
+/// When `:<tag>` is absent, `:latest` is appended — matching Ollama's own
+/// convention for untagged model references.
+fn ollama_model_ref(url: &str) -> Option<String> {
+    let path = url
+        .strip_prefix("https://ollama.com/")
+        .or_else(|| url.strip_prefix("ollama.com/"))
+        .filter(|s| !s.is_empty())?;
+
+    // `library/` is Ollama's implicit org — strip it so the ref is just `<name>[:<tag>]`.
+    // Any other path segment is an explicit org and is kept as-is.
+    let model_ref = path.strip_prefix("library/").unwrap_or(path);
+    if model_ref.is_empty() {
+        return None;
+    }
+
+    // Ollama treats a tagless name as `<name>:latest` — make that explicit.
+    Some(if model_ref.contains(':') {
+        model_ref.to_string()
+    } else {
+        format!("{model_ref}:latest")
+    })
 }
 
 /// A single NDJSON line from Ollama's `POST /api/pull` progress stream.
@@ -150,7 +173,7 @@ impl OllamaProvider {
 impl ConfigConstructable for OllamaProvider {
     type Config = OllamaProviderConfig;
 
-    fn new(cfg: &serde_json::Value) -> Self {
+    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let config: OllamaProviderConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
 
         let client = reqwest::Client::builder()
@@ -206,6 +229,10 @@ impl Provider for OllamaProvider {
         variant_format.eq_ignore_ascii_case("gguf") || variant_format.eq_ignore_ascii_case("ollama")
     }
 
+    fn model_alias(&self, variant: Option<&crate::models::ModelVariant>) -> Option<String> {
+        variant.and_then(|v| ollama_model_ref(&v.url))
+    }
+
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
         http_health_check(
             &self.client,
@@ -222,8 +249,8 @@ impl Provider for OllamaProvider {
         variant: &ModelVariant,
         ui: &dyn Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
-        let model_ref = if let Some(name) = ollama_library_ref(&variant.url) {
-            name.to_string()
+        let model_ref = if let Some(name) = ollama_model_ref(&variant.url) {
+            name
         } else if let Some(repo) = hf_repo_id(&variant.url) {
             format!("hf.co/{}:{}", repo, variant.precision)
         } else {
@@ -396,41 +423,73 @@ mod tests {
             "base_url": "http://example.com:8080",
             "timeout_secs": 30
         });
-        let provider = OllamaProvider::new(&cfg);
+        let provider = OllamaProvider::new(&cfg, &crate::config::Config::default());
         assert_eq!(provider.config.base_url, "http://example.com:8080");
         assert_eq!(provider.config.timeout_secs, 30);
     }
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider = OllamaProvider::new(&serde_json::json!({}));
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_gguf() {
-        let provider = OllamaProvider::new(&serde_json::json!({}));
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }
 
     #[test]
-    fn test_ollama_library_ref_parses_library_url() {
+    fn test_ollama_model_ref_parses_library_url() {
         assert_eq!(
-            ollama_library_ref("https://ollama.com/library/granite4:1b"),
-            Some("granite4:1b")
+            ollama_model_ref("https://ollama.com/library/granite4:1b"),
+            Some("granite4:1b".to_string())
         );
     }
 
     #[test]
-    fn test_ollama_library_ref_rejects_non_library_url() {
+    fn test_ollama_model_ref_appends_latest_when_tag_absent_library() {
         assert_eq!(
-            ollama_library_ref(
+            ollama_model_ref("https://ollama.com/library/granite4.1"),
+            Some("granite4.1:latest".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ollama_model_ref_parses_org_scoped_url() {
+        assert_eq!(
+            ollama_model_ref("https://ollama.com/ibm/granite4.1:8b"),
+            Some("ibm/granite4.1:8b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ollama_model_ref_appends_latest_when_tag_absent_org() {
+        assert_eq!(
+            ollama_model_ref("https://ollama.com/ibm/granite4.1"),
+            Some("ibm/granite4.1:latest".to_string())
+        );
+    }
+
+    #[test]
+    fn test_ollama_model_ref_rejects_non_ollama_url() {
+        assert_eq!(
+            ollama_model_ref(
                 "https://huggingface.co/ibm-granite/granite-4.1-30b-GGUF/blob/main/x.gguf"
             ),
             None
         );
+    }
+
+    #[test]
+    fn test_ollama_model_ref_rejects_empty_path() {
+        assert_eq!(ollama_model_ref("https://ollama.com/"), None);
+        assert_eq!(ollama_model_ref("https://ollama.com/library/"), None);
     }
 
     #[test]
@@ -520,6 +579,58 @@ mod tests {
             r#"{"status":"failed","error":"too late"}"#.to_string(),
         ]);
         assert_eq!(result, PullOutcome::Success);
+    }
+
+    #[test]
+    fn test_model_alias_returns_library_ref_for_ollama_variant() {
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let variant = ModelVariant {
+            format: "Ollama".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: 5.3,
+            url: "https://ollama.com/library/granite4.1:8b".to_string(),
+        };
+        assert_eq!(
+            provider.model_alias(Some(&variant)),
+            Some("granite4.1:8b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_model_alias_returns_org_scoped_ref_for_org_url() {
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let variant = ModelVariant {
+            format: "Ollama".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: 5.3,
+            url: "https://ollama.com/ibm/granite4.1:8b".to_string(),
+        };
+        assert_eq!(
+            provider.model_alias(Some(&variant)),
+            Some("ibm/granite4.1:8b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_model_alias_returns_none_for_non_ollama_variant() {
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let variant = ModelVariant {
+            format: "GGUF".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: 5.3,
+            url: "https://huggingface.co/ibm-granite/granite-4.1-8b-GGUF/blob/main/granite-4.1-8b-Q4_K_M.gguf".to_string(),
+        };
+        assert_eq!(provider.model_alias(Some(&variant)), None);
+    }
+
+    #[test]
+    fn test_model_alias_returns_none_when_no_variant() {
+        let provider =
+            OllamaProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        assert_eq!(provider.model_alias(None), None);
     }
 
     #[test]

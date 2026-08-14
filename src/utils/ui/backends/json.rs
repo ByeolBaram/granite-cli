@@ -68,7 +68,7 @@ impl Write for SharedWriter {
 impl ConfigConstructable for JsonOutput {
     type Config = NoConfig;
 
-    fn new(_cfg: &serde_json::Value) -> Self {
+    fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         Self {
             writer: Mutex::new(Box::new(std::io::stdout())),
             buf: None,
@@ -120,6 +120,15 @@ impl Ui for JsonOutput {
     }
 
     fn select(&self, _prompt: &str, _items: &[String], _default: usize) -> anyhow::Result<usize> {
+        base::non_interactive()
+    }
+
+    fn multi_select(
+        &self,
+        _prompt: &str,
+        _items: &[String],
+        _defaults: &[bool],
+    ) -> anyhow::Result<Vec<usize>> {
         base::non_interactive()
     }
 

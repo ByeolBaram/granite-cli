@@ -1,4 +1,4 @@
-use crate::capabilities::BindingType;
+use crate::capabilities::Capability;
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
@@ -24,7 +24,7 @@ pub struct BobLauncher {
 impl ConfigConstructable for BobLauncher {
     type Config = BobLauncherConfig;
 
-    fn new(cfg: &serde_json::Value) -> Self {
+    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let config: BobLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self { config }
     }
@@ -40,8 +40,8 @@ impl Launcher for BobLauncher {
         self.config.command_path.as_deref().unwrap_or("bob")
     }
 
-    fn supported_capabilities(&self) -> HashSet<BindingType> {
-        Self::metadata().supported_capabilities
+    async fn bind_capability(&mut self, _capability: &dyn Capability) -> anyhow::Result<()> {
+        anyhow::bail!("bob launcher does not support any capabilities")
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -77,31 +77,40 @@ mod tests {
 
     #[test]
     fn command_defaults_to_bob() {
-        let l = BobLauncher::new(&serde_json::json!({}));
+        let l = BobLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
         assert_eq!(l.command(), "bob");
     }
 
     #[test]
     fn command_uses_explicit_path_when_set() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "/opt/bin/bob"
-        }));
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "/opt/bin/bob"
+            }),
+            &crate::config::Config::default(),
+        );
         assert_eq!(l.command(), "/opt/bin/bob");
     }
 
     #[test]
     fn validate_command_err_for_nonexistent_explicit_path() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "/no/such/path/bob"
-        }));
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "/no/such/path/bob"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
-        let l = BobLauncher::new(&serde_json::json!({
-            "command_path": "ls"
-        }));
+        let l = BobLauncher::new(
+            &serde_json::json!({
+                "command_path": "ls"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_ok());
     }
 

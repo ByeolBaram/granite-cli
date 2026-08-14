@@ -1109,6 +1109,7 @@ mod tests {
         };
         let provider = crate::providers::OpenAIProvider::new(
             &serde_json::json!({ "base_url": "http://localhost:8080" }),
+            &crate::config::Config::default(),
         );
         assert!(requirement.admits_instance(&provider));
     }

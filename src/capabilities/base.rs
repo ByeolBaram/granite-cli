@@ -1,8 +1,6 @@
 use crate::capabilities::requirement::{
     ModelRequirement, ProviderRequirement, ShellCommandRequirement,
 };
-use crate::dependency::Configured;
-use crate::models::Model;
 use crate::providers::ApiType;
 use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
@@ -93,6 +91,7 @@ pub struct AgentModelBinding {
     pub endpoint_path: String,
     pub api_key: Option<Secret>,
     pub verify_ssl: bool,
+    pub context_length: u64,
 }
 
 define_bindings! {
@@ -116,14 +115,8 @@ pub trait Capability: Send + Sync {
     /// Which binding surfaces this capability instance can fill.
     fn binding_types(&self) -> HashSet<BindingType>;
 
-    /// Resolve a `BindingRequest` into a concrete `Binding`, looking up this
-    /// capability's model dependency from the given source. A model's own
-    /// provider is reached via `Model::provider()`.
-    async fn bind(
-        &self,
-        request: BindingRequest,
-        models: &(dyn Configured<dyn Model> + Sync),
-    ) -> anyhow::Result<Binding>;
+    /// Resolve a `BindingRequest` into a concrete `Binding`.
+    async fn bind(&self, request: BindingRequest) -> anyhow::Result<Binding>;
 
     // Execution hooks (all optional with NoOp defaults)
     async fn on_setup(&self) -> anyhow::Result<()> {

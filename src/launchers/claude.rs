@@ -1,4 +1,4 @@
-use crate::capabilities::BindingType;
+use crate::capabilities::{BindingType, Capability};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
@@ -19,14 +19,18 @@ pub struct ClaudeLauncherConfig {
 
 pub struct ClaudeLauncher {
     config: ClaudeLauncherConfig,
+    bound_binding: Option<crate::capabilities::AgentModelBinding>,
 }
 
 impl ConfigConstructable for ClaudeLauncher {
     type Config = ClaudeLauncherConfig;
 
-    fn new(cfg: &serde_json::Value) -> Self {
+    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
         let config: ClaudeLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
-        Self { config }
+        Self {
+            config,
+            bound_binding: None,
+        }
     }
 }
 
@@ -40,8 +44,30 @@ impl Launcher for ClaudeLauncher {
         self.config.command_path.as_deref().unwrap_or("claude")
     }
 
-    fn supported_capabilities(&self) -> HashSet<BindingType> {
-        Self::metadata().supported_capabilities
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
+        let supported = Self::metadata().supported_capabilities;
+        let capability_types = capability.binding_types();
+        if !capability_types.is_subset(&supported) {
+            anyhow::bail!(
+                "capability supports {:?} which this launcher does not support",
+                capability_types.difference(&supported).collect::<Vec<_>>()
+            );
+        }
+
+        // Claude knows it expects Anthropic API type
+        let request = crate::capabilities::BindingRequest::AgentModel(
+            crate::capabilities::AgentModelBindingRequest {
+                api_type: crate::providers::ApiType::Anthropic,
+            },
+        );
+
+        let binding = capability.bind(request).await?;
+        match binding {
+            crate::capabilities::Binding::AgentModel(binding) => {
+                self.bound_binding = Some(binding);
+            }
+        }
+        Ok(())
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -49,7 +75,37 @@ impl Launcher for ClaudeLauncher {
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
-        Ok(vec![])
+        if let Some(binding) = &self.bound_binding {
+            let mut api_key_val = match &binding.api_key {
+                Some(api_key) => api_key.clone().0,
+                _ => "".to_string(),
+            };
+            if api_key_val.is_empty() {
+                api_key_val = "unset".to_string(); // Claude treats empty strings like unset
+            }
+            let bindings = vec![
+                EnvBinding {
+                    key: "ANTHROPIC_BASE_URL".to_string(),
+                    value: binding.base_url.clone(),
+                },
+                EnvBinding {
+                    key: "ANTHROPIC_MODEL".to_string(),
+                    value: binding.model_name.clone(),
+                },
+                EnvBinding {
+                    key: "CLAUDE_CODE_MAX_CONTEXT_TOKENS".to_string(),
+                    value: binding.context_length.to_string(),
+                },
+                EnvBinding {
+                    key: "ANTHROPIC_AUTH_TOKEN".to_string(),
+                    value: api_key_val,
+                },
+            ];
+            // verify_ssl is dropped per user's note
+            Ok(bindings)
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
@@ -78,31 +134,40 @@ mod tests {
 
     #[test]
     fn command_defaults_to_claude() {
-        let l = ClaudeLauncher::new(&serde_json::json!({}));
+        let l = ClaudeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
         assert_eq!(l.command(), "claude");
     }
 
     #[test]
     fn command_uses_explicit_path_when_set() {
-        let l = ClaudeLauncher::new(&serde_json::json!({
-            "command_path": "/opt/bin/claude"
-        }));
+        let l = ClaudeLauncher::new(
+            &serde_json::json!({
+                "command_path": "/opt/bin/claude"
+            }),
+            &crate::config::Config::default(),
+        );
         assert_eq!(l.command(), "/opt/bin/claude");
     }
 
     #[test]
     fn validate_command_err_for_nonexistent_explicit_path() {
-        let l = ClaudeLauncher::new(&serde_json::json!({
-            "command_path": "/no/such/path/claude"
-        }));
+        let l = ClaudeLauncher::new(
+            &serde_json::json!({
+                "command_path": "/no/such/path/claude"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
-        let l = ClaudeLauncher::new(&serde_json::json!({
-            "command_path": "ls"
-        }));
+        let l = ClaudeLauncher::new(
+            &serde_json::json!({
+                "command_path": "ls"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(l.validate_command().is_ok());
     }
 

@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,8 @@ use crate::capabilities::BindingType;
 use crate::define_factory;
 use crate::registry::ConfigConstructable;
 use crate::utils::ui::Ui;
+
+use_channel!("LNCHR");
 
 /*-- public --*/
 
@@ -25,10 +28,16 @@ pub trait Launcher: Send + Sync {
     /// lookup (e.g. `"claude"`) or an absolute path set by the user in config.
     fn command(&self) -> &str;
 
-    /// Binding surfaces this launcher type supports.
-    /// Default implementation delegates to `metadata()` so there is no need
-    /// to duplicate the list on the instance.
-    fn supported_capabilities(&self) -> HashSet<BindingType>;
+    /// Bind a capability to this launcher instance.
+    ///
+    /// The implementation should validate that the capability's `binding_types()`
+    /// are supported by this launcher type (per `metadata().supported_capabilities`),
+    /// construct the appropriate `BindingRequest`, call `bind()`, and store the
+    /// resolved `Binding` for use in `env_overlay` / `launch`.
+    async fn bind_capability(
+        &mut self,
+        capability: &dyn crate::capabilities::Capability,
+    ) -> anyhow::Result<()>;
 
     /// Resolve the binary to an absolute path.
     ///
@@ -62,6 +71,7 @@ pub trait Launcher: Send + Sync {
     ) -> anyhow::Result<std::process::ExitStatus> {
         let binary = self.validate_command()?;
         let overlay = self.env_overlay(ctx).await?;
+        alog_channel!(MessageLevel::Debug2, "Env Overlay: {:#?}", overlay);
         run_command(binary, &overlay, args, ctx, ui).await
     }
 }
@@ -153,6 +163,7 @@ pub struct LaunchContext {
 }
 
 /// A single environment variable binding contributed to the subprocess overlay.
+#[derive(Debug)]
 pub struct EnvBinding {
     pub key: String,
     pub value: String,
@@ -179,7 +190,7 @@ pub(crate) mod tests {
     impl ConfigConstructable for FakeLauncher {
         type Config = crate::registry::NoConfig;
 
-        fn new(cfg: &serde_json::Value) -> Self {
+        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             let command_name = cfg
                 .get("command_name")
                 .and_then(|v| v.as_str())
@@ -206,8 +217,11 @@ pub(crate) mod tests {
             &self.command_name
         }
 
-        fn supported_capabilities(&self) -> HashSet<BindingType> {
-            Self::metadata().supported_capabilities
+        async fn bind_capability(
+            &mut self,
+            _capability: &dyn crate::capabilities::Capability,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("Capability binding not supported");
         }
 
         fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -235,32 +249,41 @@ pub(crate) mod tests {
 
     #[test]
     fn validate_command_returns_err_for_unknown_binary() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_name": "this-binary-absolutely-does-not-exist-9x7z"
-        }));
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_name": "this-binary-absolutely-does-not-exist-9x7z"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_returns_err_for_nonexistent_explicit_path() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_name": "fake",
-            "command_path": "/this/path/does/not/exist/fake"
-        }));
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_name": "fake",
+                "command_path": "/this/path/does/not/exist/fake"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_err());
     }
 
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
-        let launcher = FakeLauncher::new(&serde_json::json!({
-            "command_path": "ls"
-        }));
+        let launcher = FakeLauncher::new(
+            &serde_json::json!({
+                "command_path": "ls"
+            }),
+            &crate::config::Config::default(),
+        );
         assert!(launcher.validate_command().is_ok());
     }
 
     #[tokio::test]
     async fn env_overlay_default_is_empty() {
-        let launcher = FakeLauncher::new(&serde_json::json!({}));
+        let launcher = FakeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
         let ctx = LaunchContext {
             launcher_id: "test".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -283,7 +306,11 @@ pub(crate) mod tests {
     fn launcher_factory_construct() {
         let mut factory = LauncherFactory::new();
         factory.register::<FakeLauncher>("fake");
-        let result = factory.construct("fake", &serde_json::json!({}));
+        let result = factory.construct(
+            "fake",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(result.is_ok());
     }
 

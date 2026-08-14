@@ -190,13 +190,11 @@ impl CapabilityCommands {
         }
         let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Phase B: build a preview instance from what's been collected so
-        // far, then resolve its actual (possibly narrowed) dependencies
-        // against currently configured models/providers.
-        let preview = CAPABILITY_REGISTRY
-            .construct(capability_type, &config)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        for dep in preview.dependencies() {
+        // Phase B: resolve the capability's dependencies (model/provider)
+        // against currently configured models/providers. Use the capability
+        // definition's metadata rather than a preview instance, since some
+        // dependency fields (like model_id) may not be set yet.
+        for dep in &cap_def.dependencies {
             match dep {
                 Dependency::Model {
                     config_key,
@@ -205,13 +203,13 @@ impl CapabilityCommands {
                     ..
                 } => {
                     if let Some(id) =
-                        Self::resolve_model_dependency(ctx, &requirement, required).await?
+                        Self::resolve_model_dependency(ctx, requirement, *required).await?
                     {
                         config
                             // NOTE: Safe since config MUST be an object when registered
                             .as_object_mut()
                             .unwrap()
-                            .insert(config_key, serde_json::Value::String(id));
+                            .insert(config_key.clone(), serde_json::Value::String(id));
                     }
                 }
                 Dependency::Provider {
@@ -221,20 +219,20 @@ impl CapabilityCommands {
                     ..
                 } => {
                     if let Some(id) =
-                        Self::resolve_provider_dependency(ctx, &requirement, required).await?
+                        Self::resolve_provider_dependency(ctx, requirement, *required).await?
                     {
                         config
                             // NOTE: Safe since config MUST be an object when registered
                             .as_object_mut()
                             .unwrap()
-                            .insert(config_key, serde_json::Value::String(id));
+                            .insert(config_key.clone(), serde_json::Value::String(id));
                     }
                 }
                 Dependency::ExternalTool {
                     requirement,
                     required,
                 } => {
-                    if required && !requirement.is_satisfied() {
+                    if *required && !requirement.is_satisfied() {
                         anyhow::bail!(
                             "Required external command '{}' is not available.",
                             requirement.command

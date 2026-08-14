@@ -33,7 +33,7 @@ impl LauncherSource {
             .launchers
             .values()
             .filter_map(|lc| {
-                let result = LAUNCHER_REGISTRY.construct(&lc.launcher_type, &lc.config);
+                let result = LAUNCHER_REGISTRY.construct(&lc.launcher_type, &lc.config, config);
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,

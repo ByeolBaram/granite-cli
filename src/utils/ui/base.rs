@@ -9,6 +9,8 @@ pub type TableRow = Vec<String>;
 pub type TableEntry = (String, Vec<String>, Vec<TableRow>);
 pub type DetailField = (String, String);
 pub type DetailEntry = (String, Vec<DetailField>);
+pub type SelectEntry = (String, Vec<String>, usize);
+pub type MultiSelectEntry = (String, Vec<String>, Vec<bool>);
 
 /// Metadata describing a registered UI backend.
 #[derive(Debug, Clone)]
@@ -181,6 +183,32 @@ pub trait Ui: Send + Sync + Any {
             .interact()?)
     }
 
+    /// Ask the user to pick zero or more of `items`, returning the chosen indices.
+    /// `defaults` is a parallel slice of booleans — `true` means the item is
+    /// pre-checked. Callers may pass an empty `defaults` slice; unchecked is the
+    /// fallback for any item without a corresponding entry.
+    fn multi_select(
+        &self,
+        prompt: &str,
+        items: &[String],
+        defaults: &[bool],
+    ) -> anyhow::Result<Vec<usize>> {
+        // Use interact_opt so that non-TTY environments (CI, tests, pipes) get
+        // an Err instead of blocking — matching the behaviour of dialoguer's
+        // Select/Confirm/Input which all error on non-TTY via interact().
+        dialoguer::MultiSelect::new()
+            .with_prompt(format!("{} {}", prompt, self.detail_mark("[SPACE]")))
+            .items(items)
+            .defaults(defaults)
+            .interact_opt()?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "interactive prompts are not supported outside of a terminal; \
+                 rerun with --output=terminal or --output=plain"
+                )
+            })
+    }
+
     /// Ask a yes/no question.
     fn confirm(&self, prompt: &str, default: bool) -> anyhow::Result<bool> {
         Ok(dialoguer::Confirm::new()
@@ -247,7 +275,9 @@ pub(crate) mod tests {
         pub detail_marks: RefCell<Vec<String>>,
 
         /// (prompt, items, default) for each select() call
-        pub select_prompts: RefCell<Vec<(String, Vec<String>, usize)>>,
+        pub select_prompts: RefCell<Vec<SelectEntry>>,
+        /// (prompt, items, defaults) for each multi_select() call
+        pub multi_select_prompts: RefCell<Vec<MultiSelectEntry>>,
         /// (prompt, default) for each confirm() call
         pub confirm_prompts: RefCell<Vec<(String, bool)>>,
         /// (prompt, default) for each text() call
@@ -257,6 +287,8 @@ pub(crate) mod tests {
 
         /// Canned answers consumed in order by select(); falls back to `default` when empty.
         pub select_answers: RefCell<VecDeque<usize>>,
+        /// Canned answers consumed in order by multi_select(); falls back to `vec![]` when empty.
+        pub multi_select_answers: RefCell<VecDeque<Vec<usize>>>,
         /// Canned answers consumed in order by confirm(); falls back to `default` when empty.
         pub confirm_answers: RefCell<VecDeque<bool>>,
         /// Canned answers consumed in order by text(); falls back to `default` when empty.
@@ -277,7 +309,7 @@ pub(crate) mod tests {
     impl ConfigConstructable for CaptureUi {
         type Config = crate::registry::NoConfig;
 
-        fn new(_cfg: &serde_json::Value) -> Self {
+        fn new(_cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             Self::default()
         }
     }
@@ -379,6 +411,24 @@ pub(crate) mod tests {
                 .unwrap_or(default))
         }
 
+        fn multi_select(
+            &self,
+            prompt: &str,
+            items: &[String],
+            defaults: &[bool],
+        ) -> anyhow::Result<Vec<usize>> {
+            self.multi_select_prompts.borrow_mut().push((
+                prompt.to_string(),
+                items.to_vec(),
+                defaults.to_vec(),
+            ));
+            Ok(self
+                .multi_select_answers
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or_default())
+        }
+
         fn confirm(&self, prompt: &str, default: bool) -> anyhow::Result<bool> {
             self.confirm_prompts
                 .borrow_mut()
@@ -430,7 +480,11 @@ pub(crate) mod tests {
 
     #[test]
     fn ui_registry_construct_unknown_returns_err() {
-        let result = UI_REGISTRY.construct("nonexistent", &serde_json::json!({}));
+        let result = UI_REGISTRY.construct(
+            "nonexistent",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(result.is_err());
     }
 

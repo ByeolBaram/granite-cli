@@ -67,7 +67,9 @@ fn generate_model_struct(model: &YamlModel) -> String {
         "impl crate::registry::ConfigConstructable for {struct_name} {{\n"
     ));
     s.push_str("    type Config = crate::registry::NoConfig;\n\n");
-    s.push_str("    fn new(cfg: &serde_json::Value) -> Self {\n");
+    s.push_str(
+        "    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {\n",
+    );
     s.push_str("        let provider_config = cfg.get(\"provider_config\").and_then(|v| serde_json::from_value(v.clone()).map_err(|e| alog_channel!(MessageLevel::Warning, \"WARNING: Failed to deserialize provider_config: {}\", e)).ok());\n");
     s.push_str("        Self { provider_config }\n");
     s.push_str("    }\n");

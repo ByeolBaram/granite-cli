@@ -19,8 +19,10 @@ pub trait ConfigConstructable {
     /// Must implement `JsonSchema + Serialize + Default`.
     type Config: schemars::JsonSchema + serde::Serialize + Default;
 
-    /// Construct with a config instance
-    fn new(cfg: &serde_json::Value) -> Self
+    /// Construct with a config instance and the global application config.
+    /// Most implementations ignore `global_config`; types that need cross-registry
+    /// resolution (e.g. resolving a model's provider) use it.
+    fn new(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self
     where
         Self: Sized;
 }
@@ -82,9 +84,9 @@ macro_rules! define_factory {
                 /// Get metadata describing this implementation
                 fn describe(&self) -> $metadata;
 
-                /// Construct an instance with the given config
+                /// Construct an instance with the given config and global application config
                 #[allow(unused)]
-                fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait>;
+                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait>;
 
                 /// JSON schema of the config this implementation expects
                 #[allow(unused)]
@@ -117,8 +119,8 @@ macro_rules! define_factory {
                     T::metadata()
                 }
 
-                fn construct(&self, cfg: &serde_json::Value) -> Box<dyn $trait> {
-                    Box::new(T::new(cfg))
+                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait> {
+                    Box::new(T::new(cfg, global_config))
                 }
 
                 fn config_schema(&self) -> schemars::Schema {
@@ -190,10 +192,11 @@ macro_rules! define_factory {
                     &self,
                     name: &str,
                     cfg: &serde_json::Value,
+                    global_config: &$crate::config::Config,
                 ) -> Result<Box<dyn $trait>, String> {
                     self.registry
                         .get(name)
-                        .map(|x| x.construct(cfg))
+                        .map(|x| x.construct(cfg, global_config))
                         .ok_or_else(|| format!("Unknown instance type: {}", name))
                 }
 
@@ -294,7 +297,7 @@ mod tests {
     impl ConfigConstructable for TestImpl1 {
         type Config = NoConfig;
 
-        fn new(cfg: &serde_json::Value) -> Self {
+        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             Self { value }
         }
@@ -320,7 +323,7 @@ mod tests {
     impl ConfigConstructable for TestImpl2 {
         type Config = TestImpl2Config;
 
-        fn new(cfg: &serde_json::Value) -> Self {
+        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             Self { value: value * 2 }
         }
@@ -375,11 +378,12 @@ mod tests {
         factory.register::<TestImpl2>("impl2");
 
         let cfg = serde_json::json!({ "value": 42 });
+        let global_config = crate::config::Config::default();
 
-        let inst1 = factory.construct("impl1", &cfg).unwrap();
+        let inst1 = factory.construct("impl1", &cfg, &global_config).unwrap();
         assert_eq!(inst1.get_value(), 42);
 
-        let inst2 = factory.construct("impl2", &cfg).unwrap();
+        let inst2 = factory.construct("impl2", &cfg, &global_config).unwrap();
         assert_eq!(inst2.get_value(), 84); // TestImpl2 doubles the value
     }
 
@@ -387,8 +391,9 @@ mod tests {
     fn test_factory_construct_unknown() {
         let factory = TestTraitFactory::new();
         let cfg = serde_json::json!({ "value": 42 });
+        let global_config = crate::config::Config::default();
 
-        let result = factory.construct("unknown", &cfg);
+        let result = factory.construct("unknown", &cfg, &global_config);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("Unknown instance type"));
     }

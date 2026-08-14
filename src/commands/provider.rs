@@ -234,7 +234,11 @@ impl ProviderCommands {
         })?;
 
         let provider = PROVIDER_REGISTRY
-            .construct(&provider_config.provider_type, &provider_config.config)
+            .construct(
+                &provider_config.provider_type,
+                &provider_config.config,
+                &ctx.config,
+            )
             .map_err(|e| anyhow::anyhow!("Failed to create provider: {e}"))?;
 
         let status = provider.health_check().await?;
