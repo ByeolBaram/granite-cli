@@ -310,6 +310,7 @@ fn construct_ui(output: &str) -> Box<dyn Ui> {
     UI_REGISTRY
         .construct(
             output,
+            output,
             &serde_json::json!({}),
             &crate::config::Config::default(),
         )
@@ -687,7 +688,7 @@ async fn run_launch(
     }
 
     let mut launcher = LAUNCHER_REGISTRY
-        .construct(&lc.launcher_type, &lc.config, &config)
+        .construct(&lc.launcher_type, &lc.launcher_id, &lc.config, &config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
     // Bind each enabled capability to the launcher before launching.
@@ -699,7 +700,12 @@ async fn run_launch(
             )
         })?;
         let capability = CAPABILITY_REGISTRY
-            .construct(&cap_cfg.capability_type, &cap_cfg.config, &config)
+            .construct(
+                &cap_cfg.capability_type,
+                &cap_cfg.capability_id,
+                &cap_cfg.config,
+                &config,
+            )
             .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?;
         launcher.bind_capability(capability.as_ref()).await?;
     }

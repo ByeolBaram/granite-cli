@@ -45,7 +45,12 @@ impl ModelSource {
                     }
                     None => serde_json::json!({}),
                 };
-                let result = MODEL_REGISTRY.construct(&model_config.model_id, &cfg, config);
+                let result = MODEL_REGISTRY.construct(
+                    &model_config.model_id,
+                    &model_config.model_id,
+                    &cfg,
+                    config,
+                );
                 if result.is_err() {
                     alog_channel!(
                         MessageLevel::Warning,

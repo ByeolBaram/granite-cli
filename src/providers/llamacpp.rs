@@ -101,6 +101,7 @@ impl Default for LlamaCppProviderConfig {
 /*-- llama.cpp Provider Implementation ---------------------------------------*/
 
 pub struct LlamaCppProvider {
+    instance_id: String,
     config: LlamaCppProviderConfig,
     client: reqwest::Client,
     /// Same TLS settings as `client` but with no request timeout, used for
@@ -283,7 +284,11 @@ impl LlamaCppProvider {
 impl ConfigConstructable for LlamaCppProvider {
     type Config = LlamaCppProviderConfig;
 
-    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        _global_config: &crate::config::Config,
+    ) -> Self {
         let config: LlamaCppProviderConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
 
@@ -299,10 +304,17 @@ impl ConfigConstructable for LlamaCppProvider {
             .expect("Failed to create HTTP client");
 
         Self {
+            instance_id: instance_id.to_string(),
             config,
             client,
             stream_client,
         }
+    }
+}
+
+impl crate::registry::Named for LlamaCppProvider {
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
@@ -464,31 +476,41 @@ mod tests {
             "base_url": "http://example.com:9000",
             "timeout_secs": 30
         });
-        let provider = LlamaCppProvider::new(&cfg, &crate::config::Config::default());
+        let provider =
+            LlamaCppProvider::new("my-llamacpp", &cfg, &crate::config::Config::default());
         assert_eq!(provider.config.base_url, "http://example.com:9000");
         assert_eq!(provider.config.timeout_secs, 30);
     }
 
     #[test]
     fn test_can_run_model_accepts_gguf() {
-        let provider =
-            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider = LlamaCppProvider::new(
+            "my-llamacpp",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(provider.can_run_model("gguf", "Q4_K_M"));
         assert!(provider.can_run_model("GGUF", "fp16"));
     }
 
     #[test]
     fn test_can_run_model_rejects_non_gguf() {
-        let provider =
-            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider = LlamaCppProvider::new(
+            "my-llamacpp",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert!(!provider.can_run_model("safetensors", "fp16"));
         assert!(!provider.can_run_model("onnx", "fp32"));
     }
 
     #[test]
     fn test_model_alias_returns_hf_ref_for_gguf_variant() {
-        let provider =
-            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider = LlamaCppProvider::new(
+            "my-llamacpp",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         let variant = ModelVariant {
             format: "GGUF".to_string(),
             precision: "Q4_K_M".to_string(),
@@ -503,8 +525,11 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_none_for_ollama_url() {
-        let provider =
-            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider = LlamaCppProvider::new(
+            "my-llamacpp",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         let variant = ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
@@ -516,8 +541,11 @@ mod tests {
 
     #[test]
     fn test_model_alias_returns_none_when_no_variant() {
-        let provider =
-            LlamaCppProvider::new(&serde_json::json!({}), &crate::config::Config::default());
+        let provider = LlamaCppProvider::new(
+            "my-llamacpp",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert_eq!(provider.model_alias(None), None);
     }
 

@@ -56,10 +56,11 @@ fn generate_model_struct(model: &YamlModel) -> String {
     let struct_name = model_id_to_struct_name(&model.id);
     let mut s = String::new();
 
-    // Struct carrying the resolved provider config it was constructed with
-    // (see `ModelSource::from_config`), if any.
+    // Struct carrying the configured name it was constructed under and the
+    // resolved provider config it was constructed with (see
+    // `ModelSource::from_config`), if any.
     s.push_str(&format!(
-        "pub struct {struct_name} {{ provider_config: Option<crate::config::ProviderConfig> }}\n\n"
+        "pub struct {struct_name} {{ instance_id: String, provider_config: Option<crate::config::ProviderConfig> }}\n\n"
     ));
 
     // ConfigConstructable implementation
@@ -68,11 +69,18 @@ fn generate_model_struct(model: &YamlModel) -> String {
     ));
     s.push_str("    type Config = crate::registry::NoConfig;\n\n");
     s.push_str(
-        "    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {\n",
+        "    fn new(instance_id: &str, cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {\n",
     );
     s.push_str("        let provider_config = cfg.get(\"provider_config\").and_then(|v| serde_json::from_value(v.clone()).map_err(|e| alog_channel!(MessageLevel::Warning, \"WARNING: Failed to deserialize provider_config: {}\", e)).ok());\n");
-    s.push_str("        Self { provider_config }\n");
+    s.push_str("        Self { instance_id: instance_id.to_string(), provider_config }\n");
     s.push_str("    }\n");
+    s.push_str("}\n\n");
+
+    // Named implementation
+    s.push_str(&format!(
+        "impl crate::registry::Named for {struct_name} {{\n"
+    ));
+    s.push_str("    fn instance_id(&self) -> &str { &self.instance_id }\n");
     s.push_str("}\n\n");
 
     // Model trait implementation

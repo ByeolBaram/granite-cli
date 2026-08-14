@@ -31,6 +31,7 @@ impl CapabilitySource {
             .filter_map(|capability_config| {
                 let result = CAPABILITY_REGISTRY.construct(
                     &capability_config.capability_type,
+                    &capability_config.capability_id,
                     &capability_config.config,
                     config,
                 );

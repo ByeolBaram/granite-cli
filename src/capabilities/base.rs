@@ -107,7 +107,7 @@ define_bindings! {
 /// Core trait for capability implementations.
 /// All capabilities must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Capability: Send + Sync {
+pub trait Capability: crate::registry::Named + Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn dependencies(&self) -> Vec<Dependency>;

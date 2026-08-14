@@ -103,7 +103,7 @@ pub struct ModelArchitecture {
 
 /// Core trait for model implementations.
 /// All models must implement this trait along with ConfigConstructable.
-pub trait Model: Send + Sync {
+pub trait Model: crate::registry::Named + Send + Sync {
     /// Get the model family name
     fn family(&self) -> &str;
 
@@ -175,6 +175,7 @@ pub trait Model: Send + Sync {
         crate::providers::PROVIDER_REGISTRY
             .construct(
                 &pc.provider_type,
+                &pc.provider_id,
                 &pc.config,
                 &crate::config::Config::default(),
             )

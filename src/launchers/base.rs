@@ -20,7 +20,7 @@ use_channel!("LNCHR");
 /// Core trait for launcher implementations.
 /// All launchers must implement this trait along with ConfigConstructable.
 #[async_trait]
-pub trait Launcher: Send + Sync {
+pub trait Launcher: crate::registry::Named + Send + Sync {
     fn name(&self) -> &str;
 
     /// The binary/command this instance will exec.
@@ -189,15 +189,26 @@ pub(crate) mod tests {
 
     /// Minimal Launcher implementation used only in tests.
     pub(crate) struct FakeLauncher {
+        instance_id: String,
         /// When `Some`, `validate_command` resolves to this path directly.
         command_path: Option<PathBuf>,
         command_name: String,
     }
 
+    impl crate::registry::Named for FakeLauncher {
+        fn instance_id(&self) -> &str {
+            &self.instance_id
+        }
+    }
+
     impl ConfigConstructable for FakeLauncher {
         type Config = crate::registry::NoConfig;
 
-        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+        fn new(
+            instance_id: &str,
+            cfg: &serde_json::Value,
+            _global_config: &crate::config::Config,
+        ) -> Self {
             let command_name = cfg
                 .get("command_name")
                 .and_then(|v| v.as_str())
@@ -208,6 +219,7 @@ pub(crate) mod tests {
                 .and_then(|v| v.as_str())
                 .map(PathBuf::from);
             Self {
+                instance_id: instance_id.to_string(),
                 command_name,
                 command_path,
             }
@@ -257,6 +269,7 @@ pub(crate) mod tests {
     #[test]
     fn validate_command_returns_err_for_unknown_binary() {
         let launcher = FakeLauncher::new(
+            "my-fake",
             &serde_json::json!({
                 "command_name": "this-binary-absolutely-does-not-exist-9x7z"
             }),
@@ -268,6 +281,7 @@ pub(crate) mod tests {
     #[test]
     fn validate_command_returns_err_for_nonexistent_explicit_path() {
         let launcher = FakeLauncher::new(
+            "my-fake",
             &serde_json::json!({
                 "command_name": "fake",
                 "command_path": "/this/path/does/not/exist/fake"
@@ -280,6 +294,7 @@ pub(crate) mod tests {
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
         let launcher = FakeLauncher::new(
+            "my-fake",
             &serde_json::json!({
                 "command_path": "ls"
             }),
@@ -290,7 +305,11 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn env_overlay_default_is_empty() {
-        let launcher = FakeLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
+        let launcher = FakeLauncher::new(
+            "my-fake",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         let ctx = LaunchContext {
             launcher_id: "test".to_string(),
             working_dir: PathBuf::from("/tmp"),
@@ -315,6 +334,7 @@ pub(crate) mod tests {
         factory.register::<FakeLauncher>("fake");
         let result = factory.construct(
             "fake",
+            "my-fake",
             &serde_json::json!({}),
             &crate::config::Config::default(),
         );

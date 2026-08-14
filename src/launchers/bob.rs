@@ -18,15 +18,29 @@ pub struct BobLauncherConfig {
 }
 
 pub struct BobLauncher {
+    instance_id: String,
     config: BobLauncherConfig,
 }
 
 impl ConfigConstructable for BobLauncher {
     type Config = BobLauncherConfig;
 
-    fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        _global_config: &crate::config::Config,
+    ) -> Self {
         let config: BobLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
-        Self { config }
+        Self {
+            instance_id: instance_id.to_string(),
+            config,
+        }
+    }
+}
+
+impl crate::registry::Named for BobLauncher {
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
@@ -77,13 +91,18 @@ mod tests {
 
     #[test]
     fn command_defaults_to_bob() {
-        let l = BobLauncher::new(&serde_json::json!({}), &crate::config::Config::default());
+        let l = BobLauncher::new(
+            "my-bob",
+            &serde_json::json!({}),
+            &crate::config::Config::default(),
+        );
         assert_eq!(l.command(), "bob");
     }
 
     #[test]
     fn command_uses_explicit_path_when_set() {
         let l = BobLauncher::new(
+            "my-bob",
             &serde_json::json!({
                 "command_path": "/opt/bin/bob"
             }),
@@ -95,6 +114,7 @@ mod tests {
     #[test]
     fn validate_command_err_for_nonexistent_explicit_path() {
         let l = BobLauncher::new(
+            "my-bob",
             &serde_json::json!({
                 "command_path": "/no/such/path/bob"
             }),
@@ -106,6 +126,7 @@ mod tests {
     #[test]
     fn validate_command_falls_back_to_path_for_bare_command_name() {
         let l = BobLauncher::new(
+            "my-bob",
             &serde_json::json!({
                 "command_path": "ls"
             }),
