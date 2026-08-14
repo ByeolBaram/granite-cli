@@ -10,12 +10,9 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use futures_util::{Stream, StreamExt, stream};
-use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
 // Local
-use crate::capabilities::AgentModelBinding;
-use crate::providers::ApiType;
 use crate::proxy::usage::{self, UsageStats, UsageTracker};
 use crate::registry::Secret;
 
@@ -23,7 +20,7 @@ use_channel!("PRXY");
 
 /*-- public --*/
 
-/// A running reverse-proxy for one `AgentModelBinding`. Forwards every
+/// A running reverse-proxy for one upstream model endpoint. Forwards every
 /// request to the real upstream, injecting the real credentials and
 /// recording token usage under `label` as responses pass through.
 pub struct ProxyServer {
@@ -33,29 +30,38 @@ pub struct ProxyServer {
 }
 
 impl ProxyServer {
-    /// Bind an ephemeral localhost port and start proxying to `binding`'s
-    /// upstream. Usage observed in responses is recorded into `tracker`
-    /// under `label` (e.g. the capability id).
-    pub async fn start(
-        binding: &AgentModelBinding,
+    /// Bind an ephemeral localhost port and start proxying to `base_url`.
+    /// Usage observed in responses is recorded into `tracker` under `label`
+    /// (e.g. the capability id).
+    ///
+    /// Synchronous: binds via a plain OS `std::net::TcpListener` call and
+    /// hands it to `tokio::spawn`, which only needs an *ambient* Tokio
+    /// runtime, not an `.await` -- this lets callers start a proxy from
+    /// inside sync code (e.g. `ConfigConstructable::new`) as long as a
+    /// runtime is already running somewhere up the call stack.
+    pub fn start(
+        base_url: String,
+        api_key: Option<Secret>,
+        verify_ssl: bool,
         tracker: Arc<UsageTracker>,
         label: String,
     ) -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(!binding.verify_ssl)
+            .danger_accept_invalid_certs(!verify_ssl)
             .build()?;
         let state = Arc::new(UpstreamState {
             client,
-            base_url: binding.base_url.clone(),
-            api_key: binding.api_key.clone(),
-            api_type: binding.api_type.clone(),
+            base_url,
+            api_key,
             tracker,
             label,
         });
 
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        let local_addr = listener.local_addr()?;
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        std_listener.set_nonblocking(true)?;
+        let local_addr = std_listener.local_addr()?;
         let local_base_url = format!("http://{local_addr}");
+        let listener = tokio::net::TcpListener::from_std(std_listener)?;
 
         let app = Router::new().fallback(any(proxy_handler)).with_state(state);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -95,15 +101,14 @@ struct UpstreamState {
     client: reqwest::Client,
     base_url: String,
     api_key: Option<Secret>,
-    api_type: ApiType,
     tracker: Arc<UsageTracker>,
     label: String,
 }
 
 /// Request headers that must not be blindly forwarded upstream: hop-by-hop
 /// headers are connection-specific, and the auth headers are replaced with
-/// the real credentials from the binding so the launched agent never needs
-/// to see (or send) them.
+/// the real credentials so the launched agent never needs to see (or send)
+/// them.
 fn is_forbidden_request_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -172,10 +177,10 @@ async fn forward(
         }
     }
     if let Some(key) = &state.api_key {
-        outbound = match state.api_type {
-            ApiType::Anthropic => outbound.header("x-api-key", &key.0),
-            ApiType::OpenAI | ApiType::Ollama => outbound.bearer_auth(&key.0),
-        };
+        // No `ApiType` is available at this layer, so send both header
+        // schemes a provider might expect -- harmless, since a real
+        // upstream only reads the one it understands.
+        outbound = outbound.header("x-api-key", &key.0).bearer_auth(&key.0);
     }
     let upstream_resp = outbound.body(body_bytes).send().await?;
 
@@ -195,7 +200,6 @@ async fn forward(
 
     let body = Body::from_stream(scan_and_forward(
         upstream_resp.bytes_stream(),
-        state.api_type.clone(),
         Arc::clone(&state.tracker),
         state.label.clone(),
     ));
@@ -206,7 +210,6 @@ struct ScanState<S> {
     inner: std::pin::Pin<Box<S>>,
     buffer: String,
     running: UsageStats,
-    api_type: ApiType,
     tracker: Arc<UsageTracker>,
     label: String,
     /// Set once the inner stream has ended or errored, so a stray extra
@@ -221,7 +224,6 @@ struct ScanState<S> {
 /// `tracker`. Never fails the forwarded response due to a parse miss.
 fn scan_and_forward<S>(
     inner: S,
-    api_type: ApiType,
     tracker: Arc<UsageTracker>,
     label: String,
 ) -> impl Stream<Item = Result<bytes::Bytes, std::io::Error>> + Send + 'static
@@ -232,7 +234,6 @@ where
         inner: Box::pin(inner),
         buffer: String::new(),
         running: UsageStats::default(),
-        api_type,
         tracker,
         label,
         ended: false,
@@ -247,7 +248,7 @@ where
                 if let Ok(text) = std::str::from_utf8(&chunk) {
                     st.buffer.push_str(text);
                 }
-                scan_buffered_lines(&mut st.buffer, &st.api_type, &mut st.running);
+                scan_buffered_lines(&mut st.buffer, &mut st.running);
                 Some((Ok(chunk), st))
             }
             Some(Err(e)) => {
@@ -255,7 +256,7 @@ where
                 Some((Err(std::io::Error::other(e)), st))
             }
             None => {
-                finalize_leftover(&st.buffer, &st.api_type, &mut st.running);
+                finalize_leftover(&st.buffer, &mut st.running);
                 st.tracker.record(&st.label, st.running);
                 None
             }
@@ -265,21 +266,22 @@ where
 
 /// Drain every complete line out of `buffer`, feeding each to `scan_line`.
 /// Any trailing partial line is left in `buffer` for the next chunk.
-fn scan_buffered_lines(buffer: &mut String, api_type: &ApiType, running: &mut UsageStats) {
+fn scan_buffered_lines(buffer: &mut String, running: &mut UsageStats) {
     while let Some(idx) = buffer.find('\n') {
         let line = buffer[..idx].trim_end_matches('\r').to_string();
         buffer.drain(..=idx);
-        scan_line(&line, api_type, running);
+        scan_line(&line, running);
     }
 }
 
 /// Recognize one streaming-framing line: an SSE `data:` payload (Anthropic /
-/// OpenAI) or a raw NDJSON object (Ollama).
-fn scan_line(line: &str, api_type: &ApiType, running: &mut UsageStats) {
+/// OpenAI) or a raw NDJSON object (Ollama). Both shapes are attempted by
+/// `usage::parse_usage`, so no `ApiType` is needed to pick between them.
+fn scan_line(line: &str, running: &mut UsageStats) {
     let trimmed = line.trim();
     let json_str = if let Some(rest) = trimmed.strip_prefix("data:") {
         rest.trim()
-    } else if matches!(api_type, ApiType::Ollama) && trimmed.starts_with('{') {
+    } else if trimmed.starts_with('{') {
         trimmed
     } else {
         return;
@@ -287,26 +289,22 @@ fn scan_line(line: &str, api_type: &ApiType, running: &mut UsageStats) {
     if json_str.is_empty() || json_str == "[DONE]" {
         return;
     }
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-        let delta = match api_type {
-            ApiType::Ollama => usage::parse_ndjson_line(api_type, &json),
-            ApiType::Anthropic | ApiType::OpenAI => usage::parse_sse_event(api_type, &json),
-        };
-        if let Some(delta) = delta {
-            running.merge_max(&delta);
-        }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str)
+        && let Some(delta) = usage::parse_usage(&json)
+    {
+        running.merge_max(&delta);
     }
 }
 
 /// Whatever is left in `buffer` once the response body is exhausted covers
 /// the non-streaming case: the entire body is one JSON document.
-fn finalize_leftover(buffer: &str, api_type: &ApiType, running: &mut UsageStats) {
+fn finalize_leftover(buffer: &str, running: &mut UsageStats) {
     let trimmed = buffer.trim();
     if trimmed.is_empty() {
         return;
     }
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed)
-        && let Some(delta) = usage::parse_json_body(api_type, &json)
+        && let Some(delta) = usage::parse_usage(&json)
     {
         running.merge_max(&delta);
     }
@@ -317,7 +315,6 @@ fn finalize_leftover(buffer: &str, api_type: &ApiType, running: &mut UsageStats)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::ApiType;
     use std::sync::Arc;
 
     #[test]
@@ -325,7 +322,6 @@ mod tests {
         let mut running = UsageStats::default();
         scan_line(
             r#"data: {"type":"message_delta","usage":{"output_tokens":7}}"#,
-            &ApiType::Anthropic,
             &mut running,
         );
         assert_eq!(running.output_tokens, 7);
@@ -334,7 +330,7 @@ mod tests {
     #[test]
     fn scan_line_ignores_done_sentinel() {
         let mut running = UsageStats::default();
-        scan_line("data: [DONE]", &ApiType::OpenAI, &mut running);
+        scan_line("data: [DONE]", &mut running);
         assert_eq!(running, UsageStats::default());
     }
 
@@ -343,7 +339,6 @@ mod tests {
         let mut running = UsageStats::default();
         scan_line(
             r#"{"done":true,"prompt_eval_count":3,"eval_count":9}"#,
-            &ApiType::Ollama,
             &mut running,
         );
         assert_eq!(running.input_tokens, 3);
@@ -355,7 +350,6 @@ mod tests {
         let mut running = UsageStats::default();
         finalize_leftover(
             r#"{"usage":{"input_tokens":11,"output_tokens":22}}"#,
-            &ApiType::Anthropic,
             &mut running,
         );
         assert_eq!(running.input_tokens, 11);
@@ -374,14 +368,9 @@ mod tests {
             )),
         ];
         let inner = stream::iter(chunks);
-        let forwarded: Vec<_> = scan_and_forward(
-            inner,
-            ApiType::Anthropic,
-            Arc::clone(&tracker),
-            "chat".to_string(),
-        )
-        .collect()
-        .await;
+        let forwarded: Vec<_> = scan_and_forward(inner, Arc::clone(&tracker), "chat".to_string())
+            .collect()
+            .await;
         assert_eq!(forwarded.len(), 2);
 
         let snapshot = tracker.snapshot();

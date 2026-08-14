@@ -1,6 +1,6 @@
 // Standard
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 // Third Party
 use alog::{MessageLevel, alog_channel, use_channel};
@@ -26,6 +26,7 @@ pub static MODEL_REGISTRY: LazyLock<base::ModelFactory> = LazyLock::new(|| {
 /// *is* the catalog id).
 pub struct ModelSource {
     constructed: Vec<(String, Box<dyn Model>)>,
+    usage_tracking: Option<crate::proxy::UsageTrackingContext>,
 }
 
 impl ModelSource {
@@ -57,7 +58,39 @@ impl ModelSource {
                     .map(|model| (model_config.model_id.clone(), model))
             })
             .collect();
-        Self { constructed }
+        Self {
+            constructed,
+            usage_tracking: config.usage_tracking.clone(),
+        }
+    }
+
+    /// Removes and returns the constructed model for `model_id` (the catalog
+    /// id -- matches `ModelConfig.model_id`, which config loading enforces
+    /// equals the outer `config.models` key). When a usage-tracking session
+    /// is active, wraps the model in a local tracking proxy first; if the
+    /// proxy fails to start, falls back to the untracked model with a
+    /// warning rather than failing construction over an accounting feature.
+    pub fn take(&mut self, model_id: &str) -> Option<Arc<dyn Model>> {
+        let idx = self.constructed.iter().position(|(id, _)| id == model_id)?;
+        let (_, model) = self.constructed.remove(idx);
+        let model: Arc<dyn Model> = Arc::from(model);
+        let Some(ctx) = &self.usage_tracking else {
+            return Some(model);
+        };
+        match crate::proxy::UsageTrackingModel::wrap(
+            Arc::clone(&model),
+            model_id.to_string(),
+            ctx.clone(),
+        ) {
+            Ok(wrapped) => Some(Arc::new(wrapped)),
+            Err(e) => {
+                alog_channel!(
+                    MessageLevel::Warning,
+                    "usage-tracking proxy failed to start for model '{model_id}', continuing untracked: {e}"
+                );
+                Some(model)
+            }
+        }
     }
 }
 
@@ -205,6 +238,74 @@ mod tests {
 
         let source = ModelSource::from_config(&config);
         assert!(source.instances().is_empty());
+    }
+
+    #[test]
+    fn take_removes_and_returns_configured_model() {
+        use crate::config::{Config, ModelConfig};
+
+        let mut config = Config::default();
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: None,
+                variant: None,
+            },
+        );
+
+        let mut source = ModelSource::from_config(&config);
+        assert!(source.take("granite-3.1-8b-instruct").is_some());
+        assert!(source.take("granite-3.1-8b-instruct").is_none());
+    }
+
+    #[test]
+    fn take_returns_none_for_unknown_model_id() {
+        use crate::config::Config;
+
+        let mut source = ModelSource::from_config(&Config::default());
+        assert!(source.take("not-configured").is_none());
+    }
+
+    #[tokio::test]
+    async fn take_wraps_model_when_usage_tracking_is_active() {
+        use crate::config::{Config, ModelConfig, ProviderConfig};
+        use crate::proxy::{ProxyServer, UsageTracker, UsageTrackingContext};
+        use std::sync::Mutex;
+
+        let mut config = Config::default();
+        config.providers.insert(
+            "ollama".to_string(),
+            ProviderConfig {
+                provider_id: "ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({ "base_url": "http://localhost:11434" }),
+            },
+        );
+        config.models.insert(
+            "granite-3.1-8b-instruct".to_string(),
+            ModelConfig {
+                model_id: "granite-3.1-8b-instruct".to_string(),
+                provider_id: Some("ollama".to_string()),
+                variant: None,
+            },
+        );
+        let servers: Arc<Mutex<Vec<ProxyServer>>> = Arc::new(Mutex::new(Vec::new()));
+        config.usage_tracking = Some(UsageTrackingContext {
+            tracker: Arc::new(UsageTracker::new()),
+            servers: Arc::clone(&servers),
+        });
+
+        let mut source = ModelSource::from_config(&config);
+        let model = source.take("granite-3.1-8b-instruct").unwrap();
+        let provider = model.provider().unwrap();
+        assert!(provider.base_url().starts_with("http://127.0.0.1:"));
+
+        let started: Vec<_> = servers.lock().unwrap().drain(..).collect();
+        assert_eq!(started.len(), 1);
+        for server in started {
+            server.shutdown().await;
+        }
     }
 
     #[test]

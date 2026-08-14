@@ -654,31 +654,41 @@ async fn run_launch(
     use crate::capabilities::CAPABILITY_REGISTRY;
     use crate::launchers::LAUNCHER_REGISTRY;
     use crate::launchers::LaunchContext;
-    use crate::proxy::{ProxyServer, UsageTracker, UsageTrackingCapability};
+    use crate::proxy::{ProxyServer, UsageTracker, UsageTrackingContext};
     use std::sync::Mutex;
 
     // Load config fresh so we always pick up the latest saved state.
-    let config = crate::config::Config::new()?;
+    let mut config = crate::config::Config::new()?;
 
-    let lc = config.get_launcher(launcher_id).ok_or_else(|| {
-        anyhow::anyhow!(
-            "No launcher configured with id '{launcher_id}'. \
-             Run `granite-cli launcher setup {launcher_id}` first."
-        )
-    })?;
+    let lc = config
+        .get_launcher(launcher_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No launcher configured with id '{launcher_id}'. \
+                 Run `granite-cli launcher setup {launcher_id}` first."
+            )
+        })?
+        .clone();
+
+    // Usage tracking is skipped under `dry_run`: there's no subprocess to
+    // point a proxy at, and showing the real upstream URL in the overlay is
+    // more useful than a not-yet-running one. When active, this session is
+    // threaded through `config.usage_tracking` so that any capability which
+    // resolves its model through `ModelSource` (see `AgentModelCapability::new`)
+    // is transparently tracked -- no per-capability wrapping needed here.
+    let track_usage = usage_tracking && !dry_run;
+    let tracker = Arc::new(UsageTracker::new());
+    let proxy_servers: Arc<Mutex<Vec<ProxyServer>>> = Arc::new(Mutex::new(Vec::new()));
+    if track_usage {
+        config.usage_tracking = Some(UsageTrackingContext {
+            tracker: Arc::clone(&tracker),
+            servers: Arc::clone(&proxy_servers),
+        });
+    }
 
     let mut launcher = LAUNCHER_REGISTRY
         .construct(&lc.launcher_type, &lc.config, &config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
-
-    // Usage tracking wraps each capability in a decorator that proxies its
-    // resolved `AgentModel` binding through a local server instead of
-    // handing the launcher a direct upstream URL. Skipped under `dry_run`:
-    // there's no subprocess to point a proxy at, and showing the real
-    // upstream URL in the overlay is more useful than a not-yet-running one.
-    let track_usage = usage_tracking && !dry_run;
-    let tracker = Arc::new(UsageTracker::new());
-    let proxy_servers: Arc<Mutex<Vec<ProxyServer>>> = Arc::new(Mutex::new(Vec::new()));
 
     // Bind each enabled capability to the launcher before launching.
     for cap_id in &lc.enabled_capabilities {
@@ -691,17 +701,7 @@ async fn run_launch(
         let capability = CAPABILITY_REGISTRY
             .construct(&cap_cfg.capability_type, &cap_cfg.config, &config)
             .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?;
-        if track_usage {
-            let wrapped = UsageTrackingCapability::new(
-                capability,
-                cap_id.clone(),
-                Arc::clone(&tracker),
-                Arc::clone(&proxy_servers),
-            );
-            launcher.bind_capability(&wrapped).await?;
-        } else {
-            launcher.bind_capability(capability.as_ref()).await?;
-        }
+        launcher.bind_capability(capability.as_ref()).await?;
     }
 
     let launch_ctx = LaunchContext {

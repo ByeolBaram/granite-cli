@@ -38,37 +38,30 @@ pub struct AgentModelCapability {
 impl ConfigConstructable for AgentModelCapability {
     type Config = AgentModelCapabilityConfig;
 
-    /// Constructs the capability using the global config to resolve the model's
-    /// provider (so `model.provider()` works at bind time).
+    /// Constructs the capability by resolving its model through
+    /// `ModelSource`, which handles provider resolution (so `model.provider()`
+    /// works at bind time) and, when a usage-tracking session is active,
+    /// transparently wraps the model in a local tracking proxy.
     ///
     /// `cfg` contains the capability's instance config (e.g. `{"model_id": "my-model"}`)
-    /// where `model_id` is the key into `global_config.models`. The resolved
-    /// `ModelConfig` supplies the catalog model ID and the provider ID.
+    /// where `model_id` is the key into `global_config.models`.
     fn new(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let model_cfg = global_config
+        let mut source = crate::models::ModelSource::from_config(global_config);
+        let model = source.take(&config.model_id).unwrap_or_else(|| {
+            panic!(
+                "Configured model '{}' not found or could not be constructed",
+                config.model_id
+            )
+        });
+        let configured_variant = global_config
             .models
             .get(&config.model_id)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Configured model '{}' not found in config.models",
-                    config.model_id
-                )
-            });
-        let provider_cfg = model_cfg
-            .provider_id
-            .as_deref()
-            .and_then(|pid| global_config.get_provider(pid))
-            .map(|pc| serde_json::json!({ "provider_config": pc }))
-            .unwrap_or_else(|| serde_json::json!({}));
-        let configured_variant = model_cfg.variant.clone();
-        let model = crate::models::MODEL_REGISTRY
-            .construct(&model_cfg.model_id, &provider_cfg, global_config)
-            .expect("model must be in registry");
+            .and_then(|mc| mc.variant.clone());
         Self {
             config,
-            model: Arc::from(model),
+            model,
             configured_variant,
         }
     }

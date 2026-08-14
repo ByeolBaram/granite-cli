@@ -1,4 +1,3 @@
-use crate::providers::ApiType;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -65,39 +64,34 @@ impl UsageTracker {
     }
 }
 
-/// Parse token usage out of a complete (non-streaming) JSON response body.
-pub fn parse_json_body(api_type: &ApiType, body: &serde_json::Value) -> Option<UsageStats> {
-    match api_type {
-        ApiType::Anthropic => parse_anthropic_usage(body.get("usage")?),
-        ApiType::OpenAI => parse_openai_usage(body.get("usage")?),
-        ApiType::Ollama => parse_ollama_usage(body),
+/// Parse token usage out of one decoded JSON value, regardless of which
+/// provider produced it or whether it's a streaming event, an NDJSON line,
+/// or a whole non-streaming body. Anthropic and OpenAI usage objects use
+/// disjoint key names, so trying both in turn is unambiguous; Ollama never
+/// nests its counts under a `usage` key, so falling through to it last is
+/// safe.
+///
+/// - Anthropic: `message_start` nests usage under `.message.usage`;
+///   `message_delta` and non-streaming bodies have it at the top level under
+///   `.usage` -- check both.
+/// - OpenAI: `.usage.{prompt,completion}_tokens`, only present on the final
+///   streaming chunk when the client requested
+///   `stream_options: {include_usage: true}`, or always on a non-streaming
+///   body.
+/// - Ollama: top-level `prompt_eval_count`/`eval_count`, present only on the
+///   NDJSON line with `done: true`, or on a non-streaming body.
+pub fn parse_usage(value: &serde_json::Value) -> Option<UsageStats> {
+    let usage_obj = value
+        .get("message")
+        .and_then(|m| m.get("usage"))
+        .or_else(|| value.get("usage"));
+    if let Some(usage_obj) = usage_obj
+        && let Some(stats) =
+            parse_anthropic_usage(usage_obj).or_else(|| parse_openai_usage(usage_obj))
+    {
+        return Some(stats);
     }
-}
-
-/// Parse token usage out of one decoded SSE `data:` payload (Anthropic and
-/// OpenAI streaming responses both use SSE framing).
-pub fn parse_sse_event(api_type: &ApiType, event: &serde_json::Value) -> Option<UsageStats> {
-    match api_type {
-        // `message_start` nests usage under `.message.usage`; `message_delta`
-        // has it at the top level -- check both.
-        ApiType::Anthropic => event
-            .get("message")
-            .and_then(|m| m.get("usage"))
-            .or_else(|| event.get("usage"))
-            .and_then(parse_anthropic_usage),
-        // Only present on the final chunk when the client requested
-        // `stream_options: {include_usage: true}`.
-        ApiType::OpenAI => event.get("usage").and_then(parse_openai_usage),
-        ApiType::Ollama => None,
-    }
-}
-
-/// Parse token usage out of one NDJSON line (Ollama's streaming framing).
-pub fn parse_ndjson_line(api_type: &ApiType, body: &serde_json::Value) -> Option<UsageStats> {
-    match api_type {
-        ApiType::Ollama => parse_ollama_usage(body),
-        ApiType::Anthropic | ApiType::OpenAI => None,
-    }
+    parse_ollama_usage(value)
 }
 
 /*-- private --*/
@@ -209,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_json_body_anthropic_non_streaming() {
+    fn parse_usage_anthropic_non_streaming() {
         let body = json!({
             "usage": {
                 "input_tokens": 12,
@@ -218,7 +212,7 @@ mod tests {
                 "cache_read_input_tokens": 6
             }
         });
-        let usage = parse_json_body(&ApiType::Anthropic, &body).unwrap();
+        let usage = parse_usage(&body).unwrap();
         assert_eq!(usage.input_tokens, 12);
         assert_eq!(usage.output_tokens, 34);
         assert_eq!(usage.cache_creation_tokens, 5);
@@ -226,13 +220,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_json_body_missing_usage_returns_none() {
+    fn parse_usage_missing_usage_returns_none() {
         let body = json!({"content": []});
-        assert!(parse_json_body(&ApiType::Anthropic, &body).is_none());
+        assert!(parse_usage(&body).is_none());
     }
 
     #[test]
-    fn parse_sse_event_anthropic_message_start() {
+    fn parse_usage_anthropic_message_start() {
         let event = json!({
             "type": "message_start",
             "message": {
@@ -243,25 +237,25 @@ mod tests {
                 }
             }
         });
-        let usage = parse_sse_event(&ApiType::Anthropic, &event).unwrap();
+        let usage = parse_usage(&event).unwrap();
         assert_eq!(usage.input_tokens, 100);
         assert_eq!(usage.cache_read_tokens, 20);
     }
 
     #[test]
-    fn parse_sse_event_anthropic_message_delta() {
+    fn parse_usage_anthropic_message_delta() {
         let event = json!({
             "type": "message_delta",
             "usage": {
                 "output_tokens": 42
             }
         });
-        let usage = parse_sse_event(&ApiType::Anthropic, &event).unwrap();
+        let usage = parse_usage(&event).unwrap();
         assert_eq!(usage.output_tokens, 42);
     }
 
     #[test]
-    fn parse_json_body_openai_with_cached_tokens() {
+    fn parse_usage_openai_with_cached_tokens() {
         let body = json!({
             "usage": {
                 "prompt_tokens": 50,
@@ -269,27 +263,27 @@ mod tests {
                 "prompt_tokens_details": {"cached_tokens": 10}
             }
         });
-        let usage = parse_json_body(&ApiType::OpenAI, &body).unwrap();
+        let usage = parse_usage(&body).unwrap();
         assert_eq!(usage.input_tokens, 50);
         assert_eq!(usage.output_tokens, 25);
         assert_eq!(usage.cache_read_tokens, 10);
     }
 
     #[test]
-    fn parse_ndjson_line_ollama_done() {
+    fn parse_usage_ollama_done() {
         let body = json!({
             "done": true,
             "prompt_eval_count": 8,
             "eval_count": 16
         });
-        let usage = parse_ndjson_line(&ApiType::Ollama, &body).unwrap();
+        let usage = parse_usage(&body).unwrap();
         assert_eq!(usage.input_tokens, 8);
         assert_eq!(usage.output_tokens, 16);
     }
 
     #[test]
-    fn parse_ndjson_line_ollama_non_done_line_without_counts_is_none() {
+    fn parse_usage_ollama_non_done_line_without_counts_is_none() {
         let body = json!({"done": false, "response": "partial"});
-        assert!(parse_ndjson_line(&ApiType::Ollama, &body).is_none());
+        assert!(parse_usage(&body).is_none());
     }
 }
