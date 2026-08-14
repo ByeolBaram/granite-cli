@@ -430,4 +430,47 @@ mod tests {
         assert_eq!(job.status, "completed");
         assert_eq!(job.downloaded_bytes, Some(1000));
     }
+
+    #[test]
+    fn test_lmstudio_model_ref_from_simple_url() {
+        assert_eq!(
+            lmstudio_model_ref("https://lmstudio.ai/models/ibm/granite-4.1-30b"),
+            Some("ibm/granite-4.1-30b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lmstudio_model_ref_rejects_non_lmstudio_url() {
+        assert_eq!(
+            lmstudio_model_ref("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            None
+        );
+        assert_eq!(
+            lmstudio_model_ref("https://ollama.com/library/granite4:1b"),
+            None
+        );
+        assert_eq!(
+            lmstudio_model_ref("https://lmstudio.ai/models/"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_pull_model_uses_lmstudio_ref() {
+        // Tests that lmstudio_model_ref extracts the correct model reference
+        // from LM Studio variant URLs, and that hf_repo_id falls back for
+        // non-LMStudio URLs — the model_ref selection logic in pull_model.
+        assert_eq!(
+            lmstudio_model_ref("https://lmstudio.ai/models/ibm/granite-4.1-30b"),
+            Some("ibm/granite-4.1-30b".to_string())
+        );
+        assert_eq!(
+            lmstudio_model_ref("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            None
+        );
+        assert_eq!(
+            hf_repo_id("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            Some("ibm-granite/granite-speech-4.1-2b")
+        );
+    }
 }
