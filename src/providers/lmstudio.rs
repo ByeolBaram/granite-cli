@@ -11,6 +11,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Extract the LM Studio model reference from an LM Studio variant URL.
+///
+/// `https://lmstudio.ai/models/{org}/{model}` -> `{org}/{model}`
+/// (e.g. `https://lmstudio.ai/models/ibm/granite-4.1-30b` -> `ibm/granite-4.1-30b`)
+///
+/// Returns `None` for non-LM Studio URLs.
+fn lmstudio_model_ref(url: &str) -> Option<String> {
+    Some(
+        url.strip_prefix("https://lmstudio.ai/models/")
+            .or_else(|| url.strip_prefix("lmstudio.ai/mosels/"))
+            .filter(|s| !s.is_empty())?
+            .to_string(),
+    )
+}
+
 /// Response from `POST /api/v1/models/download`.
 #[derive(Debug, Deserialize)]
 struct LMStudioDownloadResponse {
@@ -120,7 +135,7 @@ impl LMStudioProvider {
     }
 
     fn default_formats() -> Vec<ModelFormat> {
-        let mut formats = vec![ModelFormat::GGUF];
+        let mut formats = vec![ModelFormat::GGUF, ModelFormat::LMStudio];
 
         if cfg!(target_os = "macos") {
             formats.push(ModelFormat::MLX);
@@ -179,7 +194,7 @@ impl Provider for LMStudioProvider {
 
     fn can_run_model(&self, variant_format: &str, _variant_precision: &str) -> bool {
         let format = variant_format.to_lowercase();
-        matches!(format.as_str(), "gguf" | "mlx" if format != "mlx" || cfg!(target_os = "macos"))
+        matches!(format.as_str(), "gguf" | "lmstudio" | "mlx" if format != "mlx" || cfg!(target_os = "macos"))
     }
 
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
@@ -198,12 +213,16 @@ impl Provider for LMStudioProvider {
         variant: &ModelVariant,
         ui: &dyn Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
-        let repo = hf_repo_id(&variant.url).ok_or_else(|| {
-            ProviderError::Other(format!(
-                "cannot determine a HuggingFace repo for {} variant {}/{}",
+        let model_ref = if let Some(ref_str) = lmstudio_model_ref(&variant.url) {
+            ref_str
+        } else if let Some(repo) = hf_repo_id(&variant.url) {
+            format!("https://huggingface.co/{repo}")
+        } else {
+            return Err(ProviderError::Other(format!(
+                "cannot determine a model reference for {} variant {}/{}",
                 model.family, variant.format, variant.precision
-            ))
-        })?;
+            )));
+        };
         let label = format!(
             "{} ({} {})",
             model.family, variant.format, variant.precision
@@ -211,7 +230,7 @@ impl Provider for LMStudioProvider {
 
         let url = format!("{}/api/v1/models/download", self.config.base_url);
         let mut request = self.client.post(&url).json(&serde_json::json!({
-            "model": format!("https://huggingface.co/{}", repo),
+            "model": model_ref,
             "quantization": variant.precision,
         }));
         if let Some(key) = &self.config.api_key {
@@ -289,7 +308,7 @@ impl Provider for LMStudioProvider {
 
 impl HasProviderMetadata for LMStudioProvider {
     fn metadata() -> ProviderMetadata {
-        let mut formats = vec![ModelFormat::GGUF];
+        let mut formats = vec![ModelFormat::GGUF, ModelFormat::LMStudio];
         let mut tags = vec![
             "lm-studio".to_string(),
             "local".to_string(),
@@ -412,5 +431,45 @@ mod tests {
         let job: LMStudioJobStatus = serde_json::from_str(body).unwrap();
         assert_eq!(job.status, "completed");
         assert_eq!(job.downloaded_bytes, Some(1000));
+    }
+
+    #[test]
+    fn test_lmstudio_model_ref_from_simple_url() {
+        assert_eq!(
+            lmstudio_model_ref("https://lmstudio.ai/models/ibm/granite-4.1-30b"),
+            Some("ibm/granite-4.1-30b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lmstudio_model_ref_rejects_non_lmstudio_url() {
+        assert_eq!(
+            lmstudio_model_ref("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            None
+        );
+        assert_eq!(
+            lmstudio_model_ref("https://ollama.com/library/granite4:1b"),
+            None
+        );
+        assert_eq!(lmstudio_model_ref("https://lmstudio.ai/models/"), None);
+    }
+
+    #[test]
+    fn test_pull_model_uses_lmstudio_ref() {
+        // Tests that lmstudio_model_ref extracts the correct model reference
+        // from LM Studio variant URLs, and that hf_repo_id falls back for
+        // non-LMStudio URLs — the model_ref selection logic in pull_model.
+        assert_eq!(
+            lmstudio_model_ref("https://lmstudio.ai/models/ibm/granite-4.1-30b"),
+            Some("ibm/granite-4.1-30b".to_string())
+        );
+        assert_eq!(
+            lmstudio_model_ref("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            None
+        );
+        assert_eq!(
+            hf_repo_id("https://huggingface.co/ibm-granite/granite-speech-4.1-2b"),
+            Some("ibm-granite/granite-speech-4.1-2b")
+        );
     }
 }
