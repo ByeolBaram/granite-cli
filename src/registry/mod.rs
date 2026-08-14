@@ -19,12 +19,36 @@ pub trait ConfigConstructable {
     /// Must implement `JsonSchema + Serialize + Default`.
     type Config: schemars::JsonSchema + serde::Serialize + Default;
 
-    /// Construct with a config instance and the global application config.
+    /// Construct with the instance's configured name, a config instance, and
+    /// the global application config.
+    ///
+    /// `instance_id` is the key this instance is configured under (e.g. the
+    /// provider nickname `my-ollama`), *not* the registry type name. Implementations
+    /// that need to identify themselves downstream store it and surface it via
+    /// [`Named`]. For instances constructed outside any configured set (bare
+    /// catalog lookups, `--output` backends), callers pass the type name.
+    ///
     /// Most implementations ignore `global_config`; types that need cross-registry
     /// resolution (e.g. resolving a model's provider) use it.
-    fn new(cfg: &serde_json::Value, global_config: &crate::config::Config) -> Self
+    fn new(
+        instance_id: &str,
+        cfg: &serde_json::Value,
+        global_config: &crate::config::Config,
+    ) -> Self
     where
         Self: Sized;
+}
+
+/// Lets a factory-constructed instance report the configured name it was built
+/// for. Object-safe on purpose: the domain traits (`Provider`, `Model`,
+/// `Capability`, `Launcher`) require it, so a `&dyn Provider` can answer "which
+/// configured provider are you?" without downcasting.
+///
+/// The value is whatever `instance_id` was passed to
+/// [`ConfigConstructable::new`], so it round-trips the config key that produced
+/// the instance.
+pub trait Named {
+    fn instance_id(&self) -> &str;
 }
 
 /// Macro to define a complete factory infrastructure for a trait hierarchy.
@@ -84,9 +108,9 @@ macro_rules! define_factory {
                 /// Get metadata describing this implementation
                 fn describe(&self) -> $metadata;
 
-                /// Construct an instance with the given config and global application config
+                /// Construct an instance with its configured name, config, and global application config
                 #[allow(unused)]
-                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait>;
+                fn construct(&self, instance_id: &str, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait>;
 
                 /// JSON schema of the config this implementation expects
                 #[allow(unused)]
@@ -119,8 +143,8 @@ macro_rules! define_factory {
                     T::metadata()
                 }
 
-                fn construct(&self, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait> {
-                    Box::new(T::new(cfg, global_config))
+                fn construct(&self, instance_id: &str, cfg: &serde_json::Value, global_config: &$crate::config::Config) -> Box<dyn $trait> {
+                    Box::new(T::new(instance_id, cfg, global_config))
                 }
 
                 fn config_schema(&self) -> schemars::Schema {
@@ -181,6 +205,9 @@ macro_rules! define_factory {
                 /// # Arguments
                 ///
                 /// * `name` - The name of the implementation to construct
+                /// * `instance_id` - The configured name of this instance (the config
+                ///   key it came from). Pass `name` for instances that aren't drawn
+                ///   from a configured set.
                 /// * `cfg` - Configuration to pass to the constructor
                 ///
                 /// # Returns
@@ -191,12 +218,13 @@ macro_rules! define_factory {
                 pub(crate) fn construct(
                     &self,
                     name: &str,
+                    instance_id: &str,
                     cfg: &serde_json::Value,
                     global_config: &$crate::config::Config,
                 ) -> Result<Box<dyn $trait>, String> {
                     self.registry
                         .get(name)
-                        .map(|x| x.construct(cfg, global_config))
+                        .map(|x| x.construct(instance_id, cfg, global_config))
                         .ok_or_else(|| format!("Unknown instance type: {}", name))
                 }
 
@@ -282,7 +310,7 @@ mod tests {
     extern crate paste;
 
     // Test trait and types
-    pub(crate) trait TestTrait {
+    pub(crate) trait TestTrait: Named {
         fn get_value(&self) -> i32;
     }
 
@@ -291,21 +319,35 @@ mod tests {
 
     // Test implementation 1
     struct TestImpl1 {
+        instance_id: String,
         value: i32,
     }
 
     impl ConfigConstructable for TestImpl1 {
         type Config = NoConfig;
 
-        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+        fn new(
+            instance_id: &str,
+            cfg: &serde_json::Value,
+            _global_config: &crate::config::Config,
+        ) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            Self { value }
+            Self {
+                instance_id: instance_id.to_string(),
+                value,
+            }
         }
     }
 
     impl TestTrait for TestImpl1 {
         fn get_value(&self) -> i32 {
             self.value
+        }
+    }
+
+    impl Named for TestImpl1 {
+        fn instance_id(&self) -> &str {
+            &self.instance_id
         }
     }
 
@@ -317,21 +359,35 @@ mod tests {
 
     // Test implementation 2
     struct TestImpl2 {
+        instance_id: String,
         value: i32,
     }
 
     impl ConfigConstructable for TestImpl2 {
         type Config = TestImpl2Config;
 
-        fn new(cfg: &serde_json::Value, _global_config: &crate::config::Config) -> Self {
+        fn new(
+            instance_id: &str,
+            cfg: &serde_json::Value,
+            _global_config: &crate::config::Config,
+        ) -> Self {
             let value = cfg.get("value").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            Self { value: value * 2 }
+            Self {
+                instance_id: instance_id.to_string(),
+                value: value * 2,
+            }
         }
     }
 
     impl TestTrait for TestImpl2 {
         fn get_value(&self) -> i32 {
             self.value
+        }
+    }
+
+    impl Named for TestImpl2 {
+        fn instance_id(&self) -> &str {
+            &self.instance_id
         }
     }
 
@@ -380,10 +436,14 @@ mod tests {
         let cfg = serde_json::json!({ "value": 42 });
         let global_config = crate::config::Config::default();
 
-        let inst1 = factory.construct("impl1", &cfg, &global_config).unwrap();
+        let inst1 = factory
+            .construct("impl1", "my-impl1", &cfg, &global_config)
+            .unwrap();
         assert_eq!(inst1.get_value(), 42);
 
-        let inst2 = factory.construct("impl2", &cfg, &global_config).unwrap();
+        let inst2 = factory
+            .construct("impl2", "my-impl2", &cfg, &global_config)
+            .unwrap();
         assert_eq!(inst2.get_value(), 84); // TestImpl2 doubles the value
     }
 
@@ -393,7 +453,7 @@ mod tests {
         let cfg = serde_json::json!({ "value": 42 });
         let global_config = crate::config::Config::default();
 
-        let result = factory.construct("unknown", &cfg, &global_config);
+        let result = factory.construct("unknown", "unknown", &cfg, &global_config);
         assert!(result.is_err());
         assert!(result.err().unwrap().contains("Unknown instance type"));
     }
