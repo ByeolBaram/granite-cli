@@ -11,6 +11,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Extract the LM Studio model reference from an LM Studio variant URL.
+///
+/// `https://lmstudio.ai/models/{org}/{model}` -> `{org}/{model}`
+/// (e.g. `https://lmstudio.ai/models/ibm/granite-4.1-30b` -> `ibm/granite-4.1-30b`)
+///
+/// Returns `None` for non-LM Studio URLs.
+fn lmstudio_model_ref(url: &str) -> Option<String> {
+    Some(url
+        .strip_prefix("https://lmstudio.ai/models/")
+        .or_else(|| url.strip_prefix("lmstudio.ai/mosels/"))
+        .filter(|s| !s.is_empty())?.to_string())
+}
+
 /// Response from `POST /api/v1/models/download`.
 #[derive(Debug, Deserialize)]
 struct LMStudioDownloadResponse {
@@ -198,12 +211,16 @@ impl Provider for LMStudioProvider {
         variant: &ModelVariant,
         ui: &dyn Ui,
     ) -> Result<crate::providers::PullResult, ProviderError> {
-        let repo = hf_repo_id(&variant.url).ok_or_else(|| {
-            ProviderError::Other(format!(
-                "cannot determine a HuggingFace repo for {} variant {}/{}",
+        let model_ref = if let Some(ref_str) = lmstudio_model_ref(&variant.url) {
+            ref_str
+        } else if let Some(repo) = hf_repo_id(&variant.url) {
+            format!("https://huggingface.co/{}", repo)
+        } else {
+            return Err(ProviderError::Other(format!(
+                "cannot determine a model reference for {} variant {}/{}",
                 model.family, variant.format, variant.precision
-            ))
-        })?;
+            )));
+        };
         let label = format!(
             "{} ({} {})",
             model.family, variant.format, variant.precision
@@ -211,7 +228,7 @@ impl Provider for LMStudioProvider {
 
         let url = format!("{}/api/v1/models/download", self.config.base_url);
         let mut request = self.client.post(&url).json(&serde_json::json!({
-            "model": format!("https://huggingface.co/{}", repo),
+            "model": model_ref,
             "quantization": variant.precision,
         }));
         if let Some(key) = &self.config.api_key {
