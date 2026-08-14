@@ -128,7 +128,14 @@ pub(crate) async fn run_command(
         cmd.env(&binding.key, &binding.value);
     }
 
-    Ok(cmd.spawn()?.wait()?)
+    // Spawn and wait on a blocking thread: `Child::wait` blocks the calling
+    // thread until the subprocess exits, which would otherwise starve the
+    // async runtime -- notably the usage-tracking proxy server, which needs
+    // scheduler time concurrently with the child running.
+    tokio::task::spawn_blocking(move || -> anyhow::Result<std::process::ExitStatus> {
+        Ok(cmd.spawn()?.wait()?)
+    })
+    .await?
 }
 
 /// Metadata describing a launcher implementation (type-level, catalog entry).
