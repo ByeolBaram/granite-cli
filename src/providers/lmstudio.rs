@@ -18,10 +18,12 @@ use std::time::Duration;
 ///
 /// Returns `None` for non-LM Studio URLs.
 fn lmstudio_model_ref(url: &str) -> Option<String> {
-    Some(url
-        .strip_prefix("https://lmstudio.ai/models/")
-        .or_else(|| url.strip_prefix("lmstudio.ai/mosels/"))
-        .filter(|s| !s.is_empty())?.to_string())
+    Some(
+        url.strip_prefix("https://lmstudio.ai/models/")
+            .or_else(|| url.strip_prefix("lmstudio.ai/mosels/"))
+            .filter(|s| !s.is_empty())?
+            .to_string(),
+    )
 }
 
 /// Response from `POST /api/v1/models/download`.
@@ -214,7 +216,7 @@ impl Provider for LMStudioProvider {
         let model_ref = if let Some(ref_str) = lmstudio_model_ref(&variant.url) {
             ref_str
         } else if let Some(repo) = hf_repo_id(&variant.url) {
-            format!("https://huggingface.co/{}", repo)
+            format!("https://huggingface.co/{repo}")
         } else {
             return Err(ProviderError::Other(format!(
                 "cannot determine a model reference for {} variant {}/{}",
@@ -449,10 +451,7 @@ mod tests {
             lmstudio_model_ref("https://ollama.com/library/granite4:1b"),
             None
         );
-        assert_eq!(
-            lmstudio_model_ref("https://lmstudio.ai/models/"),
-            None
-        );
+        assert_eq!(lmstudio_model_ref("https://lmstudio.ai/models/"), None);
     }
 
     #[test]
