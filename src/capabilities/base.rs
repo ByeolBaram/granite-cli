@@ -86,6 +86,10 @@ pub struct AgentModelBindingRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentModelBinding {
     pub api_type: ApiType,
+    /// Configured name of the provider instance serving this model (e.g.
+    /// `my-ollama`). Launchers that must name the endpoint in the wrapped tool's
+    /// own config use this rather than inventing a name of their own.
+    pub provider_name: String,
     pub base_url: String,
     pub model_name: String,
     pub endpoint_path: String,
