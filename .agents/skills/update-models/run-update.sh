@@ -73,13 +73,13 @@ log "Step 4.3/6: Querying OpenRouter catalog..."
 "${SCRIPTS_DIR}/04-03-query-openrouter.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-openrouter.json"
 mv "${DATA_DIR}/models-with-openrouter.json" "${DATA_DIR}/models.json"
 
-# Step 6: Generate YAML
-log "Step 6/6: Generating YAML..."
-"${SCRIPTS_DIR}/06-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
+# Step 7: Generate YAML
+log "Step 5/6: Generating YAML..."
+"${SCRIPTS_DIR}/05-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
 
 # Validate
-log "Validating generated YAML..."
-"${SCRIPTS_DIR}/07-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
+log "Step 6/6: Validating generated YAML..."
+"${SCRIPTS_DIR}/06-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
 
 if [ "$DRY_RUN" = true ]; then
     log "Dry run complete. Generated file: ${ROOT_DIR}/${DATA_DIR}/models-new.yaml"
