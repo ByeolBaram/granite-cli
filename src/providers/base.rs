@@ -292,11 +292,13 @@ pub async fn http_health_check(
 #[allow(non_camel_case_types)]
 pub enum ModelFormat {
     Safetensors,
-    Ollama,
     GGUF,
     ONNX,
     MLX,
+    // Provider specific formats
+    Ollama,
     LMStudio,
+    OpenRouter,
 }
 
 impl std::fmt::Display for ModelFormat {
@@ -308,6 +310,7 @@ impl std::fmt::Display for ModelFormat {
             ModelFormat::ONNX => write!(f, "ONNX"),
             ModelFormat::MLX => write!(f, "MLX"),
             ModelFormat::LMStudio => write!(f, "LMStudio"),
+            ModelFormat::OpenRouter => write!(f, "OpenRouter"),
         }
     }
 }

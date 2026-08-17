@@ -73,7 +73,7 @@ pub(crate) fn estimate(
     }
 
     let usable_gb = hardware.usable_memory_gb();
-    if usable_gb <= variant.size_gb {
+    if usable_gb <= variant.size_gb.unwrap_or(f64::MAX) {
         return ContextFit::None;
     }
 
@@ -129,7 +129,7 @@ fn required_gb(
         })
         .sum();
 
-    (variant.size_gb + layers_bytes / 1e9) * RUNTIME_OVERHEAD_FACTOR
+    (variant.size_gb.unwrap_or(f64::MAX) + layers_bytes / 1e9) * RUNTIME_OVERHEAD_FACTOR
 }
 
 /// Bytes of KV-cache/recurrent-state memory for a single layer of `kind` at
@@ -245,7 +245,7 @@ mod tests {
         ModelVariant {
             format: format.to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb,
+            size_gb: Some(size_gb),
             url: "http://example.com/model.gguf".to_string(),
         }
     }

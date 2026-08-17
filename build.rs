@@ -334,11 +334,17 @@ fn generate_layer_kind_literal(ltc: &YamlLayerTypeCount) -> String {
     }
 }
 
-fn format_float(value: f64) -> String {
-    if value.fract() == 0.0 {
-        format!("{value:.1}")
-    } else {
-        value.to_string()
+fn format_float(value: Option<f64>) -> String {
+    match value {
+        Some(f) => {
+            let formatted = if f.fract() == 0.0 {
+                format!("{f:.1}")
+            } else {
+                f.to_string()
+            };
+            format!("Some({formatted})")
+        }
+        None => "None".to_string(),
     }
 }
 
@@ -382,7 +388,7 @@ struct YamlModel {
 struct YamlModelVariant {
     format: String,
     precision: String,
-    size_gb: f64,
+    size_gb: Option<f64>,
     url: String,
 }
 

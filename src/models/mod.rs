@@ -346,7 +346,7 @@ mod tests {
         let variant = &model.variants[0];
         assert!(!variant.format.is_empty());
         assert!(!variant.precision.is_empty());
-        assert!(variant.size_gb > 0.0);
+        assert!(variant.size_gb.unwrap_or(0.0) > 0.0);
     }
 
     #[test]
