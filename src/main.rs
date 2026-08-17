@@ -241,7 +241,11 @@ enum CapabilitySubcommands {
 #[derive(Subcommand, Debug)]
 enum ProviderSubcommands {
     /// Show the catalog of all available providers
-    Catalog,
+    Catalog {
+        /// Show all columns, including description and endpoints
+        #[arg(long)]
+        wide: bool,
+    },
 
     /// List all configured providers
     List,
@@ -617,7 +621,7 @@ async fn run_provider_command(
     subcmd: ProviderSubcommands,
 ) -> anyhow::Result<()> {
     match subcmd {
-        ProviderSubcommands::Catalog => ProviderCommands::catalog(ctx),
+        ProviderSubcommands::Catalog { wide } => ProviderCommands::catalog(ctx, wide),
         ProviderSubcommands::List => ProviderCommands::list(ctx),
         ProviderSubcommands::Setup {
             provider_type,
