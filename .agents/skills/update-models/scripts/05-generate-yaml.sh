@@ -117,6 +117,6 @@ echo "# Source: HuggingFace ibm-granite organization"
 echo ""
 
 # Process all models
-jq -c '.[]' "$MODELS_FILE" | while read -r model; do
+jq -r -c '. | sort_by(.repo) | .[]' "$MODELS_FILE" | while read -r model; do
     generate_model_entry "$model"
 done
