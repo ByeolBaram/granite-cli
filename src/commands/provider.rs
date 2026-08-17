@@ -8,18 +8,68 @@ use crate::utils::prompt_from_schema;
 pub struct ProviderCommands;
 
 impl ProviderCommands {
-    pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
+    pub fn catalog(ctx: &crate::AppContext, wide: bool) -> Result<()> {
         let providers = PROVIDER_REGISTRY.entries();
 
         let mut rows: Vec<Vec<String>> = providers
             .iter()
-            .map(|(id, p)| vec![id.to_string(), p.default_endpoint.clone()])
+            .map(|(id, p)| {
+                let api_types = p
+                    .supported_api_types
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let formats = p
+                    .supported_formats
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mut row = vec![
+                    id.to_string(),
+                    api_types,
+                    formats,
+                    p.default_endpoint.clone(),
+                ];
+                if wide {
+                    let endpoints = p
+                        .default_function_endpoints
+                        .iter()
+                        .map(|(func, eps)| {
+                            let ep_strs = eps
+                                .iter()
+                                .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!("{func}: {ep_strs}")
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    row.push(p.description.clone());
+                    row.push(endpoints);
+                }
+                row
+            })
             .collect();
         rows.sort_by(|a, b| a[0].cmp(&b[0]));
 
+        let headers: &[&str] = if wide {
+            &[
+                "ID",
+                "API TYPES",
+                "FORMATS",
+                "DEFAULT URL",
+                "DESCRIPTION",
+                "ENDPOINTS",
+            ]
+        } else {
+            &["ID", "API TYPES", "FORMATS", "DEFAULT URL"]
+        };
+
         ctx.ui.table(
             &format!("Provider Catalog ({} providers)", providers.len()),
-            &["ID", "DEFAULT ENDPOINT"],
+            headers,
             &rows,
         );
         Ok(())
@@ -310,21 +360,51 @@ mod tests {
     // -- catalog --------------------------------------------------------------
 
     #[test]
-    fn catalog_table_has_id_endpoint_columns() {
+    fn catalog_table_has_expected_columns() {
         let ctx = test_ctx();
-        ProviderCommands::catalog(&ctx).unwrap();
+        ProviderCommands::catalog(&ctx, false).unwrap();
         let tables = tables!(ctx);
         assert_eq!(tables.len(), 1);
         let (_, headers, _) = &tables[0];
         assert!(headers.contains(&"ID".to_string()));
-        assert!(headers.contains(&"DEFAULT ENDPOINT".to_string()));
-        assert!(!headers.contains(&"TYPE".to_string()));
+        assert!(headers.contains(&"DEFAULT URL".to_string()));
+        assert!(headers.contains(&"API TYPES".to_string()));
+        assert!(headers.contains(&"FORMATS".to_string()));
+        assert!(!headers.contains(&"DESCRIPTION".to_string()));
+        assert!(!headers.contains(&"ENDPOINTS".to_string()));
+    }
+
+    #[test]
+    fn catalog_wide_includes_description_and_endpoints() {
+        let ctx = test_ctx();
+        ProviderCommands::catalog(&ctx, true).unwrap();
+        let tables = tables!(ctx);
+        let (_, headers, _) = &tables[0];
+        assert!(headers.contains(&"DESCRIPTION".to_string()));
+        assert!(headers.contains(&"ENDPOINTS".to_string()));
+    }
+
+    #[test]
+    fn catalog_wide_rows_have_six_columns() {
+        let ctx = test_ctx();
+        ProviderCommands::catalog(&ctx, true).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert!(!rows.is_empty());
+        for row in rows.iter() {
+            assert_eq!(
+                row.len(),
+                6,
+                "expected 6 columns in wide mode, got {}",
+                row.len()
+            );
+        }
     }
 
     #[test]
     fn catalog_contains_openai_compatible_entry() {
         let ctx = test_ctx();
-        ProviderCommands::catalog(&ctx).unwrap();
+        ProviderCommands::catalog(&ctx, false).unwrap();
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows.iter().any(|r| r[0] == "openai-compatible"));

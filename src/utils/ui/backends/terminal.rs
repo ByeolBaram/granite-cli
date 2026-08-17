@@ -424,8 +424,14 @@ fn wrap_ansi_cell(s: &str, max_width: usize, is_grey_row: bool) -> Vec<String> {
         .collect()
 }
 
-/// Minimum readable column width.
+/// Minimum readable column width for short columns.
 const MIN_WIDTH: usize = 8;
+
+/// Natural width threshold above which a column receives a proportional
+/// minimum (half its natural width) instead of the flat MIN_WIDTH floor.
+/// This prevents URL / description columns from being squeezed to the same
+/// minimum as short ID or type columns.
+const WIDE_COL_THRESHOLD: usize = 20;
 
 /// Minimum terminal width to enforce (treat narrower terminals as this wide).
 const MIN_TERMINAL_WIDTH: u16 = 20;
@@ -456,13 +462,31 @@ fn scale_widths(natural: Vec<usize>, terminal_width: u16, col_count: usize) -> V
     // Scale proportionally
     let scale = available as f64 / natural_total as f64;
 
+    // Compute per-column minimums: wide columns get half their natural width
+    // so that URL / description columns don't shrink as aggressively as short
+    // ID or type columns.  Cap each minimum at the column's proportional share
+    // of `available` so that a single very-wide column can't blow past the
+    // total budget on its own.
+    let per_col_budget = available / col_count.max(1);
+    let col_mins: Vec<usize> = natural
+        .iter()
+        .map(|&w| {
+            let raw = if w >= WIDE_COL_THRESHOLD {
+                (w / 2).max(MIN_WIDTH)
+            } else {
+                MIN_WIDTH
+            };
+            raw.min(per_col_budget).max(MIN_WIDTH)
+        })
+        .collect();
+
     // Compute scaled values with fractional tracking
     let mut scaled_with_fractions: Vec<(usize, usize, f64)> = natural
         .iter()
         .enumerate()
         .map(|(idx, &w)| {
             let exact = w as f64 * scale;
-            let floored = exact.floor().max(MIN_WIDTH as f64) as usize;
+            let floored = exact.floor().max(col_mins[idx] as f64) as usize;
             let lost = exact - floored as f64;
             (idx, floored, lost)
         })
@@ -482,7 +506,7 @@ fn scale_widths(natural: Vec<usize>, terminal_width: u16, col_count: usize) -> V
         let mut best_idx: Option<usize> = None;
         let mut best_val = 0usize;
         for (idx, floored, _) in &scaled_with_fractions {
-            if *floored > best_val && scaled[*idx] > MIN_WIDTH {
+            if *floored > best_val && scaled[*idx] > col_mins[*idx] {
                 best_idx = Some(*idx);
                 best_val = scaled[*idx];
             }
@@ -599,6 +623,9 @@ fn render_rows_with_wrapping(rows: &[Vec<String>], widths: &[usize]) {
             let line = line_parts.join("  ");
             println!("{line}");
         }
+
+        // Blank line between rows for readability
+        println!();
     }
 }
 /*-- tests --*/

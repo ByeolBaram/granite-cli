@@ -429,7 +429,7 @@ impl App {
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "ENDPOINT"]).style(
+                let header = Row::new(vec!["ID", "DEFAULT URL"]).style(
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -630,9 +630,42 @@ impl App {
             }
             Section::Providers => {
                 if let Some(p) = PROVIDER_REGISTRY.get(id) {
+                    let api_types = p
+                        .supported_api_types
+                        .iter()
+                        .map(|t| t.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let formats = p
+                        .supported_formats
+                        .iter()
+                        .map(|f| f.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let mut endpoints_lines: Vec<String> = p
+                        .default_function_endpoints
+                        .iter()
+                        .map(|(func, eps)| {
+                            let ep_strs = eps
+                                .iter()
+                                .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!("  {func}: {ep_strs}")
+                        })
+                        .collect();
+                    endpoints_lines.sort();
+                    let endpoints = endpoints_lines.join("\n");
                     format!(
-                        "Provider: {}\n\nName: {}\nType: {}\nEndpoint: {}\n\nDescription: {}",
-                        id, p.name, p.provider_type, p.default_endpoint, p.description
+                        "Provider: {}\n\nName: {}\nType: {}\nDefault URL: {}\nAPI Types: {}\nFormats: {}\n\nEndpoints:\n{}\n\nDescription: {}",
+                        id,
+                        p.name,
+                        p.provider_type,
+                        p.default_endpoint,
+                        api_types,
+                        formats,
+                        endpoints,
+                        p.description
                     )
                 } else {
                     format!("Provider '{id}' not found.")
