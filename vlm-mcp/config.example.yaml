@@ -1,0 +1,62 @@
+# vlm-mcp server configuration
+# Three-tier precedence: CLI flag > env var > YAML file > defaults
+# Naming convention: struct field paths use __ delimiter
+#   field: server.transport    → env: VLM_MCP__SERVER__TRANSPORT  → flag: --server__transport
+
+# Server settings
+server:
+  # Transport type: "stdio", "http" (Streamable HTTP), "http-sse" (legacy SSE)
+  transport: "stdio"
+  # Bind address for HTTP transport
+  bind: "127.0.0.1"
+  # Port for HTTP transport
+  port: 8080
+
+  # TLS configuration (for persistent transports)
+  tls:
+    cert: null    # Path to server TLS certificate (PEM)
+    key: null     # Path to server TLS private key (PEM)
+
+  # mTLS configuration (overrides tls when ca is set)
+  mtls:
+    ca: null      # CA certificate for verifying client certificates
+
+  # DoS protection
+  dos_protection:
+    # Max image upload size in bytes (default: 50 MiB)
+    max_image_bytes: 52428800
+
+# VLM backend configuration
+vlm:
+  # OpenAI-compatible API endpoint
+  # e.g. http://localhost:11434/v1 (Ollama), http://localhost:8000/v1 (vLLM)
+  endpoint: "http://localhost:11434/v1"
+  # Model name
+  model: "qwen2.5-vl:72b"
+  # API key (if required by endpoint)
+  api_key: ""
+  # Request timeout in seconds
+  timeout_seconds: 120
+
+  # TLS configuration for VLM client connection
+  tls:
+    ca: null          # CA certificate to verify the VLM's server cert
+    cert: null        # Client certificate for mTLS to VLM
+    key: null         # Client private key for mTLS to VLM
+    # When connecting to a VLM with a self-signed cert, set this to false.
+    # Other verification (chain, expiry, key usage) still applies.
+    verify_hostname: true
+
+  # DoS protection per-adapter
+  dos_protection:
+    max_image_bytes: 52428800
+
+  # Extra headers to include in VLM API requests
+  extra_headers: {}
+
+# Logging configuration
+logging:
+  # Log level: TRACE, DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+  # Log format: "plain", "json"
+  format: "plain"

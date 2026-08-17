@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "vlm-mcp-core",
+    "vlm-mcp-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+authors = ["Gabe Goodhart <gabe@gabe-goodhart.com>"]
+repository = "https://github.com/gabe-l-hart/vlm-mcp"
+keywords = ["mcp", "vlm", "vision", "llm"]
+categories = ["api-bindings"]
+
+[workspace.dependencies]
+# MCP SDK — rmcp 3.x with macros, stdio + HTTP transports
+rmcp = { version = "3.1", features = [
+    "transport-io",
+    "transport-streamable-http-server",
+] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP server (for Streamable HTTP + SSE transports)
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+http-body-util = "0.1"
+
+# TLS (pure Rust)
+rustls = { version = "0.23", default-features = false }
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+
+# Config
+config = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+# Utilities
+url = "2"
+mime = "0.3"
+thiserror = "2"
+anyhow = "1"
+bytes = "1"
+futures = "0.3"
