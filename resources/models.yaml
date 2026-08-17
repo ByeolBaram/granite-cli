@@ -1,5 +1,5 @@
 # Granite Models Catalog
-# Generated: 2026-08-17 19:01:54 UTC
+# Generated: 2026-08-17 19:09:42 UTC
 # Source: HuggingFace ibm-granite organization
 
 - id: granite-3.0-1b-a400m-instruct
@@ -1342,6 +1342,10 @@
       precision: Q4_1
       size_gb: 2.083
       url: "https://lmstudio.ai/models/ibm/granite-4-h-micro"
+    - format: OpenRouter
+      precision: 
+      size_gb: 0.0
+      url: "https://openrouter.ai/ibm-granite/granite-4.0-h-micro"
   description: |
     Granite-4.0-H-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-H-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
   tags:
@@ -2173,6 +2177,10 @@
       precision: Q4_K_M
       size_gb: 5.3
       url: "https://lmstudio.ai/models/ibm/granite-4.1-8b"
+    - format: OpenRouter
+      precision: 
+      size_gb: 0.0
+      url: "https://openrouter.ai/ibm-granite/granite-4.1-8b"
   description: |
     Granite-4.1-8B is a 8B parameter long-context instruct model finetuned from *Granite-4.1-8B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
   tags:
@@ -2353,7 +2361,7 @@
       url: "https://huggingface.co/ibm-granite/granite-embedding-278m-multilingual"
     - format: Ollama
       precision: F16
-      size_gb: 0.550
+      size_gb: 0.55
       url: "https://ollama.com/library/granite-embedding:278m"
   description: |
     Granite-Embedding-278M-Multilingual is a 278M parameter model from the Granite Embeddings suite that can be used to generate high quality text embeddings. This model produces embedding vectors of size 768 and is trained using a combination of open source relevance-pair datasets with permissive, enterprise-friendly license, and IBM collected and generated datasets. This model is developed using contrastive finetuning, knowledge distillation and model merging for improved performance.
