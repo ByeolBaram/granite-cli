@@ -167,12 +167,6 @@ When `HF_TOKEN` belongs to an account with org access, the collections API surfa
 ./scripts/06-generate-yaml.sh data/models.json | tee data/models-preview.yaml
 ```
 
-### Incremental Update
-```bash
-# Merge new models with existing ones
-./scripts/08-merge-yaml.sh resources/models.yaml data/models-new.yaml > data/models-merged.yaml
-```
-
 ## Troubleshooting
 
 ### Issue: Script fails with "jq: command not found"
@@ -208,11 +202,11 @@ The base model's `ibm-granite` repo may not be tagged as the `base_model` on the
 | `01-list-collections.sh` | List HF collections | None | `collections.json` |
 | `02-fetch-all-models.sh` | Fetch model metadata | `collections.json` | `models.json` |
 | `03-fetch-quantized.sh` | Add quantized variants | `models.json` | Enriched `models.json` |
-| `04-query-ollama.sh` | Add Ollama info | `models.json` | Enriched `models.json` |
-| `05-query-lmstudio.sh` | Add LM Studio info | `models.json` | Enriched `models.json` |
-| `06-generate-yaml.sh` | Generate YAML | `models.json` | `models-new.yaml` |
-| `07-validate-yaml.sh` | Validate YAML | `models-new.yaml` | Validation report |
-| `08-merge-yaml.sh` | Merge YAML files | Two YAML files | Merged YAML |
+| `04-01-query-ollama.sh` | Add Ollama info | `models.json` | Enriched `models.json` |
+| `04-02-query-lmstudio.sh` | Add LM Studio info | `models.json` | Enriched `models.json` |
+| `04-03-query-openrouter.sh` | Add OpenRouter info | `models.json` | Enriched `models.json` |
+| `05-generate-yaml.sh` | Generate YAML | `models.json` | `models-new.yaml` |
+| `06-validate-yaml.sh` | Validate YAML | `models-new.yaml` | Validation report |
 
 ### Utility Scripts
 

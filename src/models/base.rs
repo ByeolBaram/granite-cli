@@ -264,7 +264,7 @@ impl std::fmt::Display for ModelType {
 pub struct ModelVariant {
     pub format: String,
     pub precision: String,
-    pub size_gb: f64,
+    pub size_gb: Option<f64>,
     pub url: String,
 }
 

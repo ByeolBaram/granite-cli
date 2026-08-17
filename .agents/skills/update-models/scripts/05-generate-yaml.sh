@@ -48,6 +48,12 @@ generate_model_entry() {
             else
                 []
             end
+        ) + (
+            if .openrouter_info and (.openrouter_info | length > 0) then
+                [.openrouter_info[] | {format: "OpenRouter", url: .url, precision: "", size_gb: null}]
+            else
+                []
+            end
         )
     ')
 
@@ -111,6 +117,6 @@ echo "# Source: HuggingFace ibm-granite organization"
 echo ""
 
 # Process all models
-jq -c '.[]' "$MODELS_FILE" | while read -r model; do
+jq -r -c '. | sort_by(.repo) | .[]' "$MODELS_FILE" | while read -r model; do
     generate_model_entry "$model"
 done

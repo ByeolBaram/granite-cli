@@ -58,23 +58,28 @@ log "Step 3/6: Cross-referencing quantized variants..."
 "${SCRIPTS_DIR}/03-fetch-quantized.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-variants.json"
 mv "${DATA_DIR}/models-with-variants.json" "${DATA_DIR}/models.json"
 
-# Step 4: Query Ollama
-log "Step 4/6: Querying Ollama registry..."
-"${SCRIPTS_DIR}/04-query-ollama.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-ollama.json"
+# Step 4.1: Query Ollama
+log "Step 4.1/6: Querying Ollama registry..."
+"${SCRIPTS_DIR}/04-01-query-ollama.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-ollama.json"
 mv "${DATA_DIR}/models-with-ollama.json" "${DATA_DIR}/models.json"
 
-# Step 5: Query LM Studio
-log "Step 5/6: Querying LM Studio catalog..."
-"${SCRIPTS_DIR}/05-query-lmstudio.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-lmstudio.json"
+# Step 4.2: Query LM Studio
+log "Step 4.2/6: Querying LM Studio catalog..."
+"${SCRIPTS_DIR}/04-02-query-lmstudio.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-lmstudio.json"
 mv "${DATA_DIR}/models-with-lmstudio.json" "${DATA_DIR}/models.json"
 
-# Step 6: Generate YAML
-log "Step 6/6: Generating YAML..."
-"${SCRIPTS_DIR}/06-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
+# Step 4.3: Query OpenRouter
+log "Step 4.3/6: Querying OpenRouter catalog..."
+"${SCRIPTS_DIR}/04-03-query-openrouter.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-openrouter.json"
+mv "${DATA_DIR}/models-with-openrouter.json" "${DATA_DIR}/models.json"
+
+# Step 7: Generate YAML
+log "Step 5/6: Generating YAML..."
+"${SCRIPTS_DIR}/05-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
 
 # Validate
-log "Validating generated YAML..."
-"${SCRIPTS_DIR}/07-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
+log "Step 6/6: Validating generated YAML..."
+"${SCRIPTS_DIR}/06-validate-yaml.sh" "${DATA_DIR}/models-new.yaml"
 
 if [ "$DRY_RUN" = true ]; then
     log "Dry run complete. Generated file: ${ROOT_DIR}/${DATA_DIR}/models-new.yaml"

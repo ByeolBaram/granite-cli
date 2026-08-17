@@ -587,7 +587,7 @@ mod tests {
         let ollama_variant = crate::models::ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb: 5.3,
+            size_gb: Some(5.3),
             url: "https://ollama.com/library/granite4.1:8b".to_string(),
         };
         let cap = capability_with_test_model_and_variant(
@@ -619,7 +619,7 @@ mod tests {
         let ollama_variant = crate::models::ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb: 5.3,
+            size_gb: Some(5.3),
             url: "https://ollama.com/library/granite4.1:8b".to_string(),
         };
         // Provider returns None for model_alias (default FakeProvider behaviour)
