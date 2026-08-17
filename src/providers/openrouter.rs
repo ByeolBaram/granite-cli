@@ -142,11 +142,11 @@ impl Provider for OpenRouterProvider {
     }
 
     fn supported_formats(&self) -> Vec<ModelFormat> {
-        vec![ModelFormat::Safetensors, ModelFormat::GGUF]
+        vec![ModelFormat::OpenRouter]
     }
 
-    fn can_run_model(&self, _variant_format: &str, _variant_precision: &str) -> bool {
-        true
+    fn can_run_model(&self, variant_format: &str, _variant_precision: &str) -> bool {
+        variant_format == "OpenRouter"
     }
 
     async fn health_check(&self) -> Result<HealthStatus, ProviderError> {
@@ -181,7 +181,7 @@ impl HasProviderMetadata for OpenRouterProvider {
             default_endpoint: "https://openrouter.ai/api".to_string(),
             supported_api_types: vec![ApiType::OpenAI],
             default_function_endpoints: default_mappings,
-            supported_formats: vec![ModelFormat::Safetensors, ModelFormat::GGUF],
+            supported_formats: vec![ModelFormat::OpenRouter],
             authentication: vec![AuthType::BearerToken],
             tags: vec!["openrouter".to_string(), "hosted".to_string()],
         }
