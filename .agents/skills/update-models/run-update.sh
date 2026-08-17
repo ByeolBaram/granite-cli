@@ -68,6 +68,11 @@ log "Step 4.2/6: Querying LM Studio catalog..."
 "${SCRIPTS_DIR}/04-02-query-lmstudio.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-lmstudio.json"
 mv "${DATA_DIR}/models-with-lmstudio.json" "${DATA_DIR}/models.json"
 
+# Step 4.3: Query OpenRouter
+log "Step 4.3/6: Querying OpenRouter catalog..."
+"${SCRIPTS_DIR}/04-03-query-openrouter.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-with-openrouter.json"
+mv "${DATA_DIR}/models-with-openrouter.json" "${DATA_DIR}/models.json"
+
 # Step 6: Generate YAML
 log "Step 6/6: Generating YAML..."
 "${SCRIPTS_DIR}/06-generate-yaml.sh" "${DATA_DIR}/models.json" > "${DATA_DIR}/models-new.yaml"
