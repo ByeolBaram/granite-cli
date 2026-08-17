@@ -173,13 +173,18 @@ impl ModelCommands {
                     .max_by(|(fit_a, a), (fit_b, b)| {
                         fit_rank(fit_a)
                             .cmp(&fit_rank(fit_b))
-                            .then_with(|| a.size_gb.partial_cmp(&b.size_gb).unwrap())
+                            .then_with(|| a.size_gb.partial_cmp(&b.size_gb).unwrap_or(std::cmp::Ordering::Equal))
                     })?;
                 let (fit, variant) = best;
-                let variant_label = format!(
-                    "{} / {} ({:.1} GB)",
-                    variant.format, variant.precision, variant.size_gb
-                );
+                let variant_label = match (variant.size_gb, variant.precision.is_empty()) {
+                    (Some(size), false) => format!(
+                        "{} / {} ({:.1} GB)",
+                        variant.format, variant.precision, size
+                    ),
+                    (Some(size), true) => format!("{} ({:.1} GB)", variant.format, size),
+                    (None, false) => format!("{} / {}", variant.format, variant.precision),
+                    (None, true) => variant.format.clone(),
+                };
                 let providers_str = {
                     let matching: Vec<&str> = display_providers
                         .iter()
@@ -220,7 +225,7 @@ impl ModelCommands {
                         providers_str,
                     ]
                 };
-                Some((variant.size_gb, row))
+                Some((variant.size_gb.unwrap_or(f64::MAX), row))
             })
             .collect();
 
@@ -426,7 +431,14 @@ impl ModelCommands {
         let variants_str = model
             .variants
             .iter()
-            .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
+            .map(|v| {
+                match (v.size_gb, v.precision.is_empty()) {
+                    (Some(size), false) => format!("{} / {} ({:.1} GB)", v.format, v.precision, size),
+                    (Some(size), true) => format!("{} ({:.1} GB)", v.format, size),
+                    (None, false) => format!("{} / {}", v.format, v.precision),
+                    (None, true) => v.format.clone(),
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ");
         fields.push(("Variants", variants_str));
@@ -488,7 +500,14 @@ impl ModelCommands {
                 let variant_options: Vec<_> = model
                     .variants
                     .iter()
-                    .map(|v| format!("{} / {} ({:.1} GB)", v.format, v.precision, v.size_gb))
+                    .map(|v| {
+                        match (v.size_gb, v.precision.is_empty()) {
+                            (Some(size), false) => format!("{} / {} ({:.1} GB)", v.format, v.precision, size),
+                            (Some(size), true) => format!("{} ({:.1} GB)", v.format, size),
+                            (None, false) => format!("{} / {}", v.format, v.precision),
+                            (None, true) => v.format.clone(),
+                        }
+                    })
                     .collect();
 
                 let variant_index = ctx

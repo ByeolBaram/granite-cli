@@ -50,7 +50,7 @@ generate_model_entry() {
             end
         ) + (
             if .openrouter_info and (.openrouter_info | length > 0) then
-                [.openrouter_info[] | {format: "OpenRouter", url: .url, precision: "", size_gb: 0.0}]
+                [.openrouter_info[] | {format: "OpenRouter", url: .url, precision: "", size_gb: null}]
             else
                 []
             end

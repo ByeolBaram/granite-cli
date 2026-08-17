@@ -609,7 +609,7 @@ mod tests {
         let variant = ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb: 5.3,
+            size_gb: Some(5.3),
             url: "https://ollama.com/library/granite4.1:8b".to_string(),
         };
         assert_eq!(
@@ -628,7 +628,7 @@ mod tests {
         let variant = ModelVariant {
             format: "Ollama".to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb: 5.3,
+            size_gb: Some(5.3),
             url: "https://ollama.com/ibm/granite4.1:8b".to_string(),
         };
         assert_eq!(
@@ -647,7 +647,7 @@ mod tests {
         let variant = ModelVariant {
             format: "GGUF".to_string(),
             precision: "Q4_K_M".to_string(),
-            size_gb: 5.3,
+            size_gb: Some(5.3),
             url: "https://huggingface.co/ibm-granite/granite-4.1-8b-GGUF/blob/main/granite-4.1-8b-Q4_K_M.gguf".to_string(),
         };
         assert_eq!(provider.model_alias(Some(&variant)), None);

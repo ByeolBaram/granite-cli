@@ -1344,7 +1344,7 @@
       url: "https://lmstudio.ai/models/ibm/granite-4-h-micro"
     - format: OpenRouter
       precision: 
-      size_gb: 0.0
+      size_gb: null
       url: "https://openrouter.ai/ibm-granite/granite-4.0-h-micro"
   description: |
     Granite-4.0-H-Micro is a 3B parameter long-context instruct model finetuned from *Granite-4.0-H-Micro-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. This model is developed using a diverse set of techniques with a structured chat format, including supervised finetuning, model alignment using reinforcement learning, and model merging. Granite 4.0 instruct models feature improved *instruction following (IF)* and *tool-calling* capabilities, making them more effective in enterprise applications.
@@ -2179,7 +2179,7 @@
       url: "https://lmstudio.ai/models/ibm/granite-4.1-8b"
     - format: OpenRouter
       precision: 
-      size_gb: 0.0
+      size_gb: null
       url: "https://openrouter.ai/ibm-granite/granite-4.1-8b"
   description: |
     Granite-4.1-8B is a 8B parameter long-context instruct model finetuned from *Granite-4.1-8B-Base* using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets. Granite 4.1 models have gone through an improved post-training pipeline, including supervised finetuning and reinforcement learning alignment, resulting in enhanced tool calling, instruction following, and chat capabilities.
