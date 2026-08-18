@@ -250,28 +250,48 @@ impl App {
 
     fn filtered_ids(&self, query: &str) -> Vec<String> {
         let q = query.to_lowercase();
-        // Hardware has no selectable rows; Recommend uses its own row source
-        let mut ids: Vec<String> = match self.section {
-            Section::Models => MODEL_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
+        // IDs must be returned in the same order as the browse table renders
+        // them so that self.row correctly indexes the highlighted entry.
+        //
+        // Models: catalog_rows uses sort_enriched_rows (family/version/size),
+        //         not alphabetical — derive IDs from there.
+        // Recommend: recommend_rows_cache is sorted by variant size; preserve
+        //            that order instead of re-sorting alphabetically.
+        // Providers/Launchers/Capabilities: render code sorts by key, so
+        //                                   alphabetical sort here is correct.
+        // Hardware: no selectable rows.
+        let ids: Vec<String> = match self.section {
+            Section::Models => ModelCommands::catalog_rows(None)
+                .into_iter()
+                .map(|r| r[0].clone())
                 .collect(),
-            Section::Providers => PROVIDER_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Launchers => crate::launchers::LAUNCHER_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
+            Section::Providers => {
+                let mut v: Vec<String> = PROVIDER_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
+            }
+            Section::Launchers => {
+                let mut v: Vec<String> = crate::launchers::LAUNCHER_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
+            }
+            Section::Capabilities => {
+                let mut v: Vec<String> = crate::capabilities::CAPABILITY_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
+            }
             Section::Recommend => self
                 .recommend_rows_cache
                 .iter()
@@ -279,7 +299,6 @@ impl App {
                 .collect(),
             Section::Hardware => vec![],
         };
-        ids.sort();
         if q.is_empty() {
             ids
         } else {
