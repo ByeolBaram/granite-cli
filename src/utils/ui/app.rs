@@ -510,12 +510,56 @@ impl App {
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
             Section::Capabilities => {
-                let text = Paragraph::new("No capabilities registered yet.").block(
+                let all_entries: Vec<_> = {
+                    let mut v: Vec<_> = crate::capabilities::CAPABILITY_REGISTRY
+                        .entries()
+                        .into_iter()
+                        .collect();
+                    v.sort_by(|a, b| a.0.cmp(b.0));
+                    v
+                };
+
+                let filtered_ids = self.filtered_ids(query);
+                let entries: Vec<_> = all_entries
+                    .into_iter()
+                    .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
+                    .collect();
+
+                let header = Row::new(vec!["ID", "DESCRIPTION"]).style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
+
+                let rows: Vec<Row> = entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (id, c))| {
+                        let style = if i == self.row {
+                            Style::default().bg(Color::DarkGray)
+                        } else {
+                            Style::default()
+                        };
+                        Row::new(vec![
+                            Cell::from(id.to_string()),
+                            Cell::from(c.description.clone()),
+                        ])
+                        .style(style)
+                    })
+                    .collect();
+
+                let table = Table::new(
+                    rows,
+                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                )
+                .header(header)
+                .block(
                     Block::default()
                         .borders(Borders::ALL)
                         .title(" Capabilities "),
                 );
-                frame.render_widget(text, table_area);
+
+                frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
             Section::Recommend => {
                 let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
@@ -693,7 +737,41 @@ impl App {
                     format!("Launcher '{id}' not found.")
                 }
             }
-            Section::Capabilities => format!("Capability: {id}"),
+            Section::Capabilities => {
+                if let Some(c) = crate::capabilities::CAPABILITY_REGISTRY.get(id) {
+                    let binding_types = if c.supported_binding_types.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        let mut types: Vec<String> = c
+                            .supported_binding_types
+                            .iter()
+                            .map(|t| t.to_string())
+                            .collect();
+                        types.sort();
+                        types.join(", ")
+                    };
+                    let tags = if c.tags.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        c.tags.join(", ")
+                    };
+                    let deps = if c.dependencies.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        c.dependencies
+                            .iter()
+                            .map(|d| d.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    format!(
+                        "Capability: {id}\n\nName: {}\nDescription: {}\nBinding Types: {}\nTags: {}\nDependencies: {}",
+                        c.name, c.description, binding_types, tags, deps
+                    )
+                } else {
+                    format!("Capability '{id}' not found.")
+                }
+            }
             // Recommend detail reuses the Model info_fields
             Section::Recommend => match ModelCommands::info_fields(id) {
                 Some(fields) => fields
