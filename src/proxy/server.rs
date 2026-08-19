@@ -10,11 +10,11 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use futures_util::{Stream, StreamExt, stream};
-use tokio::sync::oneshot;
 
 // Local
 use crate::proxy::usage::{self, UsageStats, UsageTracker};
 use crate::registry::Secret;
+use crate::utils::subserver::SubServer;
 
 use_channel!("PRXY");
 
@@ -25,8 +25,7 @@ use_channel!("PRXY");
 /// recording token usage under `label` as responses pass through.
 pub struct ProxyServer {
     pub local_base_url: String,
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    join_handle: tokio::task::JoinHandle<()>,
+    inner: SubServer,
 }
 
 impl ProxyServer {
@@ -34,9 +33,7 @@ impl ProxyServer {
     /// Usage observed in responses is recorded into `tracker` under `label`
     /// (e.g. the capability id).
     ///
-    /// Synchronous: binds via a plain OS `std::net::TcpListener` call and
-    /// hands it to `tokio::spawn`, which only needs an *ambient* Tokio
-    /// runtime, not an `.await` -- this lets callers start a proxy from
+    /// Synchronous -- see [`SubServer::spawn`] -- so this can be called from
     /// inside sync code (e.g. `ConfigConstructable::new`) as long as a
     /// runtime is already running somewhere up the call stack.
     pub fn start(
@@ -54,44 +51,23 @@ impl ProxyServer {
             base_url,
             api_key,
             tracker,
-            label,
+            label: label.clone(),
         });
-
-        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
-        std_listener.set_nonblocking(true)?;
-        let local_addr = std_listener.local_addr()?;
-        let local_base_url = format!("http://{local_addr}");
-        let listener = tokio::net::TcpListener::from_std(std_listener)?;
 
         let app = Router::new().fallback(any(proxy_handler)).with_state(state);
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-        let join_handle = tokio::spawn(async move {
-            let server = axum::serve(listener, app).with_graceful_shutdown(async {
-                let _ = shutdown_rx.await;
-            });
-            if let Err(e) = server.await {
-                alog_channel!(
-                    MessageLevel::Warning,
-                    "usage-tracking proxy server error: {e}"
-                );
-            }
-        });
+        let inner = SubServer::spawn(app, &format!("usage-tracking proxy ({label})"))?;
+        let local_base_url = format!("http://{}", inner.local_addr);
 
         Ok(Self {
             local_base_url,
-            shutdown_tx: Some(shutdown_tx),
-            join_handle,
+            inner,
         })
     }
 
     /// Signal the server to stop accepting new connections and wait for it
     /// to finish draining in-flight ones.
-    pub async fn shutdown(mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        let _ = self.join_handle.await;
+    pub async fn shutdown(self) {
+        self.inner.shutdown().await;
     }
 }
 

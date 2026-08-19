@@ -1,5 +1,6 @@
 pub mod hardware;
 pub mod shell;
+pub mod subserver;
 pub mod traits;
 pub mod ui;
 
