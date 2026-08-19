@@ -34,6 +34,14 @@ futures-util = "0.3"
 serde_valid = "2.0.3"
 axum = "0.8"
 bytes = "1"
+rmcp = { version = "3.1", features = [
+    "macros",
+    "schemars",
+    "transport-io",
+    "transport-streamable-http-server",
+] }
+url = "2"
+base64 = "0.22"
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
