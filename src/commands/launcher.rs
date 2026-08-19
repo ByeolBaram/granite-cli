@@ -597,6 +597,16 @@ mod tests {
             .clone()
     }
 
+    /// A synthetic `LauncherMetadata` with no supported binding types at
+    /// all, for exercising the "this launcher supports nothing" path
+    /// (`bob` no longer qualifies -- it supports `Mcp`).
+    fn no_capabilities_launcher_def() -> crate::launchers::LauncherMetadata {
+        crate::launchers::LauncherMetadata {
+            supported_capabilities: std::collections::HashSet::new(),
+            ..bob_launcher_def()
+        }
+    }
+
     // Helper: insert a minimal agent-model capability config into ctx.
     // Also adds the model to config.models so CapabilitySource::from_config
     // can construct the underlying AgentModelCapability.
@@ -624,7 +634,7 @@ mod tests {
     #[tokio::test]
     async fn select_capabilities_warns_and_skips_for_launcher_with_no_supported_capabilities() {
         let mut ctx = test_ctx();
-        let launcher_def = bob_launcher_def();
+        let launcher_def = no_capabilities_launcher_def();
         let result = select_capabilities(&mut ctx, &launcher_def, &[])
             .await
             .unwrap();
