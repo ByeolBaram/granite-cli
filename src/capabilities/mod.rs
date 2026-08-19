@@ -10,6 +10,7 @@ use_channel!("CAPBL");
 pub static CAPABILITY_REGISTRY: LazyLock<base::CapabilityFactory> = LazyLock::new(|| {
     let mut factory = base::CapabilityFactory::new();
     factory.register::<agent_model::AgentModelCapability>("agent-model");
+    factory.register::<vision_mcp::VisionMCPCapability>("vision-mcp");
     factory
 });
 
@@ -73,7 +74,8 @@ impl crate::dependency::Configured<dyn Capability> for CapabilitySource {
 mod base;
 pub use base::{
     AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
-    CapabilityMetadata, Dependency, EnvBinding, LaunchContext,
+    CapabilityMetadata, Dependency, EnvBinding, LaunchContext, McpBinding, McpBindingRequest,
+    McpTransportKind,
 };
 
 mod requirement;
@@ -81,6 +83,9 @@ pub use requirement::{ModelRequirement, ProviderRequirement, ShellCommandRequire
 
 mod agent_model;
 pub use agent_model::{AgentModelCapability, AgentModelCapabilityConfig};
+
+mod vision_mcp;
+pub use vision_mcp::{VisionMCPCapability, VisionMCPCapabilityConfig};
 
 /*-- tests ---------------------------------------------------------------------*/
 
