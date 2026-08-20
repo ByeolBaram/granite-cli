@@ -2,11 +2,10 @@ use crate::capabilities::{AgentModelBinding, ApiType, Capability};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
-use anyhow::Context;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /*-- public --*/
 
@@ -92,7 +91,7 @@ impl Launcher for OpenClawLauncher {
         if let Some(binding) = &self.bound_binding {
             // Point OpenClaw at the generated ephemeral config file
             overlay.push(EnvBinding {
-                key: "OPENCLAW_CONFIG_PATH".to_string(),
+                key: CONFIG_ENV.to_string(),
                 value: openclaw_config_path(ctx)?.to_string_lossy().to_string(),
             });
 
@@ -166,54 +165,11 @@ const CONFIG_ENV: &str = "OPENCLAW_CONFIG_PATH";
 /// The generated config file's name, relative to the launcher state dir.
 const CONFIG_FILE: &str = "openclaw.json";
 
-impl OpenClawLauncher {
-    /// Builds the OpenClaw config describing the bound model.
-    /// The generated config serves as a base that env vars then override,
-    /// ensuring the bound model takes precedence over user defaults.
-    fn generate_config(&self, binding: &AgentModelBinding) -> anyhow::Result<serde_json::Value> {
-        let mut config = serde_json::json!({
-            "brain": {
-                "provider": binding.provider_name,
-                "model": binding.model_name,
-            }
-        });
-
-        if !binding.base_url.is_empty() {
-            // For local models, also set local endpoint in config
-            config["brain"]["local"] = serde_json::json!({
-                "endpoint": binding.base_url,
-                "model": binding.model_name,
-            });
-        }
-        if let Some(context_length) = binding.context_length {
-            config["brain"]["maxTokens"] = context_length.into();
-        }
-        if let Some(temperature) = binding.temperature {
-            config["brain"]["temperature"] = temperature.into();
-        }
-
-        Ok(config)
-    }
-}
-
 /// The OpenClaw config file this launcher instance writes and points `OPENCLAW_CONFIG_PATH` at.
 /// Lives under the launcher state dir rather than the user's own OpenClaw config directory.
 fn openclaw_config_path(ctx: &LaunchContext) -> anyhow::Result<PathBuf> {
     Ok(crate::config::Config::launcher_state_dir(&ctx.launcher_id)?
         .join(CONFIG_FILE))
-}
-
-/// Wraps the bound model info in the top-level OpenClaw config shape.
-fn write_openclaw_config(path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create {}", parent.display()))?;
-    }
-    let mut content = serde_json::to_string_pretty(config)?;
-    content.push('\n');
-    std::fs::write(path, content)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
-    Ok(())
 }
 
 /*-- tests --*/
@@ -310,36 +266,6 @@ mod tests {
             .and_then(|p| p.as_object())
             .unwrap();
         assert!(props.contains_key("command_path"));
-    }
-
-    // -- generate_config ------------------------------------------------------
-
-    #[test]
-    fn generate_config_sets_provider_and_model() {
-        let l = launcher(serde_json::json!({}));
-        let config = l.generate_config(&binding()).unwrap();
-        assert_eq!(config["brain"]["provider"], "ollama");
-        assert_eq!(config["brain"]["model"], "mistral/mistral-large-v0.2");
-        assert_eq!(config["brain"]["maxTokens"], serde_json::json!(131072));
-    }
-
-    #[test]
-    fn generate_config_sets_local_endpoint() {
-        let l = launcher(serde_json::json!({}));
-        let config = l.generate_config(&binding()).unwrap();
-        assert_eq!(config["brain"]["local"]["endpoint"], "http://localhost:11434");
-        assert_eq!(config["brain"]["local"]["model"], "mistral/mistral-large-v0.2");
-    }
-
-    #[test]
-    fn generate_config_omits_context_length_when_none() {
-        let b = AgentModelBinding {
-            context_length: None,
-            ..binding()
-        };
-        let l = launcher(serde_json::json!({}));
-        let config = l.generate_config(&b).unwrap();
-        assert!(!config["brain"].get("maxTokens").is_some());
     }
 
     // -- env overlay -----------------------------------------------------------
