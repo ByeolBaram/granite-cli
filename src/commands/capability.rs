@@ -1,5 +1,5 @@
 // Third Party
-use alog::{alog_channel, use_channel, MessageLevel};
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
 
 // Local
@@ -280,9 +280,18 @@ impl CapabilityCommands {
         requirement: &ModelRequirement,
         required: bool,
     ) -> Result<Option<String>> {
-        alog_channel!(MessageLevel::Debug2, "Resolving requirement: {:?}", requirement);
+        alog_channel!(
+            MessageLevel::Debug2,
+            "Resolving requirement: {:?}",
+            requirement
+        );
         let (usable, configurable_types) = Self::model_candidates(ctx, requirement);
-        alog_channel!(MessageLevel::Debug2, "Usable: {:?}, Configurable Types: {:?}", usable, configurable_types);
+        alog_channel!(
+            MessageLevel::Debug2,
+            "Usable: {:?}, Configurable Types: {:?}",
+            usable,
+            configurable_types
+        );
         if usable.is_empty() && configurable_types.is_empty() {
             if required {
                 anyhow::bail!(

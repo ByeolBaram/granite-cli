@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Context;
-use alog::{alog_channel, use_channel, MessageLevel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 

@@ -188,9 +188,8 @@ impl Capability for VisionMCPCapability {
         };
         anyhow::ensure!(
             supported_transports.contains(&McpTransportKind::Http),
-            "no MCP transport in common with the requesting launcher (it offered {:?}; \
-             VisionMCPCapability only serves Streamable HTTP)",
-            supported_transports
+            "no MCP transport in common with the requesting launcher (it offered {supported_transports:?}; \
+             VisionMCPCapability only serves Streamable HTTP)"
         );
 
         let model_id = &self.config.model_id;
