@@ -1,11 +1,21 @@
-use crate::capabilities::Capability;
-use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
-use crate::registry::ConfigConstructable;
-use crate::utils::resolve_shell_command;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+// Standard
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+// Third Party
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+// Local
+use crate::capabilities::{Binding, BindingType, Capability, McpBinding};
+use crate::launchers::base::HasLauncherMetadata as HasBobLauncherMetadata;
+use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
+use crate::launchers::shared::mcp_cli::{
+    mcp_binding_request, register_mcp_server, remove_mcp_server,
+};
+use crate::registry::ConfigConstructable;
+use crate::utils::resolve_shell_command;
+use crate::utils::ui::Ui;
 
 /*-- public --*/
 
@@ -20,6 +30,9 @@ pub struct BobLauncherConfig {
 pub struct BobLauncher {
     instance_id: String,
     config: BobLauncherConfig,
+    /// `(server_name, binding)` for every MCP-capable capability bound to
+    /// this launcher, registered/removed around `run_command` in `launch()`.
+    bound_mcp_bindings: Vec<(String, McpBinding)>,
 }
 
 impl ConfigConstructable for BobLauncher {
@@ -34,6 +47,7 @@ impl ConfigConstructable for BobLauncher {
         Self {
             instance_id: instance_id.to_string(),
             config,
+            bound_mcp_bindings: vec![],
         }
     }
 }
@@ -54,8 +68,25 @@ impl Launcher for BobLauncher {
         self.config.command_path.as_deref().unwrap_or("bob")
     }
 
-    async fn bind_capability(&mut self, _capability: &dyn Capability) -> anyhow::Result<()> {
-        anyhow::bail!("bob launcher does not support any capabilities")
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
+        let supported = Self::metadata().supported_capabilities;
+        let capability_types = capability.binding_types();
+        if !capability_types.is_subset(&supported) {
+            anyhow::bail!(
+                "capability supports {:?} which this launcher does not support",
+                capability_types.difference(&supported).collect::<Vec<_>>()
+            );
+        }
+
+        let binding = capability.bind(mcp_binding_request()).await?;
+        match binding {
+            Binding::Mcp(binding) => {
+                self.bound_mcp_bindings
+                    .push((capability.instance_id().to_string(), binding));
+            }
+            other => anyhow::bail!("expected an Mcp binding, got {:?}", other.binding_type()),
+        }
+        Ok(())
     }
 
     fn validate_command(&self) -> anyhow::Result<PathBuf> {
@@ -65,6 +96,32 @@ impl Launcher for BobLauncher {
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
         Ok(vec![])
     }
+
+    /// Registers each bound MCP server with `bob mcp add-json` (scoped to
+    /// this workspace) before exec'ing, and best-effort removes them again
+    /// afterwards.
+    async fn launch(
+        &self,
+        args: &[String],
+        ctx: &LaunchContext,
+        ui: &dyn Ui,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        let binary = self.validate_command()?;
+        let overlay = self.env_overlay(ctx).await?;
+
+        const SCOPE: &[&str] = &["-s", "workspace"];
+        for (name, binding) in &self.bound_mcp_bindings {
+            register_mcp_server(&binary, name, binding, SCOPE, ctx, ui)?;
+        }
+
+        let result = run_command(binary.clone(), &overlay, args, ctx, ui).await;
+
+        for (name, _) in &self.bound_mcp_bindings {
+            remove_mcp_server(&binary, name, SCOPE, ctx, ui);
+        }
+
+        result
+    }
 }
 
 impl HasBobLauncherMetadata for BobLauncher {
@@ -73,15 +130,11 @@ impl HasBobLauncherMetadata for BobLauncher {
             name: "Bob CLI".to_string(),
             description: "IBM Bob AI assistant CLI".to_string(),
             default_command: "bob".to_string(),
-            supported_capabilities: HashSet::new(),
+            supported_capabilities: HashSet::from([BindingType::Mcp]),
             tags: vec!["bob".to_string(), "ibm".to_string()],
         }
     }
 }
-
-/*-- private --*/
-
-use crate::launchers::base::HasLauncherMetadata as HasBobLauncherMetadata;
 
 /*-- tests --*/
 

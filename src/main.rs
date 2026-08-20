@@ -695,7 +695,19 @@ async fn run_launch(
         .construct(&lc.launcher_type, &lc.launcher_id, &lc.config, &config)
         .map_err(|e| anyhow::anyhow!("Failed to construct launcher: {e}"))?;
 
-    // Bind each enabled capability to the launcher before launching.
+    let launch_ctx = LaunchContext {
+        launcher_id: launcher_id.to_string(),
+        working_dir: std::env::current_dir()?,
+        base_env: std::collections::HashMap::new(),
+        dry_run,
+    };
+
+    // Bind each enabled capability to the launcher before launching. Kept
+    // alive (not dropped at the end of this loop) so a capability that owns
+    // a process-scoped resource -- e.g. `VisionMCPCapability`'s in-process
+    // MCP server -- survives long enough for `on_shutdown` to tear it down
+    // after the launched process exits, not before it starts.
+    let mut bound_capabilities: Vec<Box<dyn crate::capabilities::Capability>> = Vec::new();
     for cap_id in &lc.enabled_capabilities {
         let cap_cfg = config.get_capability(cap_id).ok_or_else(|| {
             anyhow::anyhow!(
@@ -711,17 +723,37 @@ async fn run_launch(
                 &config,
             )
             .map_err(|e| anyhow::anyhow!("Failed to construct capability '{cap_id}': {e}"))?;
+        capability.on_setup().await?;
         launcher.bind_capability(capability.as_ref()).await?;
+        bound_capabilities.push(capability);
     }
 
-    let launch_ctx = LaunchContext {
-        launcher_id: launcher_id.to_string(),
-        working_dir: std::env::current_dir()?,
-        base_env: std::collections::HashMap::new(),
-        dry_run,
-    };
+    for capability in &bound_capabilities {
+        capability.on_pre_launch(&launch_ctx).await?;
+    }
 
-    let status = launcher.launch(args, &launch_ctx, ui).await?;
+    let launch_result = launcher.launch(args, &launch_ctx, ui).await;
+
+    // Run post-launch/shutdown hooks regardless of how the launch went, so a
+    // capability's background resources (e.g. an in-process MCP server) are
+    // always torn down. Failures here are reported, not propagated -- the
+    // launch itself already succeeded or failed on its own terms.
+    for capability in bound_capabilities.iter().rev() {
+        if let Err(e) = capability.on_post_launch(&launch_ctx).await {
+            ui.warn(&format!(
+                "on_post_launch failed for capability '{}': {e}",
+                capability.instance_id()
+            ));
+        }
+        if let Err(e) = capability.on_shutdown(&launch_ctx).await {
+            ui.warn(&format!(
+                "on_shutdown failed for capability '{}': {e}",
+                capability.instance_id()
+            ));
+        }
+    }
+
+    let status = launch_result?;
 
     if track_usage {
         let started: Vec<ProxyServer> = proxy_servers.lock().unwrap().drain(..).collect();

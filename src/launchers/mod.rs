@@ -88,6 +88,10 @@ pub use claude::{ClaudeLauncher, ClaudeLauncherConfig};
 pub use opencode::{OpenCodeLauncher, OpenCodeLauncherConfig};
 pub use pi::{PiLauncher, PiLauncherConfig};
 
+/*-- private shared modules --*/
+
+mod shared;
+
 /*-- tests -------------------------------------------------------------------*/
 
 #[cfg(test)]

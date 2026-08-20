@@ -5,7 +5,7 @@ use crate::providers::ApiType;
 use crate::registry::{ConfigConstructable, Secret};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 // Canonical launch-time types live in `launchers::base` -- re-exported here so
 // capabilities and launchers share one `LaunchContext`/`EnvBinding` pair.
@@ -98,12 +98,86 @@ pub struct AgentModelBinding {
     pub context_length: u64,
 }
 
+/// Which wire transport an MCP server binding uses. Payload-free and
+/// hashable so a `Launcher` can declare which transports it can register
+/// (per `McpBindingRequest::supported_transports`) and a `Capability` can
+/// pick the best one it's able to serve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum McpTransportKind {
+    Stdio,
+    Http,
+    Sse,
+}
+
+/// Request payload for `BindingType::Mcp` -- which transports the launcher
+/// can actually register with the downstream tool. `bind()` picks the best
+/// transport it can serve from this set.
+#[derive(Debug, Clone)]
+pub struct McpBindingRequest {
+    pub supported_transports: HashSet<McpTransportKind>,
+}
+
+/// Result payload for `BindingType::Mcp`: enough detail for a launcher to
+/// register the server with its downstream tool. Mirrors the de-facto MCP
+/// server config shape shared by Claude Code, VS Code, and others
+/// (see modelcontextprotocol/modelcontextprotocol#292), so a launcher can
+/// serialize this almost directly into its own `mcp add-json`/config-file
+/// format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum McpBinding {
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+    },
+    Http {
+        url: String,
+        headers: HashMap<String, String>,
+    },
+    Sse {
+        url: String,
+        headers: HashMap<String, String>,
+    },
+}
+
 define_bindings! {
     AgentModel {
         request: AgentModelBindingRequest,
         result: AgentModelBinding,
         display: "Agent Model",
     },
+    Mcp {
+        request: McpBindingRequest,
+        result: McpBinding,
+        display: "MCP Server",
+    },
+}
+
+impl McpBinding {
+    /// The de-facto MCP server config shape shared by Claude Code, bob, and
+    /// others' `mcp add-json` (see
+    /// modelcontextprotocol/modelcontextprotocol#292): `{"type":
+    /// "stdio"|"http"|"sse", ...}`.
+    pub fn to_canonical_json(&self) -> serde_json::Value {
+        match self {
+            McpBinding::Stdio { command, args, env } => serde_json::json!({
+                "type": "stdio",
+                "command": command,
+                "args": args,
+                "env": env,
+            }),
+            McpBinding::Http { url, headers } => serde_json::json!({
+                "type": "http",
+                "url": url,
+                "headers": headers,
+            }),
+            McpBinding::Sse { url, headers } => serde_json::json!({
+                "type": "sse",
+                "url": url,
+                "headers": headers,
+            }),
+        }
+    }
 }
 
 /*-- Capability Trait ----------------------------------------------------------*/
@@ -238,3 +312,53 @@ impl std::fmt::Display for Dependency {
 use crate::define_factory;
 
 define_factory!(Capability, CapabilityMetadata, CapabilityFactory);
+
+/*-- tests -------------------------------------------------------------------*/
+
+#[cfg(test)]
+mod mcp_binding_tests {
+    use super::*;
+
+    fn stdio_binding() -> McpBinding {
+        McpBinding::Stdio {
+            command: "/usr/local/bin/granite-cli".to_string(),
+            args: vec!["__mcp-serve".to_string(), "vision".to_string()],
+            env: HashMap::from([("FOO".to_string(), "bar".to_string())]),
+        }
+    }
+
+    fn http_binding() -> McpBinding {
+        McpBinding::Http {
+            url: "http://127.0.0.1:54321/mcp".to_string(),
+            headers: HashMap::from([("X-Test".to_string(), "1".to_string())]),
+        }
+    }
+
+    #[test]
+    fn canonical_json_stdio_matches_mcp_add_json_shape() {
+        let json = stdio_binding().to_canonical_json();
+        assert_eq!(json["type"], "stdio");
+        assert_eq!(json["command"], "/usr/local/bin/granite-cli");
+        assert_eq!(json["args"][0], "__mcp-serve");
+        assert_eq!(json["args"][1], "vision");
+        assert_eq!(json["env"]["FOO"], "bar");
+    }
+
+    #[test]
+    fn canonical_json_http_matches_mcp_add_json_shape() {
+        let json = http_binding().to_canonical_json();
+        assert_eq!(json["type"], "http");
+        assert_eq!(json["url"], "http://127.0.0.1:54321/mcp");
+        assert_eq!(json["headers"]["X-Test"], "1");
+    }
+
+    #[test]
+    fn canonical_json_sse_uses_sse_type() {
+        let json = McpBinding::Sse {
+            url: "http://127.0.0.1:1/sse".to_string(),
+            headers: HashMap::new(),
+        }
+        .to_canonical_json();
+        assert_eq!(json["type"], "sse");
+    }
+}

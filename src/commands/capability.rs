@@ -1,4 +1,5 @@
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
 
 // Local
@@ -8,6 +9,8 @@ use crate::dependency::{self, Configured};
 use crate::utils::prompt_from_schema;
 
 pub struct CapabilityCommands;
+
+use_channel!("CAPBL");
 
 impl CapabilityCommands {
     pub fn catalog(ctx: &crate::AppContext) -> Result<()> {
@@ -277,7 +280,18 @@ impl CapabilityCommands {
         requirement: &ModelRequirement,
         required: bool,
     ) -> Result<Option<String>> {
+        alog_channel!(
+            MessageLevel::Debug2,
+            "Resolving requirement: {:?}",
+            requirement
+        );
         let (usable, configurable_types) = Self::model_candidates(ctx, requirement);
+        alog_channel!(
+            MessageLevel::Debug2,
+            "Usable: {:?}, Configurable Types: {:?}",
+            usable,
+            configurable_types
+        );
         if usable.is_empty() && configurable_types.is_empty() {
             if required {
                 anyhow::bail!(

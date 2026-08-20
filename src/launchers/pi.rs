@@ -102,6 +102,10 @@ impl Launcher for PiLauncher {
             crate::capabilities::Binding::AgentModel(binding) => {
                 self.bound_binding = Some(binding);
             }
+            other => anyhow::bail!(
+                "expected an AgentModel binding, got {:?}",
+                other.binding_type()
+            ),
         }
         Ok(())
     }

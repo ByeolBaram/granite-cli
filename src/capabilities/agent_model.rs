@@ -428,7 +428,9 @@ mod tests {
             .await
             .unwrap();
 
-        let Binding::AgentModel(binding) = binding;
+        let Binding::AgentModel(binding) = binding else {
+            panic!("expected AgentModel binding")
+        };
         assert_eq!(binding.base_url, "http://localhost:11434");
         assert_eq!(binding.model_name, "granite-3.1-8b-instruct");
         assert_eq!(binding.endpoint_path, "/v1/chat/completions");
@@ -610,7 +612,9 @@ mod tests {
             .await
             .unwrap();
 
-        let Binding::AgentModel(binding) = binding;
+        let Binding::AgentModel(binding) = binding else {
+            panic!("expected AgentModel binding")
+        };
         assert_eq!(binding.model_name, "granite4.1:8b");
     }
 
@@ -640,7 +644,9 @@ mod tests {
             .await
             .unwrap();
 
-        let Binding::AgentModel(binding) = binding;
+        let Binding::AgentModel(binding) = binding else {
+            panic!("expected AgentModel binding")
+        };
         assert_eq!(binding.model_name, "granite-3.1-8b-instruct");
     }
 }
