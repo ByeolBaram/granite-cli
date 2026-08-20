@@ -623,9 +623,6 @@ fn render_rows_with_wrapping(rows: &[Vec<String>], widths: &[usize]) {
             let line = line_parts.join("  ");
             println!("{line}");
         }
-
-        // Blank line between rows for readability
-        println!();
     }
 }
 /*-- tests --*/
