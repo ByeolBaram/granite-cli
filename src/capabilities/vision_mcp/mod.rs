@@ -1,7 +1,5 @@
 //! `VisionMCPCapability`: exposes a vision-language model as an MCP server
-//! that a launched coding agent can call as a tool (describe/OCR/compare/
-//! analyze images). Ported from the `vlm-mcp` prototype -- see
-//! `docs/specs/` for the design this replaces the prototype with.
+//! that a launched coding agent can call as a tool (compare/analyze images).
 //!
 //! Like `AgentModelCapability`, this depends on a configured `Model` (which
 //! in turn resolves its `Provider`) rather than taking an endpoint/api_key
@@ -11,10 +9,7 @@
 //! `bind()` always serves Streamable HTTP: a background server is started
 //! in-process (via [`crate::utils::subserver::SubServer`], the same
 //! mechanism the usage-tracking proxy uses) for the lifetime of this one
-//! launch, and torn down in `on_shutdown`. There is no stdio transport for
-//! this capability -- unlike a stdio MCP server, which the downstream tool
-//! would have to spawn itself, an HTTP server can be started once here and
-//! handed to the launcher as a plain URL.
+//! launch, and torn down in `on_shutdown`.
 
 mod backend;
 mod tools;

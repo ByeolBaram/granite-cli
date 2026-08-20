@@ -1,7 +1,4 @@
-//! VLM backend: a thin OpenAI-compatible vision/chat REST client. Ported
-//! from the `vlm-mcp` prototype's `vlm-mcp-core/src/vlm.rs` -- ownership of
-//! the actual model (Granite Vision, Qwen2.5-VL, etc.) stays out-of-process,
-//! reached over HTTP.
+//! VLM backend: a thin OpenAI-compatible vision/chat REST client.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -85,8 +82,6 @@ impl ImageSource {
     }
 
     /// Reads the image into memory, enforcing `limit` for every source kind
-    /// -- including `Url`, which the original prototype deferred (and never
-    /// actually enforced downstream), leaving remote images unbounded.
     pub async fn to_bytes(&self, limit: u64) -> Result<(Vec<u8>, String), VlmError> {
         match self {
             ImageSource::Bytes { data, mime } => {

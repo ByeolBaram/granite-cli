@@ -1,6 +1,5 @@
 //! MCP tool definitions exposing a `VlmBackend` over `rmcp`'s `#[tool]`/
-//! `#[tool_router]` macros. Ported from the `vlm-mcp` prototype's
-//! `vlm-mcp-core/src/tools.rs`.
+//! `#[tool_router]` macros.
 
 use crate::capabilities::vision_mcp::backend::{AnalysisType, ImageSource, VlmBackend};
 use base64::Engine;
