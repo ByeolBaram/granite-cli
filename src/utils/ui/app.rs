@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -93,12 +93,29 @@ pub struct App {
     pub mode: AppMode,
     table_state: TableState,
     pub detail_scroll: usize,
+    /// Cached once at startup — recomputing this requires `detect_hardware()`
+    /// (DXGI/NVML/Metal calls) on every render, which is the main cause of
+    /// sluggish arrow-key navigation on Windows.
+    recommend_rows_cache: Vec<Vec<String>>,
 }
 
 impl App {
     pub fn new(ctx: crate::AppContext) -> Self {
         let mut table_state = TableState::default();
         table_state.select(Some(0));
+        let recommend_rows_cache = {
+            let source = crate::providers::ProviderSource::from_config(&ctx.config);
+            let instances = source.instances();
+            let providers: Vec<&dyn crate::providers::Provider> =
+                instances.iter().map(|(_, p)| *p).collect();
+            ModelCommands::recommend_rows(
+                None,
+                Some(&providers),
+                &instances,
+                false,
+                ctx.ui.as_ref(),
+            )
+        };
         Self {
             ctx,
             section: Section::Models,
@@ -106,6 +123,7 @@ impl App {
             mode: AppMode::Browse,
             table_state,
             detail_scroll: 0,
+            recommend_rows_cache,
         }
     }
 
@@ -232,47 +250,55 @@ impl App {
 
     fn filtered_ids(&self, query: &str) -> Vec<String> {
         let q = query.to_lowercase();
-        // Hardware has no selectable rows; Recommend uses its own row source
-        let mut ids: Vec<String> = match self.section {
-            Section::Models => MODEL_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Providers => PROVIDER_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Launchers => crate::launchers::LAUNCHER_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Capabilities => crate::capabilities::CAPABILITY_REGISTRY
-                .entries()
-                .keys()
-                .map(|k| k.to_string())
-                .collect(),
-            Section::Recommend => {
-                let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
-                let instances = source.instances();
-                let providers: Vec<&dyn crate::providers::Provider> =
-                    instances.iter().map(|(_, p)| *p).collect();
-                ModelCommands::recommend_rows(
-                    None,
-                    Some(&providers),
-                    &instances,
-                    false,
-                    self.ctx.ui.as_ref(),
-                )
+        // IDs must be returned in the same order as the browse table renders
+        // them so that self.row correctly indexes the highlighted entry.
+        //
+        // Models: catalog_rows uses sort_enriched_rows (family/version/size),
+        //         not alphabetical — derive IDs from there.
+        // Recommend: recommend_rows_cache is sorted by variant size; preserve
+        //            that order instead of re-sorting alphabetically.
+        // Providers/Launchers/Capabilities: render code sorts by key, so
+        //                                   alphabetical sort here is correct.
+        // Hardware: no selectable rows.
+        let ids: Vec<String> = match self.section {
+            Section::Models => ModelCommands::catalog_rows(None)
                 .into_iter()
                 .map(|r| r[0].clone())
-                .collect()
+                .collect(),
+            Section::Providers => {
+                let mut v: Vec<String> = PROVIDER_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
             }
+            Section::Launchers => {
+                let mut v: Vec<String> = crate::launchers::LAUNCHER_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
+            }
+            Section::Capabilities => {
+                let mut v: Vec<String> = crate::capabilities::CAPABILITY_REGISTRY
+                    .entries()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect();
+                v.sort();
+                v
+            }
+            Section::Recommend => self
+                .recommend_rows_cache
+                .iter()
+                .map(|r| r[0].clone())
+                .collect(),
             Section::Hardware => vec![],
         };
-        ids.sort();
         if q.is_empty() {
             ids
         } else {
@@ -311,21 +337,7 @@ impl App {
                     Section::Capabilities => {
                         crate::capabilities::CAPABILITY_REGISTRY.entries().len()
                     }
-                    Section::Recommend => {
-                        let source =
-                            crate::providers::ProviderSource::from_config(&self.ctx.config);
-                        let instances = source.instances();
-                        let providers: Vec<&dyn crate::providers::Provider> =
-                            instances.iter().map(|(_, p)| *p).collect();
-                        ModelCommands::recommend_rows(
-                            None,
-                            Some(&providers),
-                            &instances,
-                            false,
-                            self.ctx.ui.as_ref(),
-                        )
-                        .len()
-                    }
+                    Section::Recommend => self.recommend_rows_cache.len(),
                     Section::Hardware => 0,
                 };
                 let style = if *s == self.section {
@@ -518,17 +530,7 @@ impl App {
                 frame.render_widget(text, table_area);
             }
             Section::Recommend => {
-                let source = crate::providers::ProviderSource::from_config(&self.ctx.config);
-                let instances = source.instances();
-                let providers: Vec<&dyn crate::providers::Provider> =
-                    instances.iter().map(|(_, p)| *p).collect();
-                let all_rows = ModelCommands::recommend_rows(
-                    None,
-                    Some(&providers),
-                    &instances,
-                    false,
-                    self.ctx.ui.as_ref(),
-                );
+                let all_rows = &self.recommend_rows_cache;
 
                 // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
                 let header = Row::new(vec!["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
@@ -747,6 +749,7 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
         terminal.draw(|frame| app.render(frame))?;
 
         if let Event::Key(key) = event::read()?
+            && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
             && app.handle_key(key)
         {
             break;
