@@ -65,6 +65,7 @@ impl OpenRouterProvider {
         map.insert(ModelFunction::Chat, vec![ApiEndpoint::OpenAIChat]);
         map.insert(ModelFunction::ToolCalling, vec![ApiEndpoint::OpenAIChat]);
         map.insert(ModelFunction::Thinking, vec![ApiEndpoint::OpenAIChat]);
+        map.insert(ModelFunction::ImageUnderstanding, vec![ApiEndpoint::OpenAIChat]);
         map.insert(ModelFunction::Guardian, vec![ApiEndpoint::OpenAIChat]);
         map.insert(
             ModelFunction::Embeddings,

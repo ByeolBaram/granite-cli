@@ -132,6 +132,11 @@ impl LlamaCppProvider {
         );
 
         map.insert(
+            ModelFunction::ImageUnderstanding,
+            vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
+        );
+
+        map.insert(
             ModelFunction::Guardian,
             vec![ApiEndpoint::OpenAIChat, ApiEndpoint::AnthropicMessages],
         );
