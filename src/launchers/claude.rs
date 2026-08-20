@@ -1,11 +1,21 @@
-use crate::capabilities::{BindingType, Capability};
-use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
-use crate::registry::ConfigConstructable;
-use crate::utils::resolve_shell_command;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+// Standard
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+// Third Party
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+// Local
+use crate::capabilities::{Binding, BindingType, Capability, McpBinding};
+use crate::launchers::base::HasLauncherMetadata as HasClaudeLauncherMetadata;
+use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
+use crate::launchers::shared::mcp_cli::{
+    mcp_binding_request, register_mcp_server, remove_mcp_server,
+};
+use crate::registry::ConfigConstructable;
+use crate::utils::resolve_shell_command;
+use crate::utils::ui::Ui;
 
 /*-- public --*/
 
@@ -21,6 +31,9 @@ pub struct ClaudeLauncher {
     instance_id: String,
     config: ClaudeLauncherConfig,
     bound_binding: Option<crate::capabilities::AgentModelBinding>,
+    /// `(server_name, binding)` for every MCP-capable capability bound to
+    /// this launcher, registered/removed around `run_command` in `launch()`.
+    bound_mcp_bindings: Vec<(String, McpBinding)>,
 }
 
 impl ConfigConstructable for ClaudeLauncher {
@@ -36,6 +49,7 @@ impl ConfigConstructable for ClaudeLauncher {
             instance_id: instance_id.to_string(),
             config,
             bound_binding: None,
+            bound_mcp_bindings: vec![],
         }
     }
 }
@@ -66,6 +80,18 @@ impl Launcher for ClaudeLauncher {
             );
         }
 
+        if capability_types.contains(&BindingType::Mcp) {
+            let binding = capability.bind(mcp_binding_request()).await?;
+            match binding {
+                Binding::Mcp(binding) => {
+                    self.bound_mcp_bindings
+                        .push((capability.instance_id().to_string(), binding));
+                }
+                other => anyhow::bail!("expected an Mcp binding, got {:?}", other.binding_type()),
+            }
+            return Ok(());
+        }
+
         // Claude knows it expects Anthropic API type
         let request = crate::capabilities::BindingRequest::AgentModel(
             crate::capabilities::AgentModelBindingRequest {
@@ -75,9 +101,13 @@ impl Launcher for ClaudeLauncher {
 
         let binding = capability.bind(request).await?;
         match binding {
-            crate::capabilities::Binding::AgentModel(binding) => {
+            Binding::AgentModel(binding) => {
                 self.bound_binding = Some(binding);
             }
+            other => anyhow::bail!(
+                "expected an AgentModel binding, got {:?}",
+                other.binding_type()
+            ),
         }
         Ok(())
     }
@@ -119,6 +149,34 @@ impl Launcher for ClaudeLauncher {
             Ok(vec![])
         }
     }
+
+    /// Registers each bound MCP server with `claude mcp add-json` (scoped
+    /// `local` so it only applies to this invocation) before exec'ing, and
+    /// best-effort removes them again afterwards -- failure to clean up is
+    /// logged, not propagated, since the launch itself already succeeded or
+    /// failed on its own terms by that point.
+    async fn launch(
+        &self,
+        args: &[String],
+        ctx: &LaunchContext,
+        ui: &dyn Ui,
+    ) -> anyhow::Result<std::process::ExitStatus> {
+        let binary = self.validate_command()?;
+        let overlay = self.env_overlay(ctx).await?;
+
+        const SCOPE: &[&str] = &["--scope", "local"];
+        for (name, binding) in &self.bound_mcp_bindings {
+            register_mcp_server(&binary, name, binding, SCOPE, ctx, ui)?;
+        }
+
+        let result = run_command(binary.clone(), &overlay, args, ctx, ui).await;
+
+        for (name, _) in &self.bound_mcp_bindings {
+            remove_mcp_server(&binary, name, SCOPE, ctx, ui);
+        }
+
+        result
+    }
 }
 
 impl HasClaudeLauncherMetadata for ClaudeLauncher {
@@ -127,16 +185,11 @@ impl HasClaudeLauncherMetadata for ClaudeLauncher {
             name: "Claude CLI".to_string(),
             description: "Anthropic's Claude CLI tool".to_string(),
             default_command: "claude".to_string(),
-            supported_capabilities: HashSet::from([BindingType::AgentModel]),
+            supported_capabilities: HashSet::from([BindingType::AgentModel, BindingType::Mcp]),
             tags: vec!["claude".to_string(), "anthropic".to_string()],
         }
     }
 }
-
-/*-- private --*/
-
-// HasClaudeLauncherMetadata is the macro-generated trait; re-exported via mod.rs.
-use crate::launchers::base::HasLauncherMetadata as HasClaudeLauncherMetadata;
 
 /*-- tests --*/
 
