@@ -95,7 +95,7 @@ impl Launcher for HermesLauncher {
             return Ok(vec![]);
         };
         let overlay = vec![EnvBinding {
-            key: "HERMES_HOME".to_string(),
+            key: HERMES_HOME_ENV.to_string(),
             value: hermes_config_path(ctx)?.to_string_lossy().to_string(),
         }];
         Ok(overlay)
@@ -383,7 +383,7 @@ mod tests {
             .unwrap();
         let home = overlay
             .iter()
-            .find(|b| b.key == "HERMES_HOME")
+            .find(|b| b.key == HERMES_HOME_ENV)
             .expect("HERMES_HOME env");
         assert!(
             home.value.ends_with("launcher-state/hermes/config.yaml"),
