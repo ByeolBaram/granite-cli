@@ -151,7 +151,7 @@ impl Capability for VisionMCPCapability {
     }
 
     fn description(&self) -> &str {
-        "Exposes a vision-language model as an MCP server (describe/OCR/compare/analyze images) for a launched coding agent to call."
+        "Exposes a vision-language model as an MCP server (compare/analyze images) for a launched coding agent to call."
     }
 
     fn dependencies(&self) -> Vec<Dependency> {
@@ -258,7 +258,7 @@ impl HasCapabilityMetadata for VisionMCPCapability {
     fn metadata() -> CapabilityMetadata {
         CapabilityMetadata {
             name: "Vision MCP Server".to_string(),
-            description: "Exposes a vision-language model as an MCP server (describe/OCR/compare/analyze images) for a launched coding agent to call.".to_string(),
+            description: "Exposes a vision-language model as an MCP server (compare/analyze images) for a launched coding agent to call.".to_string(),
             dependencies: vec![Dependency::Model {
                 config_key: "model_id".to_string(),
                 requirement: ModelRequirement {

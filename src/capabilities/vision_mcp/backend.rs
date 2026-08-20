@@ -134,12 +134,6 @@ impl ImageSource {
 
 #[async_trait]
 pub trait VlmBackend: Send + Sync + fmt::Debug {
-    async fn describe_image(
-        &self,
-        image: ImageSource,
-        prompt: Option<String>,
-    ) -> Result<String, VlmError>;
-
     async fn compare_images(
         &self,
         images: Vec<ImageSource>,
@@ -313,26 +307,6 @@ impl OpenAiCompatibleVlm {
 
 #[async_trait]
 impl VlmBackend for OpenAiCompatibleVlm {
-    async fn describe_image(
-        &self,
-        image: ImageSource,
-        prompt: Option<String>,
-    ) -> Result<String, VlmError> {
-        let user_prompt = prompt.unwrap_or_else(|| {
-            "Describe this image in detail. Include objects, text, colors, layout, and any notable features."
-                .to_string()
-        });
-        let content = ChatContent::Multi(vec![
-            self.image_part(&image).await?,
-            ContentPart::Text { text: user_prompt },
-        ]);
-        self.chat_text(
-            "You are a helpful visual assistant. Describe images accurately and comprehensively.",
-            content,
-        )
-        .await
-    }
-
     async fn compare_images(
         &self,
         images: Vec<ImageSource>,

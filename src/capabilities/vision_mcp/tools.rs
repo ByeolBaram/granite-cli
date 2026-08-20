@@ -64,23 +64,20 @@ macro_rules! impl_parse_image {
 /*-- Tool argument types ------------------------------------------------------------*/
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct DescribeImageArgs {
+pub struct ImageSourceArgs {
     #[schemars(
         description = "Image source type: 'file' (path), 'base64' (data), or 'url' (HTTP(S))"
     )]
     pub source_type: String,
     /// The image: file path, base64-encoded data, or HTTP(S) URL
     pub image: String,
-    /// Optional free-text instruction overriding the default description prompt
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prompt: Option<String>,
 }
-impl_parse_image!(DescribeImageArgs);
+impl_parse_image!(ImageSourceArgs);
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CompareImagesArgs {
     /// Array of image sources to compare (minimum 2)
-    pub images: Vec<DescribeImageArgs>,
+    pub images: Vec<ImageSourceArgs>,
     /// Optional free-text instruction
     pub prompt: Option<String>,
 }
@@ -116,20 +113,6 @@ impl VlmToolRegistry {
 
 #[tool_router(server_handler)]
 impl VlmToolRegistry {
-    #[tool(
-        description = "Describe an image with a Vision Language Model. Returns a natural language description of the image content, including objects, text, colors, layout, and notable features."
-    )]
-    async fn vlm_describe_image(
-        &self,
-        Parameters(args): Parameters<DescribeImageArgs>,
-    ) -> Result<String, ErrorData> {
-        let image = args.parse_image()?;
-        self.vlm
-            .describe_image(image, args.prompt)
-            .await
-            .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))
-    }
-
     #[tool(
         description = "Compare two or more images and note differences, similarities, and changes. Pass at least 2 images to compare."
     )]
