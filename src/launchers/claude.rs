@@ -30,7 +30,7 @@ pub struct ClaudeLauncherConfig {
 pub struct ClaudeLauncher {
     instance_id: String,
     config: ClaudeLauncherConfig,
-    bound_binding: Option<crate::capabilities::AgentModelBinding>,
+    bound_agent_model: Option<crate::capabilities::AgentModelBinding>,
     /// `(server_name, binding)` for every MCP-capable capability bound to
     /// this launcher, registered/removed around `run_command` in `launch()`.
     bound_mcp_bindings: Vec<(String, McpBinding)>,
@@ -48,7 +48,7 @@ impl ConfigConstructable for ClaudeLauncher {
         Self {
             instance_id: instance_id.to_string(),
             config,
-            bound_binding: None,
+            bound_agent_model: None,
             bound_mcp_bindings: vec![],
         }
     }
@@ -102,7 +102,7 @@ impl Launcher for ClaudeLauncher {
         let binding = capability.bind(request).await?;
         match binding {
             Binding::AgentModel(binding) => {
-                self.bound_binding = Some(binding);
+                self.bound_agent_model = Some(binding);
             }
             other => anyhow::bail!(
                 "expected an AgentModel binding, got {:?}",
@@ -117,7 +117,7 @@ impl Launcher for ClaudeLauncher {
     }
 
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
-        if let Some(binding) = &self.bound_binding {
+        if let Some(binding) = &self.bound_agent_model {
             let mut api_key_val = match &binding.api_key {
                 Some(api_key) => api_key.clone().0,
                 _ => "".to_string(),
