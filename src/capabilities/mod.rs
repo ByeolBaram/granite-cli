@@ -77,6 +77,7 @@ pub use base::{
     CapabilityMetadata, Dependency, EnvBinding, LaunchContext, McpBinding, McpBindingRequest,
     McpTransportKind,
 };
+pub use crate::providers::ApiType;
 
 mod requirement;
 pub use requirement::{ModelRequirement, ProviderRequirement, ShellCommandRequirement};

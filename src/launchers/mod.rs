@@ -15,6 +15,9 @@ pub static LAUNCHER_REGISTRY: LazyLock<base::LauncherFactory> = LazyLock::new(||
     factory.register::<bob::BobLauncher>("bob");
     factory.register::<pi::PiLauncher>("pi");
     factory.register::<opencode::OpenCodeLauncher>("opencode");
+    factory.register::<hermes::HermesLauncher>("hermes");
+    factory.register::<goose::GooseLauncher>("goose");
+    factory.register::<openclaw::OpenClawLauncher>("openclaw");
     factory
 });
 
@@ -79,14 +82,20 @@ impl crate::dependency::Configured<dyn Launcher> for LauncherSource {
 mod base;
 pub mod bob;
 pub mod claude;
+pub mod hermes;
+pub mod goose;
 pub mod opencode;
 pub mod pi;
+pub mod openclaw;
 
 pub use base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 pub use bob::{BobLauncher, BobLauncherConfig};
 pub use claude::{ClaudeLauncher, ClaudeLauncherConfig};
+pub use hermes::{HermesLauncher, HermesLauncherConfig};
 pub use opencode::{OpenCodeLauncher, OpenCodeLauncherConfig};
 pub use pi::{PiLauncher, PiLauncherConfig};
+pub use goose::{GooseLauncher, GooseLauncherConfig};
+pub use openclaw::{OpenClawLauncher, OpenClawLauncherConfig};
 
 /*-- private shared modules --*/
 
@@ -119,6 +128,9 @@ mod tests {
         assert!(LAUNCHER_REGISTRY.get("bob").is_some());
         assert!(LAUNCHER_REGISTRY.get("pi").is_some());
         assert!(LAUNCHER_REGISTRY.get("opencode").is_some());
+        assert!(LAUNCHER_REGISTRY.get("hermes").is_some());
+        assert!(LAUNCHER_REGISTRY.get("goose").is_some());
+        assert!(LAUNCHER_REGISTRY.get("openclaw").is_some());
         assert!(LAUNCHER_REGISTRY.get("nonexistent").is_none());
     }
 
@@ -163,6 +175,9 @@ mod tests {
         assert!(catalog.contains_key("bob"));
         assert!(catalog.contains_key("pi"));
         assert!(catalog.contains_key("opencode"));
+        assert!(catalog.contains_key("hermes"));
+        assert!(catalog.contains_key("goose"));
+        assert!(catalog.contains_key("openclaw"));
     }
 
     #[test]
@@ -173,6 +188,9 @@ mod tests {
         assert!(source.config_schema("bob").is_some());
         assert!(source.config_schema("pi").is_some());
         assert!(source.config_schema("opencode").is_some());
+        assert!(source.config_schema("hermes").is_some());
+        assert!(source.config_schema("goose").is_some());
+        assert!(source.config_schema("openclaw").is_some());
         assert!(source.config_schema("nonexistent").is_none());
     }
 }
