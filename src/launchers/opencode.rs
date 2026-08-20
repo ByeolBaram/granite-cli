@@ -8,17 +8,26 @@
 //! own small generated file under `GRANITE_CLI_HOME` and points
 //! `OPENCODE_CONFIG` at it.
 
-use crate::capabilities::{AgentModelBinding, BindingType, Capability};
+// Standard
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+// Third Party
+use anyhow::Context;
+use alog::{alog_channel, use_channel, MessageLevel};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+// Local
+use crate::capabilities::{AgentModelBinding, Binding, BindingType, Capability, McpBinding};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
+use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::providers::ApiType;
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
 use crate::utils::ui::Ui;
-use anyhow::Context;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+
+use_channel!("OPNCD");
 
 /*-- public --*/
 
@@ -39,7 +48,10 @@ pub struct OpenCodeLauncherConfig {
 pub struct OpenCodeLauncher {
     instance_id: String,
     config: OpenCodeLauncherConfig,
-    bound_binding: Option<AgentModelBinding>,
+    bound_agent_model: Option<AgentModelBinding>,
+    /// `(server_name, binding)` for every MCP-capable capability bound to
+    /// this launcher, written into the generated config's `mcp` block.
+    bound_mcp_bindings: Vec<(String, McpBinding)>,
 }
 
 impl ConfigConstructable for OpenCodeLauncher {
@@ -55,7 +67,8 @@ impl ConfigConstructable for OpenCodeLauncher {
         Self {
             instance_id: instance_id.to_string(),
             config,
-            bound_binding: None,
+            bound_agent_model: None,
+            bound_mcp_bindings: vec![],
         }
     }
 }
@@ -86,6 +99,18 @@ impl Launcher for OpenCodeLauncher {
             );
         }
 
+        if capability_types.contains(&BindingType::Mcp) {
+            let binding = capability.bind(mcp_binding_request()).await?;
+            match binding {
+                Binding::Mcp(binding) => {
+                    self.bound_mcp_bindings
+                        .push((capability.instance_id().to_string(), binding));
+                }
+                other => anyhow::bail!("expected an Mcp binding, got {:?}", other.binding_type()),
+            }
+            return Ok(());
+        }
+
         // OpenCode's custom-provider config speaks whatever dialect its `npm`
         // SDK package implements. `@ai-sdk/openai-compatible` is the one every
         // granite-cli provider can serve, so that is what we ask for.
@@ -97,9 +122,13 @@ impl Launcher for OpenCodeLauncher {
 
         let binding = capability.bind(request).await?;
         match binding {
-            crate::capabilities::Binding::AgentModel(binding) => {
-                self.bound_binding = Some(binding);
+            Binding::AgentModel(binding) => {
+                self.bound_agent_model = Some(binding);
             }
+            other => anyhow::bail!(
+                "expected an AgentModel binding, got {:?}",
+                other.binding_type()
+            ),
         }
         Ok(())
     }
@@ -117,23 +146,26 @@ impl Launcher for OpenCodeLauncher {
     /// line. Providers with no key omit `apiKey` entirely -- OpenCode's
     /// custom-provider config does not require one.
     async fn env_overlay(&self, ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
-        let Some(binding) = &self.bound_binding else {
-            return Ok(vec![]);
-        };
-        let mut overlay = vec![EnvBinding {
-            key: CONFIG_ENV.to_string(),
-            value: opencode_config_path(ctx)?.to_string_lossy().to_string(),
-        }];
-        if let Some(api_key) = binding
-            .api_key
-            .as_ref()
-            .map(|api_key| api_key.0.clone())
-            .filter(|key| !key.is_empty())
-        {
+        let mut overlay = vec![];
+        if self.bound_agent_model.is_some() || !self.bound_mcp_bindings.is_empty() {
             overlay.push(EnvBinding {
-                key: API_KEY_ENV.to_string(),
-                value: api_key,
+                key: CONFIG_ENV.to_string(),
+                value: opencode_config_path(ctx)?.to_string_lossy().to_string(),
             });
+
+            if let Some(binding) = &self.bound_agent_model {
+                if let Some(api_key) = binding
+                    .api_key
+                    .as_ref()
+                    .map(|api_key| api_key.0.clone())
+                    .filter(|key| !key.is_empty())
+                {
+                    overlay.push(EnvBinding {
+                        key: API_KEY_ENV.to_string(),
+                        value: api_key,
+                    });
+                }
+            }
         }
         Ok(overlay)
     }
@@ -153,12 +185,17 @@ impl Launcher for OpenCodeLauncher {
         ctx: &LaunchContext,
         ui: &dyn Ui,
     ) -> anyhow::Result<std::process::ExitStatus> {
-        let binary = self.validate_command()?;
-        let overlay = self.env_overlay(ctx).await?;
-
-        if let Some(binding) = &self.bound_binding {
-            let entry = self.provider_entry(binding)?;
-            let config = generate_config(binding, entry);
+        if self.bound_agent_model.is_some() || !self.bound_mcp_bindings.is_empty() {
+            let provider_entry = self
+                .bound_agent_model
+                .as_ref()
+                .map(|binding| self.provider_entry(binding))
+                .transpose()?;
+            let config = generate_config(
+                self.bound_agent_model.as_ref(),
+                provider_entry,
+                &self.bound_mcp_bindings,
+            );
             let config_path = opencode_config_path(ctx)?;
 
             if ctx.dry_run {
@@ -176,6 +213,10 @@ impl Launcher for OpenCodeLauncher {
             }
         }
 
+        let binary = self.validate_command()?;
+        let overlay = self.env_overlay(ctx).await?;
+        alog_channel!(MessageLevel::Debug2, "Env Overlay: {:#?}", overlay);
+
         run_command(binary, &overlay, args, ctx, ui).await
     }
 }
@@ -186,7 +227,7 @@ impl HasOpenCodeLauncherMetadata for OpenCodeLauncher {
             name: "OpenCode CLI".to_string(),
             description: "OpenCode terminal coding agent".to_string(),
             default_command: "opencode".to_string(),
-            supported_capabilities: HashSet::from([BindingType::AgentModel]),
+            supported_capabilities: HashSet::from([BindingType::AgentModel, BindingType::Mcp]),
             tags: vec!["opencode".to_string(), "coding-agent".to_string()],
         }
     }
@@ -274,17 +315,52 @@ fn opencode_config_path(ctx: &LaunchContext) -> anyhow::Result<PathBuf> {
     Ok(crate::config::Config::launcher_state_dir(&ctx.launcher_id)?.join(CONFIG_FILE))
 }
 
-/// Wraps a single provider entry in the top-level `opencode.json` shape,
-/// selecting it via the top-level `model` key (`provider/model`) so it
-/// applies uniformly across the TUI, `run`, `attach`, and GitHub Action.
-fn generate_config(binding: &AgentModelBinding, entry: serde_json::Value) -> serde_json::Value {
-    let mut providers = serde_json::Map::new();
-    providers.insert(binding.provider_name.clone(), entry);
-    serde_json::json!({
-        "$schema": "https://opencode.ai/config.json",
-        "model": format!("{}/{}", binding.provider_name, binding.model_name),
-        "provider": serde_json::Value::Object(providers),
-    })
+/// Builds the top-level `opencode.json` shape: a provider entry (if bound)
+/// selected via the top-level `model` key (`provider/model`) so it applies
+/// uniformly across the TUI, `run`, `attach`, and GitHub Action; plus an
+/// `mcp` block (if any MCP servers are bound), using opencode's
+/// `McpLocalConfig`/`McpRemoteConfig` shape (see
+/// <https://opencode.ai/config.json>).
+fn generate_config(
+    binding: Option<&AgentModelBinding>,
+    provider_entry: Option<serde_json::Value>,
+    mcp_bindings: &[(String, McpBinding)],
+) -> serde_json::Value {
+    let mut config = serde_json::json!({ "$schema": "https://opencode.ai/config.json" });
+    if let (Some(binding), Some(entry)) = (binding, provider_entry) {
+        let mut providers = serde_json::Map::new();
+        providers.insert(binding.provider_name.clone(), entry);
+        config["model"] =
+            serde_json::Value::String(format!("{}/{}", binding.provider_name, binding.model_name));
+        config["provider"] = serde_json::Value::Object(providers);
+    }
+    if !mcp_bindings.is_empty() {
+        let mut mcp = serde_json::Map::new();
+        for (name, binding) in mcp_bindings {
+            mcp.insert(name.clone(), {
+                match binding {
+                    McpBinding::Stdio { command, args, env } => {
+                        let mut full_command = vec![command.clone()];
+                        full_command.extend(args.iter().cloned());
+                        serde_json::json!({
+                            "type": "local",
+                            "command": full_command,
+                            "environment": env,
+                        })
+                    }
+                    McpBinding::Http { url, headers } | McpBinding::Sse { url, headers } => {
+                        serde_json::json!({
+                            "type": "remote",
+                            "url": url,
+                            "headers": headers,
+                        })
+                    }
+                }
+            });
+        }
+        config["mcp"] = serde_json::Value::Object(mcp);
+    }
+    config
 }
 
 fn write_opencode_config(path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
@@ -324,7 +400,7 @@ mod tests {
 
     fn bound(cfg: serde_json::Value, binding: AgentModelBinding) -> OpenCodeLauncher {
         let mut l = launcher(cfg);
-        l.bound_binding = Some(binding);
+        l.bound_agent_model = Some(binding);
         l
     }
 
@@ -483,13 +559,25 @@ mod tests {
     #[test]
     fn generate_config_nests_entry_under_provider_name_and_sets_default_model() {
         let entry = serde_json::json!({ "npm": "@ai-sdk/openai-compatible" });
-        let config = generate_config(&binding(), entry);
+        let config = generate_config(Some(&binding()), Some(entry), &[]);
         assert_eq!(config["$schema"], "https://opencode.ai/config.json");
         assert_eq!(config["model"], "my-ollama/granite4.1:8b");
         assert_eq!(
             config["provider"]["my-ollama"]["npm"],
             "@ai-sdk/openai-compatible"
         );
+    }
+
+    #[test]
+    fn generate_config_writes_mcp_block_without_a_model_binding() {
+        let mcp_binding = McpBinding::Http {
+            url: "http://127.0.0.1:9999".to_string(),
+            headers: Default::default(),
+        };
+        let config = generate_config(None, None, &[("vision".to_string(), mcp_binding)]);
+        assert!(config.get("model").is_none());
+        assert_eq!(config["mcp"]["vision"]["type"], "remote");
+        assert_eq!(config["mcp"]["vision"]["url"], "http://127.0.0.1:9999");
     }
 
     // -- env overlay -----------------------------------------------------------
