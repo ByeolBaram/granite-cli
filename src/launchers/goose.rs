@@ -7,7 +7,9 @@
 //! session-scoped `--with-extension`/`--with-streamable-http-extension` CLI
 //! flags for MCP servers (goose calls them "extensions").
 
-use crate::capabilities::{AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding};
+use crate::capabilities::{
+    AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding,
+};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
 use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::registry::ConfigConstructable;
@@ -401,7 +403,10 @@ mod tests {
         let meta = GooseLauncher::metadata();
         assert_eq!(meta.name, "Goose CLI");
         assert_eq!(meta.default_command, "goose");
-        assert!(meta.supported_capabilities.contains(&BindingType::AgentModel));
+        assert!(
+            meta.supported_capabilities
+                .contains(&BindingType::AgentModel)
+        );
         assert!(meta.supported_capabilities.contains(&BindingType::Mcp));
     }
 
@@ -534,10 +539,7 @@ mod tests {
             .env_overlay(&ctx(false))
             .await
             .unwrap();
-        let key = overlay
-            .iter()
-            .find(|b| b.key == "OPENAI_API_KEY")
-            .unwrap();
+        let key = overlay.iter().find(|b| b.key == "OPENAI_API_KEY").unwrap();
         assert_eq!(key.value, "sk-test");
     }
 
@@ -657,17 +659,17 @@ mod tests {
             vec!["--with-extension".to_string(), "foo".to_string()],
             &CaptureUi::default(),
         );
-        assert_eq!(
-            out,
-            vec!["session", "--with-extension", "foo", "--resume"]
-        );
+        assert_eq!(out, vec!["session", "--with-extension", "foo", "--resume"]);
     }
 
     #[test]
     fn insert_extension_flags_inserts_after_explicit_run_subcommand() {
         let out = insert_extension_flags(
             &["run".to_string(), "-t".to_string(), "hi".to_string()],
-            vec!["--with-streamable-http-extension".to_string(), "url".to_string()],
+            vec![
+                "--with-streamable-http-extension".to_string(),
+                "url".to_string(),
+            ],
             &CaptureUi::default(),
         );
         assert_eq!(

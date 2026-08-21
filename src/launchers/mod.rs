@@ -82,20 +82,20 @@ impl crate::dependency::Configured<dyn Launcher> for LauncherSource {
 mod base;
 pub mod bob;
 pub mod claude;
-pub mod hermes;
 pub mod goose;
+pub mod hermes;
+pub mod openclaw;
 pub mod opencode;
 pub mod pi;
-pub mod openclaw;
 
 pub use base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
 pub use bob::{BobLauncher, BobLauncherConfig};
 pub use claude::{ClaudeLauncher, ClaudeLauncherConfig};
+pub use goose::{GooseLauncher, GooseLauncherConfig};
 pub use hermes::{HermesLauncher, HermesLauncherConfig};
+pub use openclaw::{OpenClawLauncher, OpenClawLauncherConfig};
 pub use opencode::{OpenCodeLauncher, OpenCodeLauncherConfig};
 pub use pi::{PiLauncher, PiLauncherConfig};
-pub use goose::{GooseLauncher, GooseLauncherConfig};
-pub use openclaw::{OpenClawLauncher, OpenClawLauncherConfig};
 
 /*-- private shared modules --*/
 

@@ -72,12 +72,12 @@ impl crate::dependency::Configured<dyn Capability> for CapabilitySource {
 /*-- Module Declarations -----------------------------------------------------*/
 
 mod base;
+pub use crate::providers::ApiType;
 pub use base::{
     AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
     CapabilityMetadata, Dependency, EnvBinding, LaunchContext, McpBinding, McpBindingRequest,
     McpTransportKind,
 };
-pub use crate::providers::ApiType;
 
 mod requirement;
 pub use requirement::{ModelRequirement, ProviderRequirement, ShellCommandRequirement};

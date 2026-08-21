@@ -136,7 +136,9 @@ impl Launcher for ClaudeLauncher {
                 },
                 EnvBinding {
                     key: "CLAUDE_CODE_MAX_CONTEXT_TOKENS".to_string(),
-                    value: binding.context_length.map_or(String::new(), |v| v.to_string()),
+                    value: binding
+                        .context_length
+                        .map_or(String::new(), |v| v.to_string()),
                 },
                 EnvBinding {
                     key: "ANTHROPIC_AUTH_TOKEN".to_string(),

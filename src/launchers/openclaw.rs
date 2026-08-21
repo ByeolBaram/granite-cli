@@ -8,7 +8,9 @@
 //! OpenCode's `OPENCODE_CONFIG`. The user's own `~/.openclaw/openclaw.json`
 //! is never touched.
 
-use crate::capabilities::{AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding};
+use crate::capabilities::{
+    AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding,
+};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
 use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::registry::ConfigConstructable;
@@ -360,7 +362,10 @@ mod tests {
         let meta = OpenClawLauncher::metadata();
         assert_eq!(meta.name, "OpenClaw CLI");
         assert_eq!(meta.default_command, "openclaw");
-        assert!(meta.supported_capabilities.contains(&BindingType::AgentModel));
+        assert!(
+            meta.supported_capabilities
+                .contains(&BindingType::AgentModel)
+        );
         assert!(meta.supported_capabilities.contains(&BindingType::Mcp));
     }
 
@@ -415,11 +420,16 @@ mod tests {
             config["models"]["providers"]["my-ollama"]["models"][0]["contextWindow"],
             131072
         );
-        assert_eq!(config["agents"]["defaults"]["model"], "my-ollama/granite4.1:8b");
+        assert_eq!(
+            config["agents"]["defaults"]["model"],
+            "my-ollama/granite4.1:8b"
+        );
         // No key means no apiKey field at all.
-        assert!(config["models"]["providers"]["my-ollama"]
-            .get("apiKey")
-            .is_none());
+        assert!(
+            config["models"]["providers"]["my-ollama"]
+                .get("apiKey")
+                .is_none()
+        );
     }
 
     #[test]
@@ -429,7 +439,10 @@ mod tests {
             ..binding()
         };
         let config = generate_config(Some(&b), &[]);
-        assert_eq!(config["models"]["providers"]["my-ollama"]["apiKey"], "sk-test");
+        assert_eq!(
+            config["models"]["providers"]["my-ollama"]["apiKey"],
+            "sk-test"
+        );
     }
 
     #[test]
@@ -440,7 +453,10 @@ mod tests {
         };
         let config = generate_config(None, &[("vision".to_string(), mcp_binding)]);
         assert!(config.get("models").is_none());
-        assert_eq!(config["mcp"]["servers"]["vision"]["url"], "http://127.0.0.1:9999");
+        assert_eq!(
+            config["mcp"]["servers"]["vision"]["url"],
+            "http://127.0.0.1:9999"
+        );
         assert_eq!(
             config["mcp"]["servers"]["vision"]["transport"],
             "streamable-http"
@@ -485,7 +501,9 @@ mod tests {
             .find(|b| b.key == "OPENCLAW_CONFIG_PATH")
             .expect("config redirect");
         assert!(
-            config.value.ends_with("launcher-state/openclaw/openclaw.json"),
+            config
+                .value
+                .ends_with("launcher-state/openclaw/openclaw.json"),
             "{}",
             config.value
         );
@@ -511,7 +529,9 @@ mod tests {
 
         let infos = ui.infos.borrow();
         assert!(
-            infos.iter().any(|m| m.contains("Would write OpenClaw config")),
+            infos
+                .iter()
+                .any(|m| m.contains("Would write OpenClaw config")),
             "expected a dry-run notice, got {infos:?}"
         );
         assert!(
@@ -539,7 +559,11 @@ mod tests {
 
         let infos = ui.infos.borrow();
         assert!(infos.iter().any(|m| m.contains("args: --version")));
-        assert!(!infos.iter().any(|m| m.contains("Would write OpenClaw config")));
+        assert!(
+            !infos
+                .iter()
+                .any(|m| m.contains("Would write OpenClaw config"))
+        );
         assert!(!infos.iter().any(|m| m.contains(CONFIG_ENV)));
     }
 }

@@ -12,7 +12,9 @@
 //! `$HERMES_HOME`/`~/.hermes` through into its own generated directory and
 //! only ever writes `config.yaml` itself.
 
-use crate::capabilities::{AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding};
+use crate::capabilities::{
+    AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding,
+};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
 use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::registry::ConfigConstructable;
@@ -518,7 +520,10 @@ mod tests {
         let meta = HermesLauncher::metadata();
         assert_eq!(meta.name, "Hermes CLI");
         assert_eq!(meta.default_command, "hermes");
-        assert!(meta.supported_capabilities.contains(&BindingType::AgentModel));
+        assert!(
+            meta.supported_capabilities
+                .contains(&BindingType::AgentModel)
+        );
         assert!(meta.supported_capabilities.contains(&BindingType::Mcp));
     }
 
@@ -653,7 +658,10 @@ mod tests {
         );
         assert_eq!(config["mcp_servers"]["vision"]["args"][0], "__mcp-serve");
         assert_eq!(config["mcp_servers"]["vision"]["env"]["FOO"], "bar");
-        assert_eq!(config["mcp_servers"]["remote"]["url"], "http://127.0.0.1:9999");
+        assert_eq!(
+            config["mcp_servers"]["remote"]["url"],
+            "http://127.0.0.1:9999"
+        );
         assert_eq!(
             config["mcp_servers"]["remote"]["headers"]["Authorization"],
             "Bearer x"
@@ -682,7 +690,11 @@ mod tests {
             .iter()
             .find(|b| b.key == HERMES_HOME_ENV)
             .expect("HERMES_HOME env");
-        assert!(home.value.ends_with("launcher-state/hermes"), "{}", home.value);
+        assert!(
+            home.value.ends_with("launcher-state/hermes"),
+            "{}",
+            home.value
+        );
     }
 
     #[tokio::test]
@@ -715,7 +727,11 @@ mod tests {
     fn materialize_writes_config_and_never_touches_source_dir() {
         let tmp = tempfile::TempDir::new().unwrap();
         let (state, source) = dirs(&tmp);
-        std::fs::write(source.join("config.yaml"), "model:\n  default: user-model\n").unwrap();
+        std::fs::write(
+            source.join("config.yaml"),
+            "model:\n  default: user-model\n",
+        )
+        .unwrap();
 
         materialize_hermes_config(
             &state,
@@ -760,10 +776,17 @@ mod tests {
                 .unwrap_or_else(|_| panic!("{linked} should be linked"));
             assert!(md.file_type().is_symlink(), "{linked} should be a symlink");
             let target = std::fs::read_link(&path).unwrap();
-            assert!(target.is_absolute(), "{linked} -> {} must be absolute", target.display());
+            assert!(
+                target.is_absolute(),
+                "{linked} -> {} must be absolute",
+                target.display()
+            );
             assert!(path.exists(), "{linked} link must resolve");
         }
-        assert_eq!(std::fs::read_to_string(state.join(".env")).unwrap(), "SECRET=1");
+        assert_eq!(
+            std::fs::read_to_string(state.join(".env")).unwrap(),
+            "SECRET=1"
+        );
         // config.yaml is ours, not a link into the user's directory.
         assert!(
             !std::fs::symlink_metadata(state.join("config.yaml"))
@@ -850,7 +873,9 @@ mod tests {
 
         let infos = ui.infos.borrow();
         assert!(
-            infos.iter().any(|m| m.contains("Would write Hermes config")),
+            infos
+                .iter()
+                .any(|m| m.contains("Would write Hermes config")),
             "expected a dry-run notice, got {infos:?}"
         );
         assert!(
@@ -886,7 +911,9 @@ mod tests {
         let infos = ui.infos.borrow();
         assert!(infos.iter().any(|m| m.contains("--version")));
         assert!(
-            !infos.iter().any(|m| m.contains("Would write Hermes config")),
+            !infos
+                .iter()
+                .any(|m| m.contains("Would write Hermes config")),
             "expected no config write without binding"
         );
         // Without a binding there is no generated config, so hermes keeps
