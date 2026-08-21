@@ -18,3 +18,13 @@ RUN curl -fsSL https://claude.ai/install.sh | bash && \
     chmod -R ugo+rx /root && \
     mv /root/.local/bin/claude /usr/local/bin/claude && \
     chmod ugo+rx /usr/local/bin/claude
+
+# Install bobshell
+RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash
+
+# Install opencode
+RUN curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path && \
+    mv /root/.opencode/bin/opencode /usr/local/bin/opencode
+
+# Install pi
+RUN npm install -g --ignore-scripts --min-release-age=0 @earendil-works/pi-coding-agent
