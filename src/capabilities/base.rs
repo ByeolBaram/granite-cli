@@ -96,7 +96,6 @@ pub struct AgentModelBinding {
     pub api_key: Option<Secret>,
     pub verify_ssl: bool,
     pub context_length: Option<u64>,
-    pub temperature: Option<f64>,
 }
 
 /// Which wire transport an MCP server binding uses. Payload-free and

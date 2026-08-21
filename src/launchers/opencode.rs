@@ -394,7 +394,6 @@ mod tests {
             api_key: None,
             verify_ssl: true,
             context_length: Some(131072),
-            temperature: None,
         }
     }
 
