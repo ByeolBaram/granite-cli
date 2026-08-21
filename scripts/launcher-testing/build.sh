@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-docker buildx build -t agent-test .
+docker buildx build -t agents-test .
