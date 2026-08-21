@@ -183,8 +183,9 @@ impl Launcher for GooseLauncher {
     }
 
     /// Registers each bound MCP server as a session-scoped goose "extension"
-    /// via `--with-extension`/`--with-streamable-http-extension`, prepended
-    /// ahead of the caller's own args -- goose has no way to register an
+    /// via `--with-extension`/`--with-streamable-http-extension`, inserted at
+    /// whichever position in the caller's own args actually parses (see
+    /// `insert_extension_flags`) -- goose has no way to register an
     /// extension without these flags on the invocation itself, so unlike
     /// `claude`/`bob` there is nothing to register before spawning and clean
     /// up after: the registration *is* the invocation.
@@ -197,7 +198,7 @@ impl Launcher for GooseLauncher {
         let binary = self.validate_command()?;
         let overlay = self.env_overlay(ctx).await?;
 
-        let mut goose_args: Vec<String> = vec![];
+        let mut extension_flags: Vec<String> = vec![];
         for (_, binding) in &self.bound_mcp_bindings {
             match binding {
                 McpBinding::Stdio { command, args, env } => {
@@ -208,8 +209,8 @@ impl Launcher for GooseLauncher {
                         env.iter().map(|(k, v)| format!("{k}={v}")).collect();
                     parts.push(command.clone());
                     parts.extend(args.iter().cloned());
-                    goose_args.push("--with-extension".to_string());
-                    goose_args.push(parts.join(" "));
+                    extension_flags.push("--with-extension".to_string());
+                    extension_flags.push(parts.join(" "));
                 }
                 McpBinding::Http { url, headers } | McpBinding::Sse { url, headers } => {
                     if !headers.is_empty() {
@@ -218,12 +219,12 @@ impl Launcher for GooseLauncher {
                              custom headers; they will be dropped for this launch",
                         );
                     }
-                    goose_args.push("--with-streamable-http-extension".to_string());
-                    goose_args.push(url.clone());
+                    extension_flags.push("--with-streamable-http-extension".to_string());
+                    extension_flags.push(url.clone());
                 }
             }
         }
-        goose_args.extend_from_slice(args);
+        let goose_args = insert_extension_flags(args, extension_flags, ui);
 
         run_command(binary, &overlay, &goose_args, ctx, ui).await
     }
@@ -253,6 +254,80 @@ const DEFAULT_OPENAI_BASE_PATH: &str = "v1/chat/completions";
 /// "No provider configured" if `OPENAI_API_KEY` is unset entirely, even for a
 /// local server that never checks it.
 const PLACEHOLDER_API_KEY: &str = "granite-cli";
+
+/// Subcommands whose clap parser actually accepts
+/// `--with-extension`/`--with-streamable-http-extension`, per `goose <sub>
+/// --help`. Their short aliases are included since either form is a valid
+/// first token.
+const EXTENSION_CAPABLE_SUBCOMMANDS: &[&str] = &["session", "s", "run"];
+
+/// Every other goose subcommand goose ships today (from `goose --help`,
+/// aliases included). None of these accept the extension flags, so if the
+/// caller explicitly named one of these, injecting the flags would just
+/// produce a parse error identical to bare `goose --with-extension ...`.
+const OTHER_KNOWN_SUBCOMMANDS: &[&str] = &[
+    "configure",
+    "info",
+    "doctor",
+    "mcp",
+    "acp",
+    "serve",
+    "recipe",
+    "skills",
+    "plugin",
+    "schedule",
+    "sched",
+    "gateway",
+    "gw",
+    "update",
+    "term",
+    "tui",
+    "local-models",
+    "lm",
+    "completion",
+    "review",
+    "help",
+];
+
+/// Splices MCP extension flags into `args` at a position goose's clap parser
+/// will actually accept.
+///
+/// `--with-extension`/`--with-streamable-http-extension` only parse under
+/// goose's `session` and `run` subcommands -- bare `goose` (which otherwise
+/// behaves like `session` for a plain interactive launch, per goose's own
+/// default) rejects *any* flag at all unless a subcommand is named first.
+/// So: if the caller already named `session`/`run`, the flags are inserted
+/// right after it; if the caller named some other subcommand that goose
+/// documents as not accepting these flags, the extensions are dropped with a
+/// warning rather than corrupting the invocation; otherwise (no subcommand,
+/// or the first token isn't a recognized one -- e.g. free-form prompt text)
+/// `session` is inserted explicitly so the flags have somewhere to attach.
+fn insert_extension_flags(args: &[String], flags: Vec<String>, ui: &dyn Ui) -> Vec<String> {
+    if flags.is_empty() {
+        return args.to_vec();
+    }
+    match args.first().map(String::as_str) {
+        Some(sub) if EXTENSION_CAPABLE_SUBCOMMANDS.contains(&sub) => {
+            let mut out = vec![args[0].clone()];
+            out.extend(flags);
+            out.extend_from_slice(&args[1..]);
+            out
+        }
+        Some(sub) if OTHER_KNOWN_SUBCOMMANDS.contains(&sub) => {
+            ui.warn(&format!(
+                "goose subcommand '{sub}' does not accept MCP extension flags; \
+                 bound MCP servers will not be attached for this launch"
+            ));
+            args.to_vec()
+        }
+        _ => {
+            let mut out = vec!["session".to_string()];
+            out.extend(flags);
+            out.extend_from_slice(args);
+            out
+        }
+    }
+}
 
 /*-- tests --*/
 
@@ -540,6 +615,81 @@ mod tests {
         assert!(
             warns.iter().any(|m| m.contains("headers")),
             "expected a warning about dropped headers, got {warns:?}"
+        );
+    }
+
+    // -- extension flag insertion -----------------------------------------------
+
+    #[test]
+    fn insert_extension_flags_returns_args_unchanged_when_no_flags() {
+        let args = vec!["session".to_string(), "--resume".to_string()];
+        let out = insert_extension_flags(&args, vec![], &CaptureUi::default());
+        assert_eq!(out, args);
+    }
+
+    #[test]
+    fn insert_extension_flags_inserts_session_when_args_are_empty() {
+        let out = insert_extension_flags(
+            &[],
+            vec!["--with-extension".to_string(), "foo".to_string()],
+            &CaptureUi::default(),
+        );
+        assert_eq!(out, vec!["session", "--with-extension", "foo"]);
+    }
+
+    #[test]
+    fn insert_extension_flags_inserts_session_ahead_of_non_subcommand_args() {
+        // Mirrors the bug this fixes: bare `goose --version` (no subcommand)
+        // used to get `--with-extension`/`--with-streamable-http-extension`
+        // spliced in ahead of it with no subcommand at all, which goose's
+        // clap parser rejects outright ("unexpected argument").
+        let out = insert_extension_flags(
+            &["--version".to_string()],
+            vec!["--with-extension".to_string(), "foo".to_string()],
+            &CaptureUi::default(),
+        );
+        assert_eq!(out, vec!["session", "--with-extension", "foo", "--version"]);
+    }
+
+    #[test]
+    fn insert_extension_flags_inserts_after_explicit_session_subcommand() {
+        let out = insert_extension_flags(
+            &["session".to_string(), "--resume".to_string()],
+            vec!["--with-extension".to_string(), "foo".to_string()],
+            &CaptureUi::default(),
+        );
+        assert_eq!(
+            out,
+            vec!["session", "--with-extension", "foo", "--resume"]
+        );
+    }
+
+    #[test]
+    fn insert_extension_flags_inserts_after_explicit_run_subcommand() {
+        let out = insert_extension_flags(
+            &["run".to_string(), "-t".to_string(), "hi".to_string()],
+            vec!["--with-streamable-http-extension".to_string(), "url".to_string()],
+            &CaptureUi::default(),
+        );
+        assert_eq!(
+            out,
+            vec!["run", "--with-streamable-http-extension", "url", "-t", "hi"]
+        );
+    }
+
+    #[test]
+    fn insert_extension_flags_warns_and_drops_for_non_extension_capable_subcommand() {
+        let ui = CaptureUi::default();
+        let out = insert_extension_flags(
+            &["configure".to_string()],
+            vec!["--with-extension".to_string(), "foo".to_string()],
+            &ui,
+        );
+        assert_eq!(out, vec!["configure"]);
+        let warns = ui.warns.borrow();
+        assert!(
+            warns.iter().any(|m| m.contains("configure")),
+            "expected a warning naming the incompatible subcommand, got {warns:?}"
         );
     }
 
