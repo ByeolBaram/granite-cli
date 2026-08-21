@@ -218,6 +218,22 @@ const API_KEY_ENV: &str = "GRANITE_CLI_HERMES_API_KEY";
 /// The generated Hermes config file's name, relative to the launcher state dir.
 const HERMES_CONFIG_FILE: &str = "config.yaml";
 
+/// Hermes's `base_url` is the API root it appends operation paths to (e.g.
+/// `/chat/completions`), same convention as `opencode.rs`/`pi.rs`/
+/// `openclaw.rs`'s equivalent helpers -- so the trailing operation is
+/// dropped from the binding's full endpoint path here, keeping the version
+/// prefix (e.g. `/v1`). Without this, `base_url` is left as the bare host
+/// root and every request 404s, since Ollama's (and most OpenAI-compatible
+/// servers') actual endpoints live under `/v1`.
+fn hermes_base_url(binding: &AgentModelBinding) -> String {
+    let root = binding.base_url.trim_end_matches('/');
+    let prefix = binding
+        .endpoint_path
+        .strip_suffix("/chat/completions")
+        .unwrap_or("");
+    format!("{root}{prefix}")
+}
+
 impl HermesLauncher {
     /// Builds the Hermes config describing the bound model and MCP servers.
     fn generate_config(&self) -> anyhow::Result<serde_json::Value> {
@@ -232,7 +248,7 @@ impl HermesLauncher {
                 "default": binding.model_name,
             });
             if !binding.base_url.is_empty() {
-                model["base_url"] = serde_json::Value::String(binding.base_url.clone());
+                model["base_url"] = serde_json::Value::String(hermes_base_url(binding));
             }
             if let Some(context_length) = binding.context_length {
                 model["context_length"] = serde_json::json!(context_length);
@@ -541,8 +557,24 @@ mod tests {
         // "custom" discriminator, never the granite-cli provider name.
         assert_eq!(config["model"]["default"], "granite4.1:8b");
         assert_eq!(config["model"]["provider"], "custom");
-        assert_eq!(config["model"]["base_url"], "http://localhost:11434");
+        // Version prefix kept, trailing operation dropped -- not the bare
+        // host root, which would 404 against Ollama's /v1 endpoints.
+        assert_eq!(config["model"]["base_url"], "http://localhost:11434/v1");
         assert_eq!(config["model"]["context_length"], serde_json::json!(131072));
+    }
+
+    #[test]
+    fn base_url_keeps_version_prefix_and_drops_operation() {
+        assert_eq!(hermes_base_url(&binding()), "http://localhost:11434/v1");
+    }
+
+    #[test]
+    fn base_url_trims_trailing_slash_from_provider_url() {
+        let b = AgentModelBinding {
+            base_url: "http://localhost:1234/".to_string(),
+            ..binding()
+        };
+        assert_eq!(hermes_base_url(&b), "http://localhost:1234/v1");
     }
 
     #[test]
