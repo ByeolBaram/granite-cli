@@ -76,7 +76,7 @@ pub use crate::providers::ApiType;
 pub use base::{
     AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
     CapabilityMetadata, Dependency, EnvBinding, LaunchContext, McpBinding, McpBindingRequest,
-    McpTransportKind,
+    McpTransportKind, SubAgentBinding, SubAgentBindingRequest,
 };
 
 mod requirement;
@@ -87,6 +87,9 @@ pub use agent_model::{AgentModelCapability, AgentModelCapabilityConfig};
 
 mod vision_mcp;
 pub use vision_mcp::{VisionMCPCapability, VisionMCPCapabilityConfig};
+
+mod sub_agent;
+pub use sub_agent::{SubAgentCapability, SubAgentCapabilityConfig};
 
 /*-- tests ---------------------------------------------------------------------*/
 
