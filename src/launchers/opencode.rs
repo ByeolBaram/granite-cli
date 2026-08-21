@@ -153,18 +153,17 @@ impl Launcher for OpenCodeLauncher {
                 value: opencode_config_path(ctx)?.to_string_lossy().to_string(),
             });
 
-            if let Some(binding) = &self.bound_agent_model {
-                if let Some(api_key) = binding
+            if let Some(binding) = &self.bound_agent_model
+                && let Some(api_key) = binding
                     .api_key
                     .as_ref()
                     .map(|api_key| api_key.0.clone())
                     .filter(|key| !key.is_empty())
-                {
-                    overlay.push(EnvBinding {
-                        key: API_KEY_ENV.to_string(),
-                        value: api_key,
-                    });
-                }
+            {
+                overlay.push(EnvBinding {
+                    key: API_KEY_ENV.to_string(),
+                    value: api_key,
+                });
             }
         }
         Ok(overlay)
