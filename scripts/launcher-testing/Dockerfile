@@ -9,3 +9,6 @@ RUN export OPENCLAW_NO_ONBOARD=1 && \
 
 # Install hermes
 RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive --skip-browser --skip-setup
+
+# Install goose
+RUN curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | CONFIGURE=false GOOSE_BIN_DIR=/usr/local/bin bash
