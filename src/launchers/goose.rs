@@ -1,7 +1,18 @@
-use crate::capabilities::{AgentModelBinding, ApiType, Capability};
-use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
+//! Launcher for the `goose` coding agent (<https://block.github.io/goose/>).
+//!
+//! Goose has no persistent-config mechanism for injecting a one-off model or
+//! MCP server without touching the user's own `config.yaml`, so both are done
+//! through the surfaces goose documents for exactly that: env vars for the
+//! model (`GOOSE_PROVIDER`/`GOOSE_MODEL`/`OPENAI_HOST`/...), and the
+//! session-scoped `--with-extension`/`--with-streamable-http-extension` CLI
+//! flags for MCP servers (goose calls them "extensions").
+
+use crate::capabilities::{AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding};
+use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
+use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
+use crate::utils::ui::Ui;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -20,6 +31,10 @@ pub struct GooseLauncher {
     instance_id: String,
     config: GooseLauncherConfig,
     bound_binding: Option<AgentModelBinding>,
+    /// `(server_name, binding)` for every MCP-capable capability bound to
+    /// this launcher, turned into `--with-extension`/
+    /// `--with-streamable-http-extension` flags in `launch()`.
+    bound_mcp_bindings: Vec<(String, McpBinding)>,
 }
 
 impl ConfigConstructable for GooseLauncher {
@@ -35,6 +50,7 @@ impl ConfigConstructable for GooseLauncher {
             instance_id: instance_id.to_string(),
             config,
             bound_binding: None,
+            bound_mcp_bindings: vec![],
         }
     }
 }
@@ -55,10 +71,7 @@ impl Launcher for GooseLauncher {
         self.config.command_path.as_deref().unwrap_or("goose")
     }
 
-    async fn bind_capability(
-        &mut self,
-        capability: &dyn Capability,
-    ) -> anyhow::Result<()> {
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
         let supported = Self::metadata().supported_capabilities;
         let capability_types = capability.binding_types();
         if !capability_types.is_subset(&supported) {
@@ -68,15 +81,38 @@ impl Launcher for GooseLauncher {
             );
         }
 
-        let binding = capability.bind(crate::capabilities::BindingRequest::AgentModel(
-            crate::capabilities::AgentModelBindingRequest {
-                api_type: ApiType::OpenAI,
-            },
-        )).await?;
+        if capability_types.contains(&BindingType::Mcp) {
+            let binding = capability.bind(mcp_binding_request()).await?;
+            match binding {
+                Binding::Mcp(binding) => {
+                    self.bound_mcp_bindings
+                        .push((capability.instance_id().to_string(), binding));
+                }
+                other => anyhow::bail!("expected an Mcp binding, got {:?}", other.binding_type()),
+            }
+            return Ok(());
+        }
+
+        // Goose only recognizes a fixed set of built-in provider ids (see
+        // `env_overlay`, which always sends `GOOSE_PROVIDER=openai`), and the
+        // "openai" provider is the one that honors `OPENAI_HOST` for
+        // OpenAI-compatible endpoints -- so that's what every granite-cli
+        // provider is asked to speak here.
+        let binding = capability
+            .bind(crate::capabilities::BindingRequest::AgentModel(
+                crate::capabilities::AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                },
+            ))
+            .await?;
         match binding {
-            crate::capabilities::Binding::AgentModel(binding) => {
+            Binding::AgentModel(binding) => {
                 self.bound_binding = Some(binding);
             }
+            other => anyhow::bail!(
+                "expected an AgentModel binding, got {:?}",
+                other.binding_type()
+            ),
         }
         Ok(())
     }
@@ -85,14 +121,22 @@ impl Launcher for GooseLauncher {
         resolve_shell_command(&self.config.command_path, "goose")
     }
 
+    /// Env vars goose documents for overriding its OpenAI-compatible
+    /// provider without touching `config.yaml`.
+    ///
+    /// `GOOSE_PROVIDER` is always the literal `"openai"` -- goose has no
+    /// notion of an arbitrary custom provider id, only its fixed built-in
+    /// providers, and `"openai"` is the one that reads `OPENAI_HOST`.
+    /// `OPENAI_API_KEY` is required even for a local server that ignores it:
+    /// goose panics with "No provider configured" if it's unset entirely
+    /// (see block/goose#5138).
     async fn env_overlay(&self, _ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
         let mut overlay = Vec::new();
 
         if let Some(binding) = &self.bound_binding {
-            // GOOSE_PROVIDER and GOOSE_MODEL override config.yaml
             overlay.push(EnvBinding {
                 key: "GOOSE_PROVIDER".to_string(),
-                value: binding.provider_name.clone(),
+                value: "openai".to_string(),
             });
             overlay.push(EnvBinding {
                 key: "GOOSE_MODEL".to_string(),
@@ -100,34 +144,88 @@ impl Launcher for GooseLauncher {
             });
 
             if !binding.base_url.is_empty() {
-                // For OpenAI-compatible providers, set OPENAI_HOST to override base URL
-                // Goose's env var precedence: env vars > config.yaml > defaults
+                // OPENAI_HOST is scheme+host only; goose appends its own
+                // default operation path unless OPENAI_BASE_PATH overrides it.
                 overlay.push(EnvBinding {
                     key: "OPENAI_HOST".to_string(),
                     value: binding.base_url.clone(),
                 });
             }
 
+            let path = binding.endpoint_path.trim_start_matches('/');
+            if !path.is_empty() && path != DEFAULT_OPENAI_BASE_PATH {
+                overlay.push(EnvBinding {
+                    key: "OPENAI_BASE_PATH".to_string(),
+                    value: path.to_string(),
+                });
+            }
+
             if let Some(context_length) = binding.context_length {
-                // Goose respects GOOSE_CONTEXT_LIMIT env var (see issue #7839)
                 overlay.push(EnvBinding {
                     key: "GOOSE_CONTEXT_LIMIT".to_string(),
                     value: context_length.to_string(),
                 });
             }
+
+            let api_key_val = binding
+                .api_key
+                .as_ref()
+                .map(|api_key| api_key.0.clone())
+                .filter(|key| !key.is_empty())
+                .unwrap_or_else(|| PLACEHOLDER_API_KEY.to_string());
+            overlay.push(EnvBinding {
+                key: "OPENAI_API_KEY".to_string(),
+                value: api_key_val,
+            });
         }
 
         Ok(overlay)
     }
 
+    /// Registers each bound MCP server as a session-scoped goose "extension"
+    /// via `--with-extension`/`--with-streamable-http-extension`, prepended
+    /// ahead of the caller's own args -- goose has no way to register an
+    /// extension without these flags on the invocation itself, so unlike
+    /// `claude`/`bob` there is nothing to register before spawning and clean
+    /// up after: the registration *is* the invocation.
     async fn launch(
         &self,
         args: &[String],
         ctx: &LaunchContext,
-        ui: &dyn crate::utils::ui::Ui,
+        ui: &dyn Ui,
     ) -> anyhow::Result<std::process::ExitStatus> {
         let binary = self.validate_command()?;
-        crate::launchers::base::run_command(binary, &self.env_overlay(ctx).await?, args, ctx, ui).await
+        let overlay = self.env_overlay(ctx).await?;
+
+        let mut goose_args: Vec<String> = vec![];
+        for (_, binding) in &self.bound_mcp_bindings {
+            match binding {
+                McpBinding::Stdio { command, args, env } => {
+                    // Goose's `--with-extension` takes a single shell-style
+                    // command string; env vars are inlined as `KEY=value`
+                    // prefixes ahead of the command per goose's own docs.
+                    let mut parts: Vec<String> =
+                        env.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                    parts.push(command.clone());
+                    parts.extend(args.iter().cloned());
+                    goose_args.push("--with-extension".to_string());
+                    goose_args.push(parts.join(" "));
+                }
+                McpBinding::Http { url, headers } | McpBinding::Sse { url, headers } => {
+                    if !headers.is_empty() {
+                        ui.warn(
+                            "goose's --with-streamable-http-extension does not support \
+                             custom headers; they will be dropped for this launch",
+                        );
+                    }
+                    goose_args.push("--with-streamable-http-extension".to_string());
+                    goose_args.push(url.clone());
+                }
+            }
+        }
+        goose_args.extend_from_slice(args);
+
+        run_command(binary, &overlay, &goose_args, ctx, ui).await
     }
 }
 
@@ -137,7 +235,7 @@ impl HasGooseLauncherMetadata for GooseLauncher {
             name: "Goose CLI".to_string(),
             description: "Goose Agent CLI launcher".to_string(),
             default_command: "goose".to_string(),
-            supported_capabilities: HashSet::from([crate::capabilities::BindingType::AgentModel]),
+            supported_capabilities: HashSet::from([BindingType::AgentModel, BindingType::Mcp]),
             tags: vec!["goose".to_string(), "agent".to_string()],
         }
     }
@@ -147,8 +245,14 @@ impl HasGooseLauncherMetadata for GooseLauncher {
 
 use crate::launchers::base::HasLauncherMetadata as HasGooseLauncherMetadata;
 
-impl GooseLauncher {
-}
+/// Goose's default OpenAI operation path, appended automatically unless
+/// `OPENAI_BASE_PATH` overrides it.
+const DEFAULT_OPENAI_BASE_PATH: &str = "v1/chat/completions";
+
+/// Stand-in credential for providers that need no auth. Goose panics with
+/// "No provider configured" if `OPENAI_API_KEY` is unset entirely, even for a
+/// local server that never checks it.
+const PLACEHOLDER_API_KEY: &str = "granite-cli";
 
 /*-- tests --*/
 
@@ -162,12 +266,12 @@ mod tests {
         GooseLauncher::new("goose", &cfg, &crate::config::Config::default())
     }
 
-    fn binding() -> crate::capabilities::AgentModelBinding {
-        crate::capabilities::AgentModelBinding {
-            api_type: crate::capabilities::ApiType::OpenAI,
-            provider_name: "ollama".to_string(),
+    fn binding() -> AgentModelBinding {
+        AgentModelBinding {
+            api_type: ApiType::OpenAI,
+            provider_name: "my-ollama".to_string(),
             base_url: "http://localhost:11434".to_string(),
-            model_name: "mistral/mistral-large-v0.2".to_string(),
+            model_name: "granite4.1:8b".to_string(),
             endpoint_path: "/v1/chat/completions".to_string(),
             api_key: None,
             verify_ssl: true,
@@ -176,16 +280,22 @@ mod tests {
         }
     }
 
-    fn bound(cfg: serde_json::Value, binding: crate::capabilities::AgentModelBinding) -> GooseLauncher {
+    fn bound(cfg: serde_json::Value, binding: AgentModelBinding) -> GooseLauncher {
         let mut l = launcher(cfg);
         l.bound_binding = Some(binding);
         l
     }
 
-    fn ctx(dry_run: bool) -> crate::launchers::base::LaunchContext {
-        crate::launchers::base::LaunchContext {
+    fn with_mcp(cfg: serde_json::Value, name: &str, binding: McpBinding) -> GooseLauncher {
+        let mut l = launcher(cfg);
+        l.bound_mcp_bindings.push((name.to_string(), binding));
+        l
+    }
+
+    fn ctx(dry_run: bool) -> LaunchContext {
+        LaunchContext {
             launcher_id: "goose".to_string(),
-            working_dir: std::path::PathBuf::from("/tmp"),
+            working_dir: PathBuf::from("/tmp"),
             base_env: std::collections::HashMap::new(),
             dry_run,
         }
@@ -217,10 +327,8 @@ mod tests {
         let meta = GooseLauncher::metadata();
         assert_eq!(meta.name, "Goose CLI");
         assert_eq!(meta.default_command, "goose");
-        assert!(
-            meta.supported_capabilities
-                .contains(&crate::capabilities::BindingType::AgentModel)
-        );
+        assert!(meta.supported_capabilities.contains(&BindingType::AgentModel));
+        assert!(meta.supported_capabilities.contains(&BindingType::Mcp));
     }
 
     #[test]
@@ -258,7 +366,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn env_overlay_sets_goose_provider_and_model() {
+    async fn env_overlay_always_uses_openai_as_goose_provider() {
         let overlay = bound(serde_json::json!({}), binding())
             .env_overlay(&ctx(false))
             .await
@@ -267,12 +375,14 @@ mod tests {
             .iter()
             .find(|b| b.key == "GOOSE_PROVIDER")
             .expect("GOOSE_PROVIDER env");
-        assert_eq!(provider.value, "ollama");
+        // Not the granite-cli provider name ("my-ollama") -- goose only
+        // knows its own fixed built-in provider ids.
+        assert_eq!(provider.value, "openai");
         let model = overlay
             .iter()
             .find(|b| b.key == "GOOSE_MODEL")
             .expect("GOOSE_MODEL env");
-        assert_eq!(model.value, "mistral/mistral-large-v0.2");
+        assert_eq!(model.value, "granite4.1:8b");
     }
 
     #[tokio::test]
@@ -289,6 +399,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn env_overlay_omits_base_path_for_default_operation_path() {
+        let overlay = bound(serde_json::json!({}), binding())
+            .env_overlay(&ctx(false))
+            .await
+            .unwrap();
+        assert!(!overlay.iter().any(|b| b.key == "OPENAI_BASE_PATH"));
+    }
+
+    #[tokio::test]
+    async fn env_overlay_sets_base_path_for_nonstandard_operation_path() {
+        let b = AgentModelBinding {
+            endpoint_path: "/v1/responses".to_string(),
+            ..binding()
+        };
+        let overlay = bound(serde_json::json!({}), b)
+            .env_overlay(&ctx(false))
+            .await
+            .unwrap();
+        let path = overlay
+            .iter()
+            .find(|b| b.key == "OPENAI_BASE_PATH")
+            .expect("OPENAI_BASE_PATH env");
+        assert_eq!(path.value, "v1/responses");
+    }
+
+    #[tokio::test]
     async fn env_overlay_sets_goose_context_limit() {
         let overlay = bound(serde_json::json!({}), binding())
             .env_overlay(&ctx(false))
@@ -299,6 +435,112 @@ mod tests {
             .find(|b| b.key == "GOOSE_CONTEXT_LIMIT")
             .expect("GOOSE_CONTEXT_LIMIT env");
         assert_eq!(limit.value, "131072");
+    }
+
+    #[tokio::test]
+    async fn env_overlay_uses_placeholder_api_key_when_none_configured() {
+        let overlay = bound(serde_json::json!({}), binding())
+            .env_overlay(&ctx(false))
+            .await
+            .unwrap();
+        let key = overlay
+            .iter()
+            .find(|b| b.key == "OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY env is required by goose even for local servers");
+        assert_eq!(key.value, "granite-cli");
+    }
+
+    #[tokio::test]
+    async fn env_overlay_uses_real_api_key_when_configured() {
+        let b = AgentModelBinding {
+            api_key: Some(crate::registry::Secret::from("sk-test")),
+            ..binding()
+        };
+        let overlay = bound(serde_json::json!({}), b)
+            .env_overlay(&ctx(false))
+            .await
+            .unwrap();
+        let key = overlay
+            .iter()
+            .find(|b| b.key == "OPENAI_API_KEY")
+            .unwrap();
+        assert_eq!(key.value, "sk-test");
+    }
+
+    // -- MCP bindings ------------------------------------------------------------
+
+    #[tokio::test]
+    async fn launch_prepends_with_extension_for_stdio_mcp_binding() {
+        let l = with_mcp(
+            serde_json::json!({ "command_path": "ls" }),
+            "vision",
+            McpBinding::Stdio {
+                command: "granite-cli".to_string(),
+                args: vec!["__mcp-serve".to_string(), "vision".to_string()],
+                env: std::collections::HashMap::from([("FOO".to_string(), "bar".to_string())]),
+            },
+        );
+        let ui = CaptureUi::default();
+        l.launch(&["--version".to_string()], &ctx(true), &ui)
+            .await
+            .unwrap();
+
+        let infos = ui.infos.borrow();
+        assert!(
+            infos.iter().any(|m| {
+                m.contains("--with-extension")
+                    && m.contains("FOO=bar granite-cli __mcp-serve vision")
+            }),
+            "expected the stdio extension flag, got {infos:?}"
+        );
+        // Caller args still land after the extension flags.
+        assert!(infos.iter().any(|m| m.trim_end().ends_with("--version")));
+    }
+
+    #[tokio::test]
+    async fn launch_uses_streamable_http_flag_for_http_mcp_binding() {
+        let l = with_mcp(
+            serde_json::json!({ "command_path": "ls" }),
+            "vision",
+            McpBinding::Http {
+                url: "http://127.0.0.1:54321/mcp".to_string(),
+                headers: Default::default(),
+            },
+        );
+        let ui = CaptureUi::default();
+        l.launch(&[], &ctx(true), &ui).await.unwrap();
+
+        let infos = ui.infos.borrow();
+        assert!(
+            infos.iter().any(|m| {
+                m.contains("--with-streamable-http-extension")
+                    && m.contains("http://127.0.0.1:54321/mcp")
+            }),
+            "expected the streamable-http extension flag, got {infos:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn launch_warns_and_drops_headers_for_http_mcp_binding() {
+        let l = with_mcp(
+            serde_json::json!({ "command_path": "ls" }),
+            "vision",
+            McpBinding::Http {
+                url: "http://127.0.0.1:54321/mcp".to_string(),
+                headers: std::collections::HashMap::from([(
+                    "Authorization".to_string(),
+                    "Bearer x".to_string(),
+                )]),
+            },
+        );
+        let ui = CaptureUi::default();
+        l.launch(&[], &ctx(true), &ui).await.unwrap();
+
+        let warns = ui.warns.borrow();
+        assert!(
+            warns.iter().any(|m| m.contains("headers")),
+            "expected a warning about dropped headers, got {warns:?}"
+        );
     }
 
     // -- launch ---------------------------------------------------------------

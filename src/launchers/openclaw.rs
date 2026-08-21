@@ -1,11 +1,24 @@
-use crate::capabilities::{AgentModelBinding, ApiType, Capability};
-use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata};
+//! Launcher for the `openclaw` self-hosted AI agent/gateway
+//! (<https://docs.openclaw.ai>).
+//!
+//! OpenClaw's model/provider selection and MCP servers are both purely
+//! config-file-driven (no env vars for either), so this launcher generates a
+//! throwaway `openclaw.json` under the launcher state dir and points
+//! `OPENCLAW_CONFIG_PATH` at it, exactly like `opencode.rs` does for
+//! OpenCode's `OPENCODE_CONFIG`. The user's own `~/.openclaw/openclaw.json`
+//! is never touched.
+
+use crate::capabilities::{AgentModelBinding, ApiType, Binding, BindingType, Capability, McpBinding};
+use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
+use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
+use crate::utils::ui::Ui;
+use anyhow::Context;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /*-- public --*/
 
@@ -20,6 +33,9 @@ pub struct OpenClawLauncher {
     instance_id: String,
     config: OpenClawLauncherConfig,
     bound_binding: Option<AgentModelBinding>,
+    /// `(server_name, binding)` for every MCP-capable capability bound to
+    /// this launcher, written into the generated config's `mcp.servers` block.
+    bound_mcp_bindings: Vec<(String, McpBinding)>,
 }
 
 impl ConfigConstructable for OpenClawLauncher {
@@ -30,11 +46,13 @@ impl ConfigConstructable for OpenClawLauncher {
         cfg: &serde_json::Value,
         _global_config: &crate::config::Config,
     ) -> Self {
-        let config: OpenClawLauncherConfig = serde_json::from_value(cfg.clone()).unwrap_or_default();
+        let config: OpenClawLauncherConfig =
+            serde_json::from_value(cfg.clone()).unwrap_or_default();
         Self {
             instance_id: instance_id.to_string(),
             config,
             bound_binding: None,
+            bound_mcp_bindings: vec![],
         }
     }
 }
@@ -55,10 +73,7 @@ impl Launcher for OpenClawLauncher {
         self.config.command_path.as_deref().unwrap_or("openclaw")
     }
 
-    async fn bind_capability(
-        &mut self,
-        capability: &dyn Capability,
-    ) -> anyhow::Result<()> {
+    async fn bind_capability(&mut self, capability: &dyn Capability) -> anyhow::Result<()> {
         let supported = Self::metadata().supported_capabilities;
         let capability_types = capability.binding_types();
         if !capability_types.is_subset(&supported) {
@@ -68,15 +83,36 @@ impl Launcher for OpenClawLauncher {
             );
         }
 
-        let binding = capability.bind(crate::capabilities::BindingRequest::AgentModel(
-            crate::capabilities::AgentModelBindingRequest {
-                api_type: ApiType::OpenAI,
-            },
-        )).await?;
+        if capability_types.contains(&BindingType::Mcp) {
+            let binding = capability.bind(mcp_binding_request()).await?;
+            match binding {
+                Binding::Mcp(binding) => {
+                    self.bound_mcp_bindings
+                        .push((capability.instance_id().to_string(), binding));
+                }
+                other => anyhow::bail!("expected an Mcp binding, got {:?}", other.binding_type()),
+            }
+            return Ok(());
+        }
+
+        // OpenClaw's custom-provider config speaks a plain OpenAI-compatible
+        // dialect (`api: "openai-completions"`), which every granite-cli
+        // provider can serve.
+        let binding = capability
+            .bind(crate::capabilities::BindingRequest::AgentModel(
+                crate::capabilities::AgentModelBindingRequest {
+                    api_type: ApiType::OpenAI,
+                },
+            ))
+            .await?;
         match binding {
-            crate::capabilities::Binding::AgentModel(binding) => {
+            Binding::AgentModel(binding) => {
                 self.bound_binding = Some(binding);
             }
+            other => anyhow::bail!(
+                "expected an AgentModel binding, got {:?}",
+                other.binding_type()
+            ),
         }
         Ok(())
     }
@@ -85,60 +121,51 @@ impl Launcher for OpenClawLauncher {
         resolve_shell_command(&self.config.command_path, "openclaw")
     }
 
+    /// Points OpenClaw at the granite-cli-generated config file. There is no
+    /// env var for provider/model/API-key -- OpenClaw reads all of it from
+    /// `OPENCLAW_CONFIG_PATH` itself, written by `launch()`.
     async fn env_overlay(&self, ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
-        let mut overlay = Vec::new();
-
-        if let Some(binding) = &self.bound_binding {
-            // Point OpenClaw at the generated ephemeral config file
+        let mut overlay = vec![];
+        if self.bound_binding.is_some() || !self.bound_mcp_bindings.is_empty() {
             overlay.push(EnvBinding {
                 key: CONFIG_ENV.to_string(),
                 value: openclaw_config_path(ctx)?.to_string_lossy().to_string(),
             });
-
-            // Set provider and model via env vars (they override config.json)
-            overlay.push(EnvBinding {
-                key: "OPENCLAW_PROVIDER".to_string(),
-                value: binding.provider_name.clone(),
-            });
-            overlay.push(EnvBinding {
-                key: "OPENCLAW_MODEL".to_string(),
-                value: binding.model_name.clone(),
-            });
-
-            if !binding.base_url.is_empty() {
-                // For local models, OPENCLAW_LOCAL_ENDPOINT and OPENCLAW_LOCAL_MODEL
-                // are used together. Set both for provider compatibility.
-                overlay.push(EnvBinding {
-                    key: "OPENCLAW_LOCAL_ENDPOINT".to_string(),
-                    value: binding.base_url.clone(),
-                });
-                // LOCAL_MODEL is typically the model name when using a local server
-                overlay.push(EnvBinding {
-                    key: "OPENCLAW_LOCAL_MODEL".to_string(),
-                    value: binding.model_name.clone(),
-                });
-            }
-
-            if let Some(context_length) = binding.context_length {
-                // OPENCLAW_MAX_TOKENS controls the context window (equivalent to context_length)
-                overlay.push(EnvBinding {
-                    key: "OPENCLAW_MAX_TOKENS".to_string(),
-                    value: context_length.to_string(),
-                });
-            }
         }
-
         Ok(overlay)
     }
 
+    /// Writes the granite-cli OpenClaw config file, then execs `openclaw`
+    /// with the caller's arguments untouched.
     async fn launch(
         &self,
         args: &[String],
         ctx: &LaunchContext,
-        ui: &dyn crate::utils::ui::Ui,
+        ui: &dyn Ui,
     ) -> anyhow::Result<std::process::ExitStatus> {
+        if self.bound_binding.is_some() || !self.bound_mcp_bindings.is_empty() {
+            let config = generate_config(self.bound_binding.as_ref(), &self.bound_mcp_bindings);
+            let config_path = openclaw_config_path(ctx)?;
+
+            if ctx.dry_run {
+                ui.info(&format!(
+                    "Would write OpenClaw config to {}:",
+                    config_path.display()
+                ));
+                ui.info(&serde_json::to_string_pretty(&config)?);
+            } else {
+                write_openclaw_config(&config_path, &config)?;
+                ui.info(&format!(
+                    "Wrote OpenClaw config to {}",
+                    config_path.display()
+                ));
+            }
+        }
+
         let binary = self.validate_command()?;
-        crate::launchers::base::run_command(binary, &self.env_overlay(ctx).await?, args, ctx, ui).await
+        let overlay = self.env_overlay(ctx).await?;
+
+        run_command(binary, &overlay, args, ctx, ui).await
     }
 }
 
@@ -146,9 +173,9 @@ impl HasOpenClawLauncherMetadata for OpenClawLauncher {
     fn metadata() -> LauncherMetadata {
         LauncherMetadata {
             name: "OpenClaw CLI".to_string(),
-            description: "OpenClaw autonomous AI agent launcher".to_string(),
+            description: "OpenClaw self-hosted AI agent launcher".to_string(),
             default_command: "openclaw".to_string(),
-            supported_capabilities: HashSet::from([crate::capabilities::BindingType::AgentModel]),
+            supported_capabilities: HashSet::from([BindingType::AgentModel, BindingType::Mcp]),
             tags: vec!["openclaw".to_string(), "agent".to_string()],
         }
     }
@@ -158,18 +185,113 @@ impl HasOpenClawLauncherMetadata for OpenClawLauncher {
 
 use crate::launchers::base::HasLauncherMetadata as HasOpenClawLauncherMetadata;
 
-/// Env var OpenClaw merges an extra config file from, in addition to its own
-/// global/project config.
+/// Env var OpenClaw reads to override which config file it treats as active,
+/// entirely replacing (not merging with) `~/.openclaw/openclaw.json` for the
+/// life of the process.
 const CONFIG_ENV: &str = "OPENCLAW_CONFIG_PATH";
 
 /// The generated config file's name, relative to the launcher state dir.
 const CONFIG_FILE: &str = "openclaw.json";
 
-/// The OpenClaw config file this launcher instance writes and points `OPENCLAW_CONFIG_PATH` at.
-/// Lives under the launcher state dir rather than the user's own OpenClaw config directory.
+/// OpenClaw's `baseUrl` is the API root its OpenAI-compatible adapter appends
+/// operation paths to, same derivation as `opencode.rs`'s equivalent.
+fn openclaw_base_url(binding: &AgentModelBinding) -> String {
+    let root = binding.base_url.trim_end_matches('/');
+    let prefix = binding
+        .endpoint_path
+        .strip_suffix("/chat/completions")
+        .unwrap_or("");
+    format!("{root}{prefix}")
+}
+
+/// The granite-cli-owned OpenClaw config file this launcher instance writes
+/// and points `OPENCLAW_CONFIG_PATH` at. Lives under the launcher state dir
+/// rather than the user's own `~/.openclaw`, so it is never read by anything
+/// else.
 fn openclaw_config_path(ctx: &LaunchContext) -> anyhow::Result<PathBuf> {
-    Ok(crate::config::Config::launcher_state_dir(&ctx.launcher_id)?
-        .join(CONFIG_FILE))
+    Ok(crate::config::Config::launcher_state_dir(&ctx.launcher_id)?.join(CONFIG_FILE))
+}
+
+/// Builds the top-level `openclaw.json` shape (see
+/// docs.openclaw.ai/gateway/configuration-reference and
+/// docs.openclaw.ai/gateway/config-agents): a `models.providers.<name>` entry
+/// plus `agents.defaults.model` set to `"<provider>/<model>"` (if bound), and
+/// an `mcp.servers` block (if any MCP servers are bound) using OpenClaw's
+/// stdio (`command`/`args`/`env`) and remote (`url`/`transport`/`headers`)
+/// server shapes.
+fn generate_config(
+    binding: Option<&AgentModelBinding>,
+    mcp_bindings: &[(String, McpBinding)],
+) -> serde_json::Value {
+    let mut config = serde_json::json!({});
+    if let Some(binding) = binding {
+        let mut model_entry = serde_json::json!({
+            "id": binding.model_name,
+            "name": binding.model_name,
+        });
+        if let Some(context_length) = binding.context_length {
+            model_entry["contextWindow"] = serde_json::json!(context_length);
+        }
+
+        let mut provider_entry = serde_json::json!({
+            "baseUrl": openclaw_base_url(binding),
+            "api": "openai-completions",
+            "models": [model_entry],
+        });
+        if let Some(api_key) = binding
+            .api_key
+            .as_ref()
+            .map(|api_key| api_key.0.clone())
+            .filter(|key| !key.is_empty())
+        {
+            provider_entry["apiKey"] = serde_json::Value::String(api_key);
+        }
+
+        let mut providers = serde_json::Map::new();
+        providers.insert(binding.provider_name.clone(), provider_entry);
+        config["models"] = serde_json::json!({ "providers": providers });
+        config["agents"] = serde_json::json!({
+            "defaults": {
+                "model": format!("{}/{}", binding.provider_name, binding.model_name),
+            }
+        });
+    }
+    if !mcp_bindings.is_empty() {
+        let mut servers = serde_json::Map::new();
+        for (name, binding) in mcp_bindings {
+            servers.insert(name.clone(), {
+                match binding {
+                    McpBinding::Stdio { command, args, env } => serde_json::json!({
+                        "command": command,
+                        "args": args,
+                        "env": env,
+                    }),
+                    McpBinding::Http { url, headers } => serde_json::json!({
+                        "url": url,
+                        "transport": "streamable-http",
+                        "headers": headers,
+                    }),
+                    McpBinding::Sse { url, headers } => serde_json::json!({
+                        "url": url,
+                        "transport": "sse",
+                        "headers": headers,
+                    }),
+                }
+            });
+        }
+        config["mcp"] = serde_json::json!({ "servers": servers });
+    }
+    config
+}
+
+fn write_openclaw_config(path: &Path, config: &serde_json::Value) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let mut content = serde_json::to_string_pretty(config)?;
+    content.push('\n');
+    std::fs::write(path, content).with_context(|| format!("Failed to write {}", path.display()))
 }
 
 /*-- tests --*/
@@ -177,7 +299,7 @@ fn openclaw_config_path(ctx: &LaunchContext) -> anyhow::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::Named;
+    use crate::registry::{Named, Secret};
     use crate::utils::ui::base::tests::CaptureUi;
 
     fn launcher(cfg: serde_json::Value) -> OpenClawLauncher {
@@ -187,9 +309,9 @@ mod tests {
     fn binding() -> AgentModelBinding {
         AgentModelBinding {
             api_type: ApiType::OpenAI,
-            provider_name: "ollama".to_string(),
+            provider_name: "my-ollama".to_string(),
             base_url: "http://localhost:11434".to_string(),
-            model_name: "mistral/mistral-large-v0.2".to_string(),
+            model_name: "granite4.1:8b".to_string(),
             endpoint_path: "/v1/chat/completions".to_string(),
             api_key: None,
             verify_ssl: true,
@@ -204,10 +326,10 @@ mod tests {
         l
     }
 
-    fn ctx(dry_run: bool) -> crate::launchers::base::LaunchContext {
-        crate::launchers::base::LaunchContext {
+    fn ctx(dry_run: bool) -> LaunchContext {
+        LaunchContext {
             launcher_id: "openclaw".to_string(),
-            working_dir: std::path::PathBuf::from("/tmp"),
+            working_dir: PathBuf::from("/tmp"),
             base_env: std::collections::HashMap::new(),
             dry_run,
         }
@@ -239,10 +361,8 @@ mod tests {
         let meta = OpenClawLauncher::metadata();
         assert_eq!(meta.name, "OpenClaw CLI");
         assert_eq!(meta.default_command, "openclaw");
-        assert!(
-            meta.supported_capabilities
-                .contains(&crate::capabilities::BindingType::AgentModel)
-        );
+        assert!(meta.supported_capabilities.contains(&BindingType::AgentModel));
+        assert!(meta.supported_capabilities.contains(&BindingType::Mcp));
     }
 
     #[test]
@@ -268,6 +388,82 @@ mod tests {
         assert!(props.contains_key("command_path"));
     }
 
+    // -- base url ----------------------------------------------------------
+
+    #[test]
+    fn base_url_keeps_version_prefix_and_drops_operation() {
+        assert_eq!(openclaw_base_url(&binding()), "http://localhost:11434/v1");
+    }
+
+    // -- generate_config -----------------------------------------------------
+
+    #[test]
+    fn generate_config_nests_provider_under_models_providers() {
+        let config = generate_config(Some(&binding()), &[]);
+        assert_eq!(
+            config["models"]["providers"]["my-ollama"]["baseUrl"],
+            "http://localhost:11434/v1"
+        );
+        assert_eq!(
+            config["models"]["providers"]["my-ollama"]["api"],
+            "openai-completions"
+        );
+        assert_eq!(
+            config["models"]["providers"]["my-ollama"]["models"][0]["id"],
+            "granite4.1:8b"
+        );
+        assert_eq!(
+            config["models"]["providers"]["my-ollama"]["models"][0]["contextWindow"],
+            131072
+        );
+        assert_eq!(config["agents"]["defaults"]["model"], "my-ollama/granite4.1:8b");
+        // No key means no apiKey field at all.
+        assert!(config["models"]["providers"]["my-ollama"]
+            .get("apiKey")
+            .is_none());
+    }
+
+    #[test]
+    fn generate_config_includes_api_key_when_present() {
+        let b = AgentModelBinding {
+            api_key: Some(Secret::from("sk-test")),
+            ..binding()
+        };
+        let config = generate_config(Some(&b), &[]);
+        assert_eq!(config["models"]["providers"]["my-ollama"]["apiKey"], "sk-test");
+    }
+
+    #[test]
+    fn generate_config_writes_mcp_servers_block_without_a_model_binding() {
+        let mcp_binding = McpBinding::Http {
+            url: "http://127.0.0.1:9999".to_string(),
+            headers: Default::default(),
+        };
+        let config = generate_config(None, &[("vision".to_string(), mcp_binding)]);
+        assert!(config.get("models").is_none());
+        assert_eq!(config["mcp"]["servers"]["vision"]["url"], "http://127.0.0.1:9999");
+        assert_eq!(
+            config["mcp"]["servers"]["vision"]["transport"],
+            "streamable-http"
+        );
+    }
+
+    #[test]
+    fn generate_config_writes_stdio_mcp_server_with_command_args_env() {
+        let mcp_binding = McpBinding::Stdio {
+            command: "/usr/local/bin/granite-cli".to_string(),
+            args: vec!["__mcp-serve".to_string(), "vision".to_string()],
+            env: std::collections::HashMap::from([("FOO".to_string(), "bar".to_string())]),
+        };
+        let config = generate_config(None, &[("vision".to_string(), mcp_binding)]);
+        assert_eq!(
+            config["mcp"]["servers"]["vision"]["command"],
+            "/usr/local/bin/granite-cli"
+        );
+        assert_eq!(config["mcp"]["servers"]["vision"]["args"][0], "__mcp-serve");
+        assert_eq!(config["mcp"]["servers"]["vision"]["env"]["FOO"], "bar");
+    }
+
     // -- env overlay -----------------------------------------------------------
 
     #[tokio::test]
@@ -280,63 +476,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn env_overlay_sets_openclaw_config_path_when_bound() {
+    async fn env_overlay_redirects_config_path_when_bound() {
         let overlay = bound(serde_json::json!({}), binding())
             .env_overlay(&ctx(false))
             .await
             .unwrap();
-        let config_path = overlay
+        let config = overlay
             .iter()
             .find(|b| b.key == "OPENCLAW_CONFIG_PATH")
-            .expect("OPENCLAW_CONFIG_PATH env");
-        assert!(config_path.value.ends_with("launcher-state/openclaw/openclaw.json"));
+            .expect("config redirect");
+        assert!(
+            config.value.ends_with("launcher-state/openclaw/openclaw.json"),
+            "{}",
+            config.value
+        );
     }
 
+    // -- launch ----------------------------------------------------------------
+
+    // Deliberately reads whatever `GRANITE_CLI_HOME` is ambient rather than
+    // setting it: env mutation would race the other tests in this binary that
+    // point that var at their own tempdirs.
     #[tokio::test]
-    async fn env_overlay_sets_openclaw_provider_and_model() {
-        let overlay = bound(serde_json::json!({}), binding())
-            .env_overlay(&ctx(false))
+    async fn dry_run_launch_reports_without_writing_anything() {
+        let state_dir = crate::config::Config::launcher_state_dir("openclaw").unwrap();
+        let existed_before = state_dir.exists();
+
+        let l = bound(serde_json::json!({ "command_path": "ls" }), binding());
+        let ui = CaptureUi::default();
+        let status = l
+            .launch(&["--help".to_string()], &ctx(true), &ui)
             .await
             .unwrap();
-        let provider = overlay
-            .iter()
-            .find(|b| b.key == "OPENCLAW_PROVIDER")
-            .expect("OPENCLAW_PROVIDER env");
-        assert_eq!(provider.value, "ollama");
-        let model = overlay
-            .iter()
-            .find(|b| b.key == "OPENCLAW_MODEL")
-            .expect("OPENCLAW_MODEL env");
-        assert_eq!(model.value, "mistral/mistral-large-v0.2");
-    }
+        assert!(status.success());
 
-    #[tokio::test]
-    async fn env_overlay_sets_openclaw_local_endpoint() {
-        let overlay = bound(serde_json::json!({}), binding())
-            .env_overlay(&ctx(false))
-            .await
-            .unwrap();
-        let endpoint = overlay
-            .iter()
-            .find(|b| b.key == "OPENCLAW_LOCAL_ENDPOINT")
-            .expect("OPENCLAW_LOCAL_ENDPOINT env");
-        assert_eq!(endpoint.value, "http://localhost:11434");
+        let infos = ui.infos.borrow();
+        assert!(
+            infos.iter().any(|m| m.contains("Would write OpenClaw config")),
+            "expected a dry-run notice, got {infos:?}"
+        );
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains(r#""model": "my-ollama/granite4.1:8b""#)),
+            "expected the generated config to select the model, got {infos:?}"
+        );
+        assert!(infos.iter().any(|m| m.contains("args: --help")));
+        assert_eq!(
+            state_dir.exists(),
+            existed_before,
+            "dry run must not create {}",
+            state_dir.display()
+        );
     }
-
-    #[tokio::test]
-    async fn env_overlay_sets_openclaw_max_tokens() {
-        let overlay = bound(serde_json::json!({}), binding())
-            .env_overlay(&ctx(false))
-            .await
-            .unwrap();
-        let max_tokens = overlay
-            .iter()
-            .find(|b| b.key == "OPENCLAW_MAX_TOKENS")
-            .expect("OPENCLAW_MAX_TOKENS env");
-        assert_eq!(max_tokens.value, "131072");
-    }
-
-    // -- launch ---------------------------------------------------------------
 
     #[tokio::test]
     async fn launch_without_binding_passes_args_through_unchanged() {
@@ -347,8 +539,8 @@ mod tests {
             .unwrap();
 
         let infos = ui.infos.borrow();
-        assert!(infos.iter().any(|m| m.contains("--version")));
-        // Without a binding there is no OPENCLAW_* env override.
-        assert!(!infos.iter().any(|m| m.contains("OPENCLAW_PROVIDER")));
+        assert!(infos.iter().any(|m| m.contains("args: --version")));
+        assert!(!infos.iter().any(|m| m.contains("Would write OpenClaw config")));
+        assert!(!infos.iter().any(|m| m.contains(CONFIG_ENV)));
     }
 }
