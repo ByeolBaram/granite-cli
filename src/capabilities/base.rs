@@ -106,6 +106,42 @@ pub struct SubAgentBindingRequest {
     pub api_type: ApiType,
 }
 
+/// Launcher-agnostic tool-name concept for `SubAgentBinding.tools` /
+/// `SubAgentCapabilityConfig.tools`. Each `Launcher` maps these to its own
+/// native tool-name strings via `Launcher::map_tool_name`; `Other` is the
+/// escape hatch for anything not covered by the canonical set, passed
+/// through verbatim by every launcher's default mapping.
+///
+/// Deliberately a small starter set -- covers what a generic coding
+/// sub-agent plausibly needs, expected to grow incrementally as pre-baked
+/// sub-agent capabilities (e.g. "Explore," "Research") are added rather
+/// than trying to be exhaustive now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum ToolName {
+    FileRead,
+    FileWrite,
+    FileEdit,
+    /// Content search (e.g. grep-style).
+    Search,
+    /// Filename/path search (e.g. glob-style).
+    FileSearch,
+    /// Execute a shell command.
+    Shell,
+    WebFetch,
+    WebSearch,
+    /// An MCP-provided tool. `server` is the MCP server's configured name
+    /// (for a granite-cli-bound MCP capability, that's the capability's own
+    /// `instance_id` -- see `ClaudeLauncher::bound_mcp_bindings`). `tool` is
+    /// `None` for "every tool that server exposes," `Some(name)` for one
+    /// specific tool.
+    Mcp {
+        server: String,
+        tool: Option<String>,
+    },
+    /// Escape hatch: an exact, launcher-native tool-name string.
+    Other(String),
+}
+
 /// Result payload for `BindingType::SubAgent`: a named sub-agent's prompt,
 /// tool allow-list, and the connection details for the model it should run
 /// on. Reuses `AgentModelBinding` by composition for the connection details
@@ -117,7 +153,7 @@ pub struct SubAgentBinding {
     /// Tool allow-list. Empty means "inherit all tools" -- callers should
     /// omit rather than send an empty list where the downstream tool
     /// distinguishes the two.
-    pub tools: Vec<String>,
+    pub tools: Vec<ToolName>,
     pub model: AgentModelBinding,
 }
 

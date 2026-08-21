@@ -76,7 +76,7 @@ pub use crate::providers::ApiType;
 pub use base::{
     AgentModelBinding, AgentModelBindingRequest, Binding, BindingRequest, BindingType, Capability,
     CapabilityMetadata, Dependency, EnvBinding, LaunchContext, McpBinding, McpBindingRequest,
-    McpTransportKind, SubAgentBinding, SubAgentBindingRequest,
+    McpTransportKind, SubAgentBinding, SubAgentBindingRequest, ToolName,
 };
 
 mod requirement;
