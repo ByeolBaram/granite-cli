@@ -466,7 +466,7 @@ mod tests {
             endpoint_path: "/v1/chat/completions".to_string(),
             api_key: None,
             verify_ssl: true,
-            context_length: 131072,
+            context_length: Some(131072),
         }
     }
 

@@ -179,7 +179,7 @@ impl Capability for AgentModelCapability {
             endpoint_path: endpoint.path().to_string(),
             api_key: provider.api_key().cloned(),
             verify_ssl: provider.verify_ssl(),
-            context_length: self.model.context_length(),
+            context_length: Some(self.model.context_length()),
         }))
     }
 }
