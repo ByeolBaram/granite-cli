@@ -133,7 +133,9 @@ impl RouterState {
 /// not an error -- so the caller falls through to the default target.
 fn model_from_body(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    value.get("model")?.as_str().map(str::to_string)
+    let model = value.get("model")?.as_str().map(str::to_string);
+    alog_channel!(MessageLevel::Debug4, "Found model: {:#?}", model);
+    model
 }
 
 /// Headers that must not be blindly forwarded in either direction:
@@ -200,6 +202,7 @@ async fn forward(
     );
 
     let outbound_method = reqwest::Method::from_bytes(method.as_str().as_bytes())?;
+    alog_channel!(MessageLevel::Debug4, "Routing to {:#?}", &url);
     let mut outbound = target.client.request(outbound_method, &url);
     let strip_client_auth = matches!(target.auth, UpstreamAuth::Inject(_));
     for (name, value) in headers.iter() {
