@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 // Third Party
+use alog::{alog_channel, use_channel, MessageLevel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,8 @@ use crate::launchers::shared::model_router::{ModelRouter, UpstreamAuth, Upstream
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
 use crate::utils::ui::Ui;
+
+use_channel!("CLAUD");
 
 /*-- public --*/
 
@@ -219,6 +222,7 @@ impl Launcher for ClaudeLauncher {
         let binary = self.validate_command()?;
         let mut overlay = self.env_overlay(ctx).await?;
         let router = self.start_sub_agent_router(ctx, &mut overlay)?;
+        alog_channel!(MessageLevel::Debug4, "Env overlay: {:#?}", overlay);
 
         let mut full_args = Vec::new();
         if !self.bound_sub_agents.is_empty() {
@@ -232,6 +236,8 @@ impl Launcher for ClaudeLauncher {
             register_mcp_server(&binary, name, binding, SCOPE, ctx, ui)?;
         }
 
+        alog_channel!(MessageLevel::Debug3, "Binary: {:#?}", &binary);
+        alog_channel!(MessageLevel::Debug3, "Full args: {:#?}", full_args);
         let result = run_command(binary.clone(), &overlay, &full_args, ctx, ui).await;
 
         for (name, _) in &self.bound_mcp_bindings {
