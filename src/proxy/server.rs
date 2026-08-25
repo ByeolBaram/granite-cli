@@ -110,6 +110,32 @@ impl ProxyHandle {
         Ok(())
     }
 
+    /// Points the default (fallback) target at whatever is already
+    /// registered under `model_name`, rather than needing fresh connection
+    /// details. Use this when the caller's only view of a model's
+    /// connection info may itself already be wrapped to point at this same
+    /// proxy (e.g. a capability whose model went through
+    /// `ModelSource::take`) -- reusing the real target that was registered
+    /// eagerly at that time avoids re-deriving (and getting wrong) an
+    /// `UpstreamTarget` from already-proxied data. Fails if `model_name`
+    /// has no registered route.
+    pub fn set_default_from_route(&self, model_name: &str) -> anyhow::Result<()> {
+        let mut table = self.state.routing.write().unwrap();
+        let target = table
+            .routes
+            .get(model_name)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no route registered for model '{model_name}'"))?;
+        let label = table
+            .labels
+            .get(model_name)
+            .cloned()
+            .unwrap_or_else(|| model_name.to_string());
+        table.default = target;
+        table.default_label = label;
+        Ok(())
+    }
+
     /// The shared tracker every route (including the default target)
     /// records usage into.
     pub fn tracker(&self) -> Arc<UsageTracker> {
@@ -723,6 +749,49 @@ mod tests {
         let body: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(body["x_api_key"], "main-key");
 
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn set_default_from_route_aliases_default_to_an_already_registered_route() {
+        let main_addr = spawn_echo_server().await;
+        let server = ProxyServer::start().unwrap();
+        server
+            .handle
+            .register_route(
+                "main-model".to_string(),
+                target(
+                    format!("http://{main_addr}"),
+                    UpstreamAuth::Inject(Some(Secret("main-key".to_string()))),
+                ),
+                "main".to_string(),
+            )
+            .unwrap();
+
+        server.handle.set_default_from_route("main-model").unwrap();
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/v1/messages", server.handle.local_base_url))
+            .json(&serde_json::json!({ "model": "some-unregistered-internal-model" }))
+            .send()
+            .await
+            .unwrap();
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["x_api_key"], "main-key");
+
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn set_default_from_route_fails_for_an_unregistered_model_name() {
+        let server = ProxyServer::start().unwrap();
+        assert!(
+            server
+                .handle
+                .set_default_from_route("no-such-model")
+                .is_err()
+        );
         server.shutdown().await;
     }
 

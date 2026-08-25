@@ -16,7 +16,7 @@ use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetada
 use crate::launchers::shared::mcp_cli::{
     mcp_binding_request, register_mcp_server, remove_mcp_server,
 };
-use crate::proxy::{ProxyHandle, UpstreamAuth, UpstreamTarget};
+use crate::proxy::ProxyHandle;
 use crate::registry::ConfigConstructable;
 use crate::utils::resolve_shell_command;
 use crate::utils::ui::Ui;
@@ -254,17 +254,25 @@ impl Launcher for ClaudeLauncher {
 }
 
 impl ClaudeLauncher {
-    /// If any `SubAgentCapability` is bound, registers each sub-agent's own
-    /// resolved provider as a route on the shared session proxy (and the
-    /// main model, if `AgentModelCapability` is also bound, as the proxy's
-    /// default -- so Claude Code's other, non-sub-agent traffic keeps
-    /// reaching the user's configured main model rather than leaking to the
-    /// real upstream), then overrides `overlay`'s `ANTHROPIC_BASE_URL` entry
-    /// to point at the proxy, so each sub-agent's model reaches its own
-    /// provider while everything else keeps reaching the normal upstream.
-    /// Under `--dry-run` (where `run_launch` never boots a proxy), `overlay`
-    /// still gets a placeholder value so the dry-run output stays
-    /// informative.
+    /// If any `SubAgentCapability` is bound, overrides `overlay`'s
+    /// `ANTHROPIC_BASE_URL` entry to point at the shared session proxy, so
+    /// each sub-agent's model reaches its own provider while everything else
+    /// keeps reaching the normal upstream. Note this does NOT itself
+    /// register a route for each sub-agent's model -- `ModelSource::take`
+    /// already did that, using each model's real (unwrapped) provider, at
+    /// the point `SubAgentCapability::new` resolved it. By the time a
+    /// binding reaches here, `binding.model.base_url`/`api_key` have already
+    /// been redirected to point at this same proxy (since the model went
+    /// through `ModelSource::take` too) -- re-deriving a route from them
+    /// would register the proxy as its own upstream, an infinite loop. The
+    /// same applies to the main model: rather than building a fresh target
+    /// from `bound_agent_model` (equally unreliable once wrapped), the
+    /// proxy's default is pointed at whatever route was already registered
+    /// under the main model's own name, so Claude Code's other,
+    /// non-sub-agent traffic keeps reaching the user's configured main model
+    /// rather than leaking to the real upstream. Under `--dry-run` (where
+    /// `run_launch` never boots a proxy), `overlay` still gets a placeholder
+    /// value so the dry-run output stays informative.
     fn register_sub_agent_routes(
         &self,
         ctx: &LaunchContext,
@@ -276,32 +284,10 @@ impl ClaudeLauncher {
 
         match &self.model_proxy {
             Some(handle) => {
-                for (_, binding) in &self.bound_sub_agents {
-                    let target = UpstreamTarget {
-                        base_url: binding.model.base_url.clone(),
-                        verify_ssl: binding.model.verify_ssl,
-                        auth: UpstreamAuth::Inject(binding.model.api_key.clone()),
-                    };
-                    if let Err(e) = handle.register_route(
-                        binding.model.model_name.clone(),
-                        target,
-                        binding.model.model_name.clone(),
-                    ) {
-                        alog_channel!(
-                            MessageLevel::Warning,
-                            "failed to register sub-agent route: {e}"
-                        );
-                    }
-                }
-                if let Some(main) = &self.bound_agent_model {
-                    let target = UpstreamTarget {
-                        base_url: main.base_url.clone(),
-                        verify_ssl: main.verify_ssl,
-                        auth: UpstreamAuth::Inject(main.api_key.clone()),
-                    };
-                    if let Err(e) = handle.set_default(target, main.model_name.clone()) {
-                        alog_channel!(MessageLevel::Warning, "failed to set default route: {e}");
-                    }
+                if let Some(main) = &self.bound_agent_model
+                    && let Err(e) = handle.set_default_from_route(&main.model_name)
+                {
+                    alog_channel!(MessageLevel::Warning, "failed to set default route: {e}");
                 }
                 set_env_binding(overlay, "ANTHROPIC_BASE_URL", handle.local_base_url.clone());
             }
@@ -689,7 +675,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_sub_agent_routes_wires_routes_and_default_into_the_proxy() {
+    async fn register_sub_agent_routes_points_default_at_the_main_models_registered_route() {
         async fn echo(
             headers: axum::http::HeaderMap,
             body: axum::body::Bytes,
@@ -719,34 +705,57 @@ mod tests {
         let main_addr = spawn_echo_server().await;
 
         let server = crate::proxy::ProxyServer::start().unwrap();
+        // Simulates what `ModelSource::take` already did for each model at
+        // capability-construction time, using each one's real (unwrapped)
+        // provider -- this is the ONLY place routes get registered; the
+        // launcher itself must not try to re-derive them from bindings,
+        // since those already point back at this same proxy once wrapped.
+        server
+            .handle
+            .register_route(
+                "granite-3.1-8b-instruct".to_string(),
+                crate::proxy::UpstreamTarget {
+                    base_url: format!("http://{sub_agent_addr}"),
+                    verify_ssl: true,
+                    auth: crate::proxy::UpstreamAuth::Inject(Some(crate::registry::Secret(
+                        "sub-key".to_string(),
+                    ))),
+                },
+                "reviewer".to_string(),
+            )
+            .unwrap();
+        server
+            .handle
+            .register_route(
+                "main-model".to_string(),
+                crate::proxy::UpstreamTarget {
+                    base_url: format!("http://{main_addr}"),
+                    verify_ssl: true,
+                    auth: crate::proxy::UpstreamAuth::Inject(Some(crate::registry::Secret(
+                        "main-key".to_string(),
+                    ))),
+                },
+                "main-model".to_string(),
+            )
+            .unwrap();
+
         let mut l = launcher_with(
+            // As it would look once wrapped: base_url points at the proxy,
+            // api_key is cleared -- neither is used by the fix, only
+            // `model_name` is (to look up the already-registered route).
             Some(crate::capabilities::AgentModelBinding {
                 api_type: crate::providers::ApiType::Anthropic,
                 provider_name: "main".to_string(),
-                base_url: format!("http://{main_addr}"),
+                base_url: server.handle.local_base_url.clone(),
                 model_name: "main-model".to_string(),
                 endpoint_path: "/v1/messages".to_string(),
-                api_key: Some(crate::registry::Secret("main-key".to_string())),
+                api_key: None,
                 verify_ssl: true,
                 context_length: Some(4096),
             }),
             vec![(
                 "reviewer".to_string(),
-                SubAgentBinding {
-                    description: "Reviews code".to_string(),
-                    prompt: "You are a helpful sub-agent.".to_string(),
-                    tools: vec![],
-                    model: crate::capabilities::AgentModelBinding {
-                        api_type: crate::providers::ApiType::Anthropic,
-                        provider_name: "sub".to_string(),
-                        base_url: format!("http://{sub_agent_addr}"),
-                        model_name: "granite-3.1-8b-instruct".to_string(),
-                        endpoint_path: "/v1/messages".to_string(),
-                        api_key: Some(crate::registry::Secret("sub-key".to_string())),
-                        verify_ssl: true,
-                        context_length: Some(4096),
-                    },
-                },
+                sub_agent_binding("Reviews code", "granite-3.1-8b-instruct", vec![]),
             )],
         );
         l.model_proxy = Some(server.handle.clone());
@@ -758,6 +767,7 @@ mod tests {
         assert_eq!(overlay[0].value, server.handle.local_base_url);
 
         let client = reqwest::Client::new();
+        // The sub-agent's own registered route is untouched.
         let sub_resp: serde_json::Value = client
             .post(format!("{}/v1/messages", server.handle.local_base_url))
             .json(&serde_json::json!({"model": "granite-3.1-8b-instruct"}))
@@ -769,6 +779,8 @@ mod tests {
             .unwrap();
         assert_eq!(sub_resp["x_api_key"], "sub-key");
 
+        // An unmatched model now falls through to the main model's own
+        // already-registered route, not back into the proxy itself.
         let main_resp: serde_json::Value = client
             .post(format!("{}/v1/messages", server.handle.local_base_url))
             .json(&serde_json::json!({"model": "some-other-internal-model"}))
