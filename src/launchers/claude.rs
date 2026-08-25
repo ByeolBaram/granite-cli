@@ -42,9 +42,11 @@ pub struct ClaudeLauncher {
     bound_mcp_bindings: Vec<(String, McpBinding)>,
     /// `(name, binding)` for every `SubAgentCapability` bound to this
     /// launcher -- `name` is the capability's own `instance_id`, used as the
-    /// sub-agent's name in the `--agents` JSON map. When non-empty, `launch()`
-    /// registers a route on `model_proxy` in front of `ANTHROPIC_BASE_URL` so
-    /// each sub-agent's model reaches its own resolved provider.
+    /// sub-agent's name in the `--agents` JSON map. Each sub-agent's route
+    /// was already registered on `model_proxy` by `ModelSource::take`; when
+    /// non-empty, `launch()` (via `wire_model_proxy`) points
+    /// `ANTHROPIC_BASE_URL` at that proxy so each sub-agent's model reaches
+    /// its own resolved provider.
     bound_sub_agents: Vec<(String, SubAgentBinding)>,
     /// The session-scoped model proxy, if one was booted for this launch
     /// (see `run_launch`) -- present whenever usage tracking or sub-agent
@@ -226,7 +228,7 @@ impl Launcher for ClaudeLauncher {
     ) -> anyhow::Result<std::process::ExitStatus> {
         let binary = self.validate_command()?;
         let mut overlay = self.env_overlay(ctx).await?;
-        self.register_sub_agent_routes(ctx, &mut overlay)?;
+        self.wire_model_proxy(ctx, &mut overlay)?;
         alog_channel!(MessageLevel::Debug4, "Env overlay: {:#?}", overlay);
 
         let mut full_args = Vec::new();
@@ -254,34 +256,45 @@ impl Launcher for ClaudeLauncher {
 }
 
 impl ClaudeLauncher {
-    /// If any `SubAgentCapability` is bound, overrides `overlay`'s
-    /// `ANTHROPIC_BASE_URL` entry to point at the shared session proxy, so
-    /// each sub-agent's model reaches its own provider while everything else
-    /// keeps reaching the normal upstream. Note this does NOT itself
-    /// register a route for each sub-agent's model -- `ModelSource::take`
-    /// already did that, using each model's real (unwrapped) provider, at
-    /// the point `SubAgentCapability::new` resolved it. By the time a
-    /// binding reaches here, `binding.model.base_url`/`api_key` have already
-    /// been redirected to point at this same proxy (since the model went
-    /// through `ModelSource::take` too) -- re-deriving a route from them
-    /// would register the proxy as its own upstream, an infinite loop. The
-    /// same applies to the main model: rather than building a fresh target
-    /// from `bound_agent_model` (equally unreliable once wrapped), the
-    /// proxy's default is pointed at whatever route was already registered
-    /// under the main model's own name, so Claude Code's other,
-    /// non-sub-agent traffic keeps reaching the user's configured main model
-    /// rather than leaking to the real upstream. Under `--dry-run` (where
-    /// `run_launch` never boots a proxy), `overlay` still gets a placeholder
-    /// value so the dry-run output stays informative.
-    fn register_sub_agent_routes(
+    /// Whenever the shared session proxy is running -- `-u`/`--usage-tracking`
+    /// was requested, or any `SubAgentCapability` is bound (which forces the
+    /// proxy on regardless of `-u`) -- overrides `overlay`'s
+    /// `ANTHROPIC_BASE_URL` entry to point at it. This runs unconditionally,
+    /// not just when sub-agents are bound: with `-u` alone and no
+    /// `AgentModelCapability` configured, `env_overlay()` never sets
+    /// `ANTHROPIC_BASE_URL` at all (there's no bound model to read it from),
+    /// so without this override the launched process would talk straight to
+    /// the real upstream on its own ambient environment and the proxy would
+    /// never see any traffic to track -- the point of routing everything
+    /// through the proxy is that its built-in default (ambient
+    /// `ANTHROPIC_BASE_URL`/real Anthropic passthrough) still tracks that
+    /// traffic, now labeled per the actual model name observed on each
+    /// request (see `RoutingTable::target_and_label_for`).
+    ///
+    /// If any `SubAgentCapability` is also bound, points the proxy's default
+    /// at whatever route was already registered under the main model's own
+    /// name (if `AgentModelCapability` is bound too), so Claude Code's
+    /// other, non-sub-agent traffic keeps reaching the user's configured
+    /// main model rather than leaking to the real upstream. Note this does
+    /// NOT register a route for each sub-agent's model itself --
+    /// `ModelSource::take` already did that, using each model's real
+    /// (unwrapped) provider, at the point `SubAgentCapability::new` resolved
+    /// it. By the time a binding reaches here, `binding.model.base_url`/
+    /// `api_key` have already been redirected to point at this same proxy
+    /// (since the model went through `ModelSource::take` too) --
+    /// re-deriving a route from them would register the proxy as its own
+    /// upstream, an infinite loop; the same reasoning is why the main
+    /// model's default is looked up by name rather than rebuilt from
+    /// `bound_agent_model` directly.
+    ///
+    /// Under `--dry-run` (where `run_launch` never boots a proxy) with
+    /// sub-agents bound, `overlay` still gets a placeholder value so the
+    /// dry-run output stays informative.
+    fn wire_model_proxy(
         &self,
         ctx: &LaunchContext,
         overlay: &mut Vec<EnvBinding>,
     ) -> anyhow::Result<()> {
-        if self.bound_sub_agents.is_empty() {
-            return Ok(());
-        }
-
         match &self.model_proxy {
             Some(handle) => {
                 if let Some(main) = &self.bound_agent_model
@@ -291,14 +304,14 @@ impl ClaudeLauncher {
                 }
                 set_env_binding(overlay, "ANTHROPIC_BASE_URL", handle.local_base_url.clone());
             }
-            None if ctx.dry_run => {
+            None if !self.bound_sub_agents.is_empty() && ctx.dry_run => {
                 set_env_binding(
                     overlay,
                     "ANTHROPIC_BASE_URL",
                     "<sub-agent router: not started under --dry-run>".to_string(),
                 );
             }
-            None => {
+            None if !self.bound_sub_agents.is_empty() => {
                 // `run_launch` boots a proxy whenever any sub-agent
                 // capability is enabled, so this should be unreachable
                 // outside dry-run; degrade gracefully rather than failing
@@ -308,6 +321,10 @@ impl ClaudeLauncher {
                     "sub-agents bound but no proxy handle available; sub-agent routing disabled for this launch"
                 );
             }
+            // No proxy running and no sub-agents bound: nothing to wire up
+            // (either `-u` wasn't passed, or this is a dry run) -- leave
+            // `overlay` exactly as `env_overlay()` produced it.
+            None => {}
         }
 
         Ok(())
@@ -630,16 +647,38 @@ mod tests {
     }
 
     #[test]
-    fn register_sub_agent_routes_is_a_noop_without_bound_sub_agents() {
+    fn wire_model_proxy_is_a_noop_without_a_handle_or_sub_agents() {
         let l = launcher_with(None, vec![]);
         let mut overlay = vec![];
-        l.register_sub_agent_routes(&test_launch_context(false), &mut overlay)
+        l.wire_model_proxy(&test_launch_context(false), &mut overlay)
             .unwrap();
         assert!(overlay.is_empty());
     }
 
+    #[tokio::test]
+    async fn wire_model_proxy_points_at_the_proxy_even_with_no_bound_model_or_sub_agents() {
+        // The scenario this covers: `-u`/`--usage-tracking` alone, with no
+        // `AgentModelCapability` or `SubAgentCapability` configured at all.
+        // `env_overlay()` never sets `ANTHROPIC_BASE_URL` in that case (no
+        // bound model to read it from), so without this, the launched
+        // process would never reach the proxy and nothing would ever be
+        // tracked.
+        let server = crate::proxy::ProxyServer::start().unwrap();
+        let mut l = launcher_with(None, vec![]);
+        l.model_proxy = Some(server.handle.clone());
+
+        let mut overlay = vec![];
+        l.wire_model_proxy(&test_launch_context(false), &mut overlay)
+            .unwrap();
+        assert_eq!(overlay.len(), 1);
+        assert_eq!(overlay[0].key, "ANTHROPIC_BASE_URL");
+        assert_eq!(overlay[0].value, server.handle.local_base_url);
+
+        server.shutdown().await;
+    }
+
     #[test]
-    fn register_sub_agent_routes_sets_placeholder_under_dry_run_without_a_handle() {
+    fn wire_model_proxy_sets_placeholder_under_dry_run_without_a_handle() {
         let l = launcher_with(
             None,
             vec![(
@@ -648,7 +687,7 @@ mod tests {
             )],
         );
         let mut overlay = vec![];
-        l.register_sub_agent_routes(&test_launch_context(true), &mut overlay)
+        l.wire_model_proxy(&test_launch_context(true), &mut overlay)
             .unwrap();
         assert_eq!(overlay.len(), 1);
         assert_eq!(overlay[0].key, "ANTHROPIC_BASE_URL");
@@ -659,8 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn register_sub_agent_routes_warns_and_leaves_overlay_untouched_without_a_handle_outside_dry_run()
-     {
+    fn wire_model_proxy_warns_and_leaves_overlay_untouched_without_a_handle_outside_dry_run() {
         let l = launcher_with(
             None,
             vec![(
@@ -669,13 +707,13 @@ mod tests {
             )],
         );
         let mut overlay = vec![];
-        l.register_sub_agent_routes(&test_launch_context(false), &mut overlay)
+        l.wire_model_proxy(&test_launch_context(false), &mut overlay)
             .unwrap();
         assert!(overlay.is_empty());
     }
 
     #[tokio::test]
-    async fn register_sub_agent_routes_points_default_at_the_main_models_registered_route() {
+    async fn wire_model_proxy_points_default_at_the_main_models_registered_route() {
         async fn echo(
             headers: axum::http::HeaderMap,
             body: axum::body::Bytes,
@@ -761,7 +799,7 @@ mod tests {
         l.model_proxy = Some(server.handle.clone());
 
         let mut overlay = vec![];
-        l.register_sub_agent_routes(&test_launch_context(false), &mut overlay)
+        l.wire_model_proxy(&test_launch_context(false), &mut overlay)
             .unwrap();
         assert_eq!(overlay[0].key, "ANTHROPIC_BASE_URL");
         assert_eq!(overlay[0].value, server.handle.local_base_url);
