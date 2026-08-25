@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 // Local
 use crate::capabilities::{
-    Binding, BindingType, Capability, McpBinding, SubAgentBinding, ToolName,
+    Binding, BindingType, Capability, KnownSubAgent, McpBinding, SubAgentBinding, ToolName,
 };
 use crate::launchers::base::HasLauncherMetadata as HasClaudeLauncherMetadata;
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
@@ -361,7 +361,15 @@ impl ClaudeLauncher {
                 if !mapped_tools.is_empty() {
                     entry["tools"] = serde_json::json!(mapped_tools);
                 }
-                (name.clone(), entry)
+                // Claude allows names to directly override some of the builtin
+                // sub-agents. Here we map from known types to the internal name
+                // so the override sticks.
+                let mapped_name = match binding.known_type {
+                    Some(KnownSubAgent::Explore) => "Explore".to_string(),
+                    _ => name.clone(),
+                };
+                alog_channel!(MessageLevel::Debug2, "Using agent name {} for {}", &mapped_name, &name);
+                (mapped_name, entry)
             })
             .collect();
         serde_json::Value::Object(agents).to_string()
@@ -547,6 +555,7 @@ mod tests {
                 verify_ssl: true,
                 context_length: Some(4096),
             },
+            known_type: None,
         }
     }
 

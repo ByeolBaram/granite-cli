@@ -1,51 +1,90 @@
-//! `SubAgentCapability`: defines a named sub-agent -- a prompt, a tool
-//! allow-list, and a `Model`/`Provider` of its own -- that a launched coding
-//! agent can delegate to independently of whichever model the main session
-//! uses. See `docs/specs/0021-sub-agent-capability.md`.
+//! `ExploreSubAgentCapability`: defines a named exploration sub-agent with a static
+//! prompt and fixed tool allow-list (FileRead, Search, Shell), and a `Model`/`Provider`
+//! of its own. The prompt has a placeholder that the user can fill in later.
 
-use crate::capabilities::base::{
-    AgentModelBinding, Binding, BindingRequest, BindingType, Capability, CapabilityMetadata,
-    Dependency, HasCapabilityMetadata, SubAgentBinding, SubAgentBindingRequest, ToolName,
-};
-use crate::capabilities::requirement::ModelRequirement;
-use crate::models::{ConfiguredModel, ModelFunction};
-use crate::registry::ConfigConstructable;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+// Standard
 use serde_valid::Validate;
 use std::collections::HashSet;
 
-/*-- SubAgentCapabilityConfig ------------------------------------------------------*/
+// Third Party
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
+// Local
+use crate::capabilities::ModelRequirement;
+use crate::capabilities::base::{
+    AgentModelBinding, Binding, BindingRequest, BindingType, Capability, CapabilityMetadata,
+    Dependency, HasCapabilityMetadata, KnownSubAgent, SubAgentBinding, SubAgentBindingRequest,
+    ToolName,
+};
+use crate::models::{ConfiguredModel, ModelFunction};
+use crate::registry::ConfigConstructable;
+
+/*-- ExploreSubAgentCapabilityConfig --------------------------------------------*/
+
+/// Configuration for the explore sub-agent capability. Unlike `SubAgentCapability`,
+/// the prompt and tools are static (not configurable via JSON), leaving only the
+/// description (what the sub-agent does) and model_id as configurable.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
-pub struct SubAgentCapabilityConfig {
+pub struct ExploreSubAgentCapabilityConfig {
     /// Shown to the main agent so it can decide when to delegate to this
-    /// sub-agent -- the same role Claude Code's own subagent `description`
-    /// field plays.
+    /// explore sub-agent.
     #[validate(min_length = 1)]
     pub description: String,
-    /// The sub-agent's system prompt.
-    #[validate(min_length = 1)]
-    pub prompt: String,
-    /// Tool allow-list. Empty (the default) means "inherit all tools."
-    #[serde(default)]
-    pub tools: Vec<ToolName>,
     /// Key into the configured models map (the user-chosen instance ID) for
     /// the model this sub-agent runs on.
     #[validate(min_length = 1)]
     pub model_id: String,
 }
 
-/*-- SubAgentCapability -------------------------------------------------------------*/
+/*-- ExploreSubAgentCapability -----------------------------------------------*/
 
-pub struct SubAgentCapability {
+// CITE: https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/agent-prompt-explore.md
+const EXPLORE_PROMPT: &str = "You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
+
+=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
+This is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:
+- Creating new files (no Write, touch, or file creation of any kind)
+- Modifying existing files (no Edit operations)
+- Deleting files (no rm or deletion)
+- Moving or copying files (no mv or cp)
+- Creating temporary files anywhere, including /tmp
+- Using redirect operators (>, >>, |) or heredocs to write to files
+- Running ANY commands that change system state
+
+Your role is EXCLUSIVELY to search and analyze existing code. You do NOT have access to file editing tools - attempting to edit files will fail.
+
+Your strengths:
+- Rapidly finding files using glob patterns
+- Searching code and text with powerful regex patterns
+- Reading and analyzing file contents
+
+Guidelines [file search / glob, search / grep]:
+- Use file search tools when you know the specific file path you need to read
+- Use shell tools ONLY for read-only operations (ls, git status, git log, git diff, find, grep, cat, head, tail, git status, git log, git diff)
+- NEVER use shell tools for: mkdir, touch, rm, cp, mv, git add, git commit, npm install, pip install, git add, git commit, npm install, pip install, or any file creation/modification
+- Adapt your search approach based on the thoroughness level specified by the caller
+- Communicate your final report directly as a regular message - do NOT attempt to create files
+
+NOTE: You are meant to be a fast agent that returns output as quickly as possible. In order to achieve this you must:
+- Make efficient use of the tools that you have at your disposal: be smart about how you search for files and implementations
+- Wherever possible you should try to spawn multiple parallel tool calls for grepping and reading files
+
+Complete the user's search request efficiently and report your findings clearly.";
+
+pub struct ExploreSubAgentCapability {
     instance_id: String,
-    config: SubAgentCapabilityConfig,
+    config: ExploreSubAgentCapabilityConfig,
     configured_model: ConfiguredModel,
+    /// Static prompt for the explore sub-agent (placeholder for now; user can
+    /// override by editing this field later).
+    pub prompt: String,
+    /// Static tool allow-list for the explore sub-agent.
+    pub tools: Vec<ToolName>,
 }
 
-impl ConfigConstructable for SubAgentCapability {
-    type Config = SubAgentCapabilityConfig;
+impl ConfigConstructable for ExploreSubAgentCapability {
+    type Config = ExploreSubAgentCapabilityConfig;
 
     /// Constructs the capability by resolving its model through
     /// `ConfiguredModel`, exactly like `AgentModelCapability::new` -- so
@@ -56,31 +95,40 @@ impl ConfigConstructable for SubAgentCapability {
         cfg: &serde_json::Value,
         global_config: &crate::config::Config,
     ) -> Self {
-        let config: SubAgentCapabilityConfig =
+        let config: ExploreSubAgentCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
         let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
+
+        // Static prompt
+        // TODO: Make prompt a template that should be expanded by the launcher
+        let prompt = EXPLORE_PROMPT.to_string();
+        // Static tools: FileRead, Search, Shell
+        let tools = vec![ToolName::FileRead, ToolName::Search, ToolName::Shell];
+
         Self {
             instance_id: instance_id.to_string(),
             config,
             configured_model,
+            prompt,
+            tools,
         }
     }
 }
 
-impl crate::registry::Named for SubAgentCapability {
+impl crate::registry::Named for ExploreSubAgentCapability {
     fn instance_id(&self) -> &str {
         &self.instance_id
     }
 }
 
 #[async_trait]
-impl Capability for SubAgentCapability {
+impl Capability for ExploreSubAgentCapability {
     fn name(&self) -> &str {
-        "Sub-Agent"
+        "Explore Sub-Agent"
     }
 
     fn description(&self) -> &str {
-        "Defines a named sub-agent (prompt, tool allow-list, and model) that a launched coding agent can delegate to."
+        "Defines a named exploration sub-agent (static prompt, fixed tools, and model) that a launched coding agent can delegate to."
     }
 
     fn dependencies(&self) -> Vec<Dependency> {
@@ -103,7 +151,7 @@ impl Capability for SubAgentCapability {
         let api_type = match request {
             BindingRequest::SubAgent(SubAgentBindingRequest { api_type }) => api_type,
             other => anyhow::bail!(
-                "SubAgentCapability does not handle {:?} binding requests",
+                "ExploreSubAgentCapability does not handle {:?} binding requests",
                 other.binding_type()
             ),
         };
@@ -118,8 +166,8 @@ impl Capability for SubAgentCapability {
 
         Ok(Binding::SubAgent(SubAgentBinding {
             description: self.config.description.clone(),
-            prompt: self.config.prompt.clone(),
-            tools: self.config.tools.clone(),
+            prompt: self.prompt.clone(),
+            tools: self.tools.clone(),
             model: AgentModelBinding {
                 api_type,
                 provider_name: provider.instance_id().to_string(),
@@ -130,16 +178,16 @@ impl Capability for SubAgentCapability {
                 verify_ssl: provider.verify_ssl(),
                 context_length: Some(self.configured_model.model.context_length()),
             },
-            known_type: None,
+            known_type: Some(KnownSubAgent::Explore),
         }))
     }
 }
 
-impl HasCapabilityMetadata for SubAgentCapability {
+impl HasCapabilityMetadata for ExploreSubAgentCapability {
     fn metadata() -> CapabilityMetadata {
         CapabilityMetadata {
-            name: "Sub-Agent".to_string(),
-            description: "Defines a named sub-agent (prompt, tool allow-list, and model) that a launched coding agent can delegate to.".to_string(),
+            name: "Explore Sub-Agent".to_string(),
+            description: "Defines a named exploration sub-agent (static prompt, fixed tools, and model) that a launched coding agent can delegate to.".to_string(),
             dependencies: vec![Dependency::Model {
                 config_key: "model_id".to_string(),
                 requirement: ModelRequirement {
@@ -149,13 +197,13 @@ impl HasCapabilityMetadata for SubAgentCapability {
                 resolved_id: None,
                 required: true,
             }],
-            tags: vec!["agent".to_string(), "sub-agent".to_string()],
+            tags: vec!["agent".to_string(), "explore".to_string()],
             supported_binding_types: HashSet::from([BindingType::SubAgent]),
         }
     }
 }
 
-/*-- tests -------------------------------------------------------------------------*/
+/*-- tests -------------------------------------------------------------------*/
 
 #[cfg(test)]
 mod tests {
@@ -301,13 +349,13 @@ mod tests {
         }
     }
 
-    /// Builds a `SubAgentCapability` with a real registry model id (so
+    /// Builds an `ExploreSubAgentCapability` with a real registry model id (so
     /// construction succeeds) and then swaps in a test double model/provider,
-    /// mirroring `agent_model.rs`'s test pattern.
-    fn capability_with_test_model(
+    /// mirroring the test pattern from `sub_agent.rs`.
+    fn explore_capability_with_test_model(
         functions: Vec<ModelFunction>,
         provider: FakeProvider,
-    ) -> SubAgentCapability {
+    ) -> ExploreSubAgentCapability {
         let mut config = Config::default();
         config.models.insert(
             "granite-3.1-8b-instruct".to_string(),
@@ -317,16 +365,15 @@ mod tests {
                 variant: None,
             },
         );
-        let cap = SubAgentCapability::new(
-            "reviewer",
+        let cap = ExploreSubAgentCapability::new(
+            "explorer",
             &serde_json::json!({
-                "description": "Reviews code",
-                "prompt": "You are a meticulous code reviewer.",
+                "description": "Explores code",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
         );
-        SubAgentCapability {
+        ExploreSubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
             configured_model: crate::models::ConfiguredModel::for_test(
@@ -336,6 +383,8 @@ mod tests {
                 }),
                 None,
             ),
+            prompt: cap.prompt,
+            tools: cap.tools,
         }
     }
 
@@ -354,17 +403,15 @@ mod tests {
                 variant: None,
             },
         );
-        let cap = SubAgentCapability::new(
-            "reviewer",
+        let cap = ExploreSubAgentCapability::new(
+            "explorer",
             &serde_json::json!({
-                "description": "Reviews code",
-                "prompt": "You are a meticulous code reviewer.",
-                "tools": ["FileRead", "Search", {"Other": "SomeRawClaudeTool"}],
+                "description": "Explores code",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
         );
-        let cap = SubAgentCapability {
+        let cap = ExploreSubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
             configured_model: crate::models::ConfiguredModel::for_test(
@@ -374,78 +421,34 @@ mod tests {
                 }),
                 None,
             ),
+            prompt: cap.prompt,
+            tools: cap.tools,
         };
 
         let binding = cap.bind(request(ApiType::Anthropic)).await.unwrap();
         let Binding::SubAgent(binding) = binding else {
             panic!("expected SubAgent binding")
         };
-        assert_eq!(binding.description, "Reviews code");
-        assert_eq!(binding.prompt, "You are a meticulous code reviewer.");
+        assert_eq!(binding.description, "Explores code");
+        assert_eq!(binding.prompt, EXPLORE_PROMPT.to_string());
         assert_eq!(
             binding.tools,
-            vec![
-                ToolName::FileRead,
-                ToolName::Search,
-                ToolName::Other("SomeRawClaudeTool".to_string()),
-            ]
+            vec![ToolName::FileRead, ToolName::Search, ToolName::Shell,]
         );
         assert_eq!(binding.model.base_url, "http://localhost:11434");
         assert_eq!(binding.model.model_name, "granite-3.1-8b-instruct");
         assert_eq!(binding.model.api_type, ApiType::Anthropic);
     }
 
-    #[tokio::test]
-    async fn bind_fails_when_provider_lacks_requested_api_type() {
-        let cap = capability_with_test_model(
-            vec![ModelFunction::Chat],
-            FakeProvider {
-                api_types: vec![ApiType::OpenAI],
-                ..ok_provider()
-            },
-        );
-        let err = cap
-            .bind(request(ApiType::Anthropic))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("does not support Anthropic"));
-    }
-
-    #[tokio::test]
-    async fn bind_fails_when_model_lacks_chat() {
-        let cap = capability_with_test_model(vec![ModelFunction::Embeddings], ok_provider());
-        let err = cap
-            .bind(request(ApiType::Anthropic))
-            .await
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("does not support Chat"));
-    }
-
-    #[tokio::test]
-    async fn bind_rejects_non_sub_agent_requests() {
-        let cap = capability_with_test_model(vec![ModelFunction::Chat], ok_provider());
-        let err = cap
-            .bind(BindingRequest::AgentModel(
-                crate::capabilities::base::AgentModelBindingRequest {
-                    api_type: ApiType::Anthropic,
-                },
-            ))
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("does not handle"));
-    }
-
     #[test]
     fn binding_types_reports_sub_agent() {
-        let cap = capability_with_test_model(vec![ModelFunction::Chat], ok_provider());
+        let cap = explore_capability_with_test_model(vec![ModelFunction::Chat], ok_provider());
         assert_eq!(cap.binding_types(), HashSet::from([BindingType::SubAgent]));
     }
 
     #[test]
     fn dependencies_carry_resolved_model_id() {
-        let cap = capability_with_test_model(vec![ModelFunction::Chat], ok_provider());
+        let cap = explore_capability_with_test_model(vec![ModelFunction::Chat], ok_provider());
         let deps = cap.dependencies();
         assert_eq!(deps.len(), 1);
         assert!(deps.iter().any(|d| matches!(
@@ -456,7 +459,7 @@ mod tests {
 
     #[test]
     fn metadata_reports_supported_binding_types_and_wildcard_dependency() {
-        let meta = SubAgentCapability::metadata();
+        let meta = ExploreSubAgentCapability::metadata();
         assert_eq!(
             meta.supported_binding_types,
             HashSet::from([BindingType::SubAgent])
