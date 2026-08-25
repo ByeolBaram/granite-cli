@@ -518,6 +518,7 @@ pub const HAS_UNCOMMITTED: bool = {};
 pub fn version_string() -> String {{
     let mut version = VERSION.to_string();
 
+    #[allow(clippy::all)]
     if COMMITS_SINCE_TAG > 0 {{
         version.push_str("+dev");
     }}
