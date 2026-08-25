@@ -430,7 +430,7 @@ mod tests {
             panic!("expected SubAgent binding")
         };
         assert_eq!(binding.description, "Explores code");
-        assert_eq!(binding.prompt, "You are an exploration sub-agent.");
+        assert_eq!(binding.prompt, EXPLORE_PROMPT.to_string());
         assert_eq!(
             binding.tools,
             vec![ToolName::FileRead, ToolName::Search, ToolName::Shell,]
