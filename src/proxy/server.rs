@@ -243,18 +243,32 @@ impl RoutingTable {
     /// Picks the target and tracking label for one request body. Returns
     /// owned values so the caller can drop the read lock before doing any
     /// `.await`-ing forward work.
+    ///
+    /// A matched route uses its own registered label (typically a
+    /// sub-agent/capability name). Traffic that falls through to the
+    /// default target is labeled by the request's own `"model"` field when
+    /// one is present, rather than the generic `default_label` -- so
+    /// several distinct upstream models sharing the default/passthrough
+    /// target (e.g. the main session's model plus Claude Code's own
+    /// background-model calls) still show up as separate rows in the usage
+    /// summary instead of being lumped into one "default" bucket.
+    /// `default_label` is used only when the body has no identifiable
+    /// model name at all (non-JSON body, or a missing/non-string `"model"`
+    /// field).
     fn target_and_label_for(&self, body: &[u8]) -> (ResolvedTarget, String) {
-        if let Some(model) = model_from_body(body)
-            && let Some(target) = self.routes.get(&model)
+        let model = model_from_body(body);
+        if let Some(model) = &model
+            && let Some(target) = self.routes.get(model)
         {
             let label = self
                 .labels
-                .get(&model)
+                .get(model)
                 .cloned()
                 .unwrap_or_else(|| model.clone());
             return (target.clone(), label);
         }
-        (self.default.clone(), self.default_label.clone())
+        let label = model.unwrap_or_else(|| self.default_label.clone());
+        (self.default.clone(), label)
     }
 }
 
@@ -804,7 +818,7 @@ mod tests {
             .handle
             .set_default(
                 target(format!("http://{default_addr}"), UpstreamAuth::Passthrough),
-                "main-session".to_string(),
+                "default".to_string(),
             )
             .unwrap();
         server
@@ -831,8 +845,71 @@ mod tests {
             .unwrap();
 
         let snapshot = server.handle.tracker().snapshot();
-        assert_eq!(snapshot.get("main-session").unwrap().input_tokens, 3);
+        // Default traffic is labeled by its own observed model name, not the
+        // generic default label.
+        assert_eq!(snapshot.get("claude-sonnet-5").unwrap().input_tokens, 3);
         assert_eq!(snapshot.get("reviewer").unwrap().input_tokens, 3);
+        assert!(!snapshot.contains_key("default"));
+
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn default_traffic_naming_several_upstream_models_is_tracked_per_model_name() {
+        let default_addr = spawn_echo_server().await;
+        let server = ProxyServer::start().unwrap();
+        server
+            .handle
+            .set_default(
+                target(format!("http://{default_addr}"), UpstreamAuth::Passthrough),
+                "default".to_string(),
+            )
+            .unwrap();
+
+        let client = reqwest::Client::new();
+        for model in ["claude-sonnet-5", "claude-haiku-4-5", "claude-sonnet-5"] {
+            client
+                .post(format!("{}/v1/usage", server.handle.local_base_url))
+                .json(&serde_json::json!({ "model": model }))
+                .send()
+                .await
+                .unwrap();
+        }
+
+        let snapshot = server.handle.tracker().snapshot();
+        let sonnet = snapshot.get("claude-sonnet-5").unwrap();
+        assert_eq!(sonnet.requests, 2);
+        assert_eq!(sonnet.input_tokens, 6);
+        let haiku = snapshot.get("claude-haiku-4-5").unwrap();
+        assert_eq!(haiku.requests, 1);
+        assert_eq!(haiku.input_tokens, 3);
+        assert!(!snapshot.contains_key("default"));
+
+        server.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn default_traffic_without_an_identifiable_model_name_falls_back_to_default_label() {
+        let default_addr = spawn_echo_server().await;
+        let server = ProxyServer::start().unwrap();
+        server
+            .handle
+            .set_default(
+                target(format!("http://{default_addr}"), UpstreamAuth::Passthrough),
+                "default".to_string(),
+            )
+            .unwrap();
+
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{}/v1/usage", server.handle.local_base_url))
+            .body("not json")
+            .send()
+            .await
+            .unwrap();
+
+        let snapshot = server.handle.tracker().snapshot();
+        assert!(snapshot.contains_key("default"));
 
         server.shutdown().await;
     }
