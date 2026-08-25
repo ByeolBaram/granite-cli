@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::capabilities::ModelRequirement;
 use crate::capabilities::base::{
     AgentModelBinding, Binding, BindingRequest, BindingType, Capability, CapabilityMetadata,
-    Dependency, HasCapabilityMetadata, SubAgentBinding, SubAgentBindingRequest, ToolName,
+    Dependency, HasCapabilityMetadata, KnownSubAgent, SubAgentBinding, SubAgentBindingRequest,
+    ToolName,
 };
 use crate::models::{ConfiguredModel, ModelFunction};
 use crate::registry::ConfigConstructable;
@@ -177,6 +178,7 @@ impl Capability for ExploreSubAgentCapability {
                 verify_ssl: provider.verify_ssl(),
                 context_length: Some(self.configured_model.model.context_length()),
             },
+            known_type: Some(KnownSubAgent::Explore),
         }))
     }
 }

@@ -547,6 +547,7 @@ mod tests {
                 verify_ssl: true,
                 context_length: Some(4096),
             },
+            known_type: None,
         }
     }
 

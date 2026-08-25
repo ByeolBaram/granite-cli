@@ -130,6 +130,7 @@ impl Capability for SubAgentCapability {
                 verify_ssl: provider.verify_ssl(),
                 context_length: Some(self.configured_model.model.context_length()),
             },
+            known_type: None,
         }))
     }
 }

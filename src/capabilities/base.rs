@@ -142,6 +142,13 @@ pub enum ToolName {
     Other(String),
 }
 
+/// Launcher-agnostic enum for well-known sub-agents that launchers may want to
+/// treat in a special way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub enum KnownSubAgent {
+    Explore,
+}
+
 /// Result payload for `BindingType::SubAgent`: a named sub-agent's prompt,
 /// tool allow-list, and the connection details for the model it should run
 /// on. Reuses `AgentModelBinding` by composition for the connection details
@@ -155,6 +162,7 @@ pub struct SubAgentBinding {
     /// distinguishes the two.
     pub tools: Vec<ToolName>,
     pub model: AgentModelBinding,
+    pub known_type: Option<KnownSubAgent>,
 }
 
 /// Which wire transport an MCP server binding uses. Payload-free and
