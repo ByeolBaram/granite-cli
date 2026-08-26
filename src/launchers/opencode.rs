@@ -19,7 +19,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 // Local
-use crate::capabilities::{AgentModelBinding, Binding, BindingType, Capability, McpBinding};
+use crate::capabilities::{
+    AgentModelBinding, Binding, BindingType, Capability, KnownSubAgent, McpBinding,
+    SubAgentBinding, ToolName,
+};
 use crate::launchers::base::{EnvBinding, LaunchContext, Launcher, LauncherMetadata, run_command};
 use crate::launchers::shared::mcp_cli::mcp_binding_request;
 use crate::providers::ApiType;
@@ -38,9 +41,13 @@ pub struct OpenCodeLauncherConfig {
     #[serde(default)]
     pub command_path: Option<String>,
 
-    /// Extra keys merged (shallow, last-write-wins) into the generated
+    /// Extra keys merged (shallow, last-write-wins) into every generated
     /// provider entry -- e.g. `headers` a particular server needs. Necessary
-    /// because the entry is regenerated on every launch.
+    /// because the entries are regenerated on every launch. Applied
+    /// uniformly to the main model's provider entry *and* every bound
+    /// sub-agent's, since there is no per-sub-agent override knob yet -- an
+    /// override meant for one provider (e.g. a dialect-specific `npm`
+    /// package) will also land on any other bound provider.
     #[serde(default)]
     pub provider_overrides: Option<serde_json::Value>,
 }
@@ -52,6 +59,14 @@ pub struct OpenCodeLauncher {
     /// `(server_name, binding)` for every MCP-capable capability bound to
     /// this launcher, written into the generated config's `mcp` block.
     bound_mcp_bindings: Vec<(String, McpBinding)>,
+    /// `(name, binding)` for every `SubAgentCapability` bound to this
+    /// launcher -- `name` is the capability's own `instance_id`, used as the
+    /// key in the generated config's `agent` block. Unlike Claude Code (one
+    /// `ANTHROPIC_BASE_URL` for the whole session), OpenCode's config natively
+    /// supports any number of named providers, so each sub-agent's model gets
+    /// its own `provider.<name>` entry and is referenced directly as
+    /// `<provider>/<model>` in `agent.<name>.model` -- no mini-router needed.
+    bound_sub_agents: Vec<(String, SubAgentBinding)>,
 }
 
 impl ConfigConstructable for OpenCodeLauncher {
@@ -69,6 +84,7 @@ impl ConfigConstructable for OpenCodeLauncher {
             config,
             bound_agent_model: None,
             bound_mcp_bindings: vec![],
+            bound_sub_agents: vec![],
         }
     }
 }
@@ -111,6 +127,28 @@ impl Launcher for OpenCodeLauncher {
             return Ok(());
         }
 
+        if capability_types.contains(&BindingType::SubAgent) {
+            // Same dialect choice as the main-model request below: every
+            // granite-cli provider can serve `@ai-sdk/openai-compatible`.
+            let request = crate::capabilities::BindingRequest::SubAgent(
+                crate::capabilities::SubAgentBindingRequest {
+                    api_type: ApiType::OpenAI,
+                },
+            );
+            let binding = capability.bind(request).await?;
+            match binding {
+                Binding::SubAgent(binding) => {
+                    self.bound_sub_agents
+                        .push((capability.instance_id().to_string(), binding));
+                }
+                other => anyhow::bail!(
+                    "expected a SubAgent binding, got {:?}",
+                    other.binding_type()
+                ),
+            }
+            return Ok(());
+        }
+
         // OpenCode's custom-provider config speaks whatever dialect its `npm`
         // SDK package implements. `@ai-sdk/openai-compatible` is the one every
         // granite-cli provider can serve, so that is what we ask for.
@@ -137,6 +175,34 @@ impl Launcher for OpenCodeLauncher {
         resolve_shell_command(&self.config.command_path, "opencode")
     }
 
+    /// Maps a canonical `ToolName` onto the tool-id strings OpenCode's own
+    /// (legacy, but still supported) `tools` boolean map uses -- confirmed
+    /// against current official docs (<https://opencode.ai/docs/agents/>,
+    /// <https://opencode.ai/docs/permissions/>). `edit`/`write` are two
+    /// distinct tool ids at this granularity even though OpenCode's newer
+    /// `permission` config consolidates both under one `edit` category. MCP
+    /// tools are named `<server>_<tool>`, with `<server>_*` disabling/enabling
+    /// every tool from that server (confirmed via the docs' own example for
+    /// disabling a whole MCP server's tools).
+    fn map_tool_name(&self, tool: &ToolName) -> Option<String> {
+        Some(match tool {
+            ToolName::FileRead => "read".to_string(),
+            ToolName::FileWrite => "write".to_string(),
+            ToolName::FileEdit => "edit".to_string(),
+            ToolName::Search => "grep".to_string(),
+            ToolName::FileSearch => "glob".to_string(),
+            ToolName::Shell => "bash".to_string(),
+            ToolName::WebFetch => "webfetch".to_string(),
+            ToolName::WebSearch => "websearch".to_string(),
+            ToolName::Mcp { server, tool: None } => format!("{server}_*"),
+            ToolName::Mcp {
+                server,
+                tool: Some(t),
+            } => format!("{server}_{t}"),
+            ToolName::Other(raw) => raw.clone(),
+        })
+    }
+
     /// Points OpenCode at the granite-cli-generated config file and supplies
     /// the credential the file interpolates.
     ///
@@ -147,23 +213,27 @@ impl Launcher for OpenCodeLauncher {
     /// custom-provider config does not require one.
     async fn env_overlay(&self, ctx: &LaunchContext) -> anyhow::Result<Vec<EnvBinding>> {
         let mut overlay = vec![];
-        if self.bound_agent_model.is_some() || !self.bound_mcp_bindings.is_empty() {
+        if self.bound_agent_model.is_some()
+            || !self.bound_mcp_bindings.is_empty()
+            || !self.bound_sub_agents.is_empty()
+        {
             overlay.push(EnvBinding {
                 key: CONFIG_ENV.to_string(),
                 value: opencode_config_path(ctx)?.to_string_lossy().to_string(),
             });
 
-            if let Some(binding) = &self.bound_agent_model
-                && let Some(api_key) = binding
+            for (index, (binding, _)) in self.provider_groups().iter().enumerate() {
+                if let Some(api_key) = binding
                     .api_key
                     .as_ref()
                     .map(|api_key| api_key.0.clone())
                     .filter(|key| !key.is_empty())
-            {
-                overlay.push(EnvBinding {
-                    key: API_KEY_ENV.to_string(),
-                    value: api_key,
-                });
+                {
+                    overlay.push(EnvBinding {
+                        key: provider_api_key_env(index),
+                        value: api_key,
+                    });
+                }
             }
         }
         Ok(overlay)
@@ -184,15 +254,21 @@ impl Launcher for OpenCodeLauncher {
         ctx: &LaunchContext,
         ui: &dyn Ui,
     ) -> anyhow::Result<std::process::ExitStatus> {
-        if self.bound_agent_model.is_some() || !self.bound_mcp_bindings.is_empty() {
-            let provider_entry = self
-                .bound_agent_model
-                .as_ref()
-                .map(|binding| self.provider_entry(binding))
-                .transpose()?;
+        if self.bound_agent_model.is_some()
+            || !self.bound_mcp_bindings.is_empty()
+            || !self.bound_sub_agents.is_empty()
+        {
+            let mut providers = serde_json::Map::new();
+            for (index, (binding, model_names)) in self.provider_groups().iter().enumerate() {
+                let entry =
+                    self.provider_entry(binding, model_names, &provider_api_key_env(index))?;
+                providers.insert(binding.provider_name.clone(), entry);
+            }
+            let agent = self.build_agent_config(ui);
             let config = generate_config(
                 self.bound_agent_model.as_ref(),
-                provider_entry,
+                providers,
+                agent,
                 &self.bound_mcp_bindings,
             );
             let config_path = opencode_config_path(ctx)?;
@@ -226,7 +302,11 @@ impl HasOpenCodeLauncherMetadata for OpenCodeLauncher {
             name: "OpenCode CLI".to_string(),
             description: "OpenCode terminal coding agent".to_string(),
             default_command: "opencode".to_string(),
-            supported_capabilities: HashSet::from([BindingType::AgentModel, BindingType::Mcp]),
+            supported_capabilities: HashSet::from([
+                BindingType::AgentModel,
+                BindingType::Mcp,
+                BindingType::SubAgent,
+            ]),
             tags: vec!["opencode".to_string(), "coding-agent".to_string()],
         }
     }
@@ -248,15 +328,24 @@ const API_KEY_ENV: &str = "GRANITE_CLI_OPENCODE_API_KEY";
 const CONFIG_FILE: &str = "opencode.json";
 
 impl OpenCodeLauncher {
-    /// Builds the `provider.<name>` entry describing the bound model.
-    fn provider_entry(&self, binding: &AgentModelBinding) -> anyhow::Result<serde_json::Value> {
+    /// Builds the `provider.<name>` entry describing `binding`'s provider,
+    /// with one `models` entry per name in `model_names` -- plural because a
+    /// single provider instance may back both the main model and one or more
+    /// sub-agents' models, all of which must land in the same generated
+    /// `provider.<name>` entry rather than clobbering each other.
+    fn provider_entry(
+        &self,
+        binding: &AgentModelBinding,
+        model_names: &[&str],
+        api_key_env: &str,
+    ) -> anyhow::Result<serde_json::Value> {
         let mut options = serde_json::json!({ "baseURL": opencode_base_url(binding) });
         if binding
             .api_key
             .as_ref()
             .is_some_and(|key| !key.0.is_empty())
         {
-            options["apiKey"] = serde_json::Value::String(format!("{{env:{API_KEY_ENV}}}"));
+            options["apiKey"] = serde_json::Value::String(format!("{{env:{api_key_env}}}"));
         }
 
         // `limit` is all-or-nothing in OpenCode's schema: if present, both
@@ -264,12 +353,14 @@ impl OpenCodeLauncher {
         // context length, so `limit` is left out entirely rather than
         // guessing an output cap.
         let mut models = serde_json::Map::new();
-        models.insert(
-            binding.model_name.clone(),
-            serde_json::json!({
-                "name": binding.model_name,
-            }),
-        );
+        for name in model_names {
+            models.insert(
+                (*name).to_string(),
+                serde_json::json!({
+                    "name": name,
+                }),
+            );
+        }
 
         let mut entry = serde_json::json!({
             "npm": "@ai-sdk/openai-compatible",
@@ -279,7 +370,10 @@ impl OpenCodeLauncher {
         });
 
         // Shallow merge so a user override of e.g. `headers` doesn't clobber
-        // the generated `options`/`models`, and vice versa.
+        // the generated `options`/`models`, and vice versa. Applied uniformly
+        // to every generated provider entry (main model's and every
+        // sub-agent's) -- there is deliberately no per-sub-agent override
+        // knob yet.
         if let (Some(overrides), Some(target)) = (
             self.config
                 .provider_overrides
@@ -292,6 +386,109 @@ impl OpenCodeLauncher {
             }
         }
         Ok(entry)
+    }
+
+    /// Groups the main model binding (if any) and every bound sub-agent's
+    /// model binding by `provider_name`, collecting each group's distinct
+    /// model names -- so two sub-agents (or a sub-agent and the main model)
+    /// that happen to share the same underlying granite-cli provider instance
+    /// land in one `provider.<name>` entry with multiple `models`, instead of
+    /// one overwriting the other. Order is main-model-first, then
+    /// `bound_sub_agents` order, which is also the order `env_overlay` and
+    /// `launch` use to number each group's API-key env var
+    /// (`provider_api_key_env`) -- the two must stay in lock-step.
+    fn provider_groups(&self) -> Vec<(&AgentModelBinding, Vec<&str>)> {
+        fn add<'a>(
+            groups: &mut Vec<(&'a AgentModelBinding, Vec<&'a str>)>,
+            binding: &'a AgentModelBinding,
+        ) {
+            if let Some((_, model_names)) = groups
+                .iter_mut()
+                .find(|(b, _)| b.provider_name == binding.provider_name)
+            {
+                if !model_names.contains(&binding.model_name.as_str()) {
+                    model_names.push(&binding.model_name);
+                }
+            } else {
+                groups.push((binding, vec![binding.model_name.as_str()]));
+            }
+        }
+
+        let mut groups = Vec::new();
+        if let Some(binding) = &self.bound_agent_model {
+            add(&mut groups, binding);
+        }
+        for (_, sub_agent) in &self.bound_sub_agents {
+            add(&mut groups, &sub_agent.model);
+        }
+        groups
+    }
+
+    /// Builds the `agent.<name>` entries for every bound sub-agent:
+    /// `description`, `prompt`, `model` (as `<provider>/<model>`, per
+    /// <https://opencode.ai/docs/agents/>), and `tools` when a tool
+    /// allow-list was given. `tools` is OpenCode's legacy-but-still-supported
+    /// boolean map (<https://opencode.ai/docs/agents/>,
+    /// <https://opencode.ai/docs/permissions/>) rather than the newer
+    /// `permission` config: `permission`'s named categories default to
+    /// "allow" for anything not mentioned, which can't express "only these
+    /// tools, everything else off" the way `{"*": false, ...}` can -- the
+    /// same allow-list semantics `SubAgentBinding.tools` already has for the
+    /// `claude` launcher. A tool with no mapping is dropped with a warning
+    /// (per sub-agent), matching `ClaudeLauncher::build_agents_json`.
+    ///
+    /// `known_type` maps onto OpenCode's own built-in agent names (`explore`,
+    /// `plan` -- see <https://opencode.ai/docs/agents/>) the same way
+    /// `ClaudeLauncher` overrides Claude Code's built-in `Explore`/`Plan`
+    /// sub-agents.
+    fn build_agent_config(&self, ui: &dyn Ui) -> serde_json::Map<String, serde_json::Value> {
+        self.bound_sub_agents
+            .iter()
+            .map(|(name, binding)| {
+                let mut entry = serde_json::json!({
+                    "description": binding.description,
+                    "prompt": binding.prompt,
+                    "mode": "subagent",
+                    "model": format!("{}/{}", binding.model.provider_name, binding.model.model_name),
+                });
+                if !binding.tools.is_empty() {
+                    let mut tools = serde_json::Map::new();
+                    tools.insert("*".to_string(), serde_json::Value::Bool(false));
+                    for tool in &binding.tools {
+                        match self.map_tool_name(tool) {
+                            Some(mapped) => {
+                                tools.insert(mapped, serde_json::Value::Bool(true));
+                            }
+                            None => ui.warn(&format!(
+                                "sub-agent '{name}': tool {tool:?} has no mapping for the opencode launcher, skipping"
+                            )),
+                        }
+                    }
+                    entry["tools"] = serde_json::Value::Object(tools);
+                }
+                let mapped_name = match binding.known_type {
+                    Some(KnownSubAgent::Explore) => "explore".to_string(),
+                    Some(KnownSubAgent::Plan) => "plan".to_string(),
+                    None => name.clone(),
+                };
+                (mapped_name, entry)
+            })
+            .collect()
+    }
+}
+
+/// The env var an OpenCode provider entry's `apiKey` interpolates from, for
+/// the `index`-th distinct provider in `provider_groups()` order. Index `0`
+/// (conventionally the main model's provider, when bound) keeps the original
+/// unsuffixed name for backwards compatibility; every additional distinct
+/// provider (a sub-agent's, when it differs from the main model's) gets its
+/// own suffixed var so multiple secrets can be injected into one launch
+/// without colliding.
+fn provider_api_key_env(index: usize) -> String {
+    if index == 0 {
+        API_KEY_ENV.to_string()
+    } else {
+        format!("{API_KEY_ENV}_{index}")
     }
 }
 
@@ -314,24 +511,31 @@ fn opencode_config_path(ctx: &LaunchContext) -> anyhow::Result<PathBuf> {
     Ok(crate::config::Config::launcher_state_dir(&ctx.launcher_id)?.join(CONFIG_FILE))
 }
 
-/// Builds the top-level `opencode.json` shape: a provider entry (if bound)
+/// Builds the top-level `opencode.json` shape: the main model (if bound)
 /// selected via the top-level `model` key (`provider/model`) so it applies
-/// uniformly across the TUI, `run`, `attach`, and GitHub Action; plus an
-/// `mcp` block (if any MCP servers are bound), using opencode's
-/// `McpLocalConfig`/`McpRemoteConfig` shape (see
+/// uniformly across the TUI, `run`, `attach`, and GitHub Action; a `provider`
+/// block with one entry per distinct provider (main model's and/or each
+/// sub-agent's, pre-built by the caller via `provider_groups`/
+/// `provider_entry`); an `agent` block (if any sub-agents are bound, pre-built
+/// via `build_agent_config`); and an `mcp` block (if any MCP servers are
+/// bound), using opencode's `McpLocalConfig`/`McpRemoteConfig` shape (see
 /// <https://opencode.ai/config.json>).
 fn generate_config(
     binding: Option<&AgentModelBinding>,
-    provider_entry: Option<serde_json::Value>,
+    providers: serde_json::Map<String, serde_json::Value>,
+    agent: serde_json::Map<String, serde_json::Value>,
     mcp_bindings: &[(String, McpBinding)],
 ) -> serde_json::Value {
     let mut config = serde_json::json!({ "$schema": "https://opencode.ai/config.json" });
-    if let (Some(binding), Some(entry)) = (binding, provider_entry) {
-        let mut providers = serde_json::Map::new();
-        providers.insert(binding.provider_name.clone(), entry);
+    if let Some(binding) = binding {
         config["model"] =
             serde_json::Value::String(format!("{}/{}", binding.provider_name, binding.model_name));
+    }
+    if !providers.is_empty() {
         config["provider"] = serde_json::Value::Object(providers);
+    }
+    if !agent.is_empty() {
+        config["agent"] = serde_json::Value::Object(agent);
     }
     if !mcp_bindings.is_empty() {
         let mut mcp = serde_json::Map::new();
@@ -451,6 +655,12 @@ mod tests {
     }
 
     #[test]
+    fn metadata_supports_sub_agent_binding() {
+        let meta = OpenCodeLauncher::metadata();
+        assert!(meta.supported_capabilities.contains(&BindingType::SubAgent));
+    }
+
+    #[test]
     fn instance_id_round_trips_from_construction() {
         let l = OpenCodeLauncher::new(
             "opencode-local",
@@ -481,8 +691,9 @@ mod tests {
 
     #[test]
     fn provider_entry_describes_bound_model() {
+        let b = binding();
         let entry = launcher(serde_json::json!({}))
-            .provider_entry(&binding())
+            .provider_entry(&b, &[b.model_name.as_str()], API_KEY_ENV)
             .unwrap();
         assert_eq!(entry["npm"], "@ai-sdk/openai-compatible");
         assert_eq!(entry["options"]["baseURL"], "http://localhost:11434/v1");
@@ -495,15 +706,46 @@ mod tests {
     }
 
     #[test]
+    fn provider_entry_describes_multiple_models_for_one_provider() {
+        let b = binding();
+        let entry = launcher(serde_json::json!({}))
+            .provider_entry(&b, &["granite4.1:8b", "granite4.1:3b"], API_KEY_ENV)
+            .unwrap();
+        assert_eq!(entry["models"]["granite4.1:8b"]["name"], "granite4.1:8b");
+        assert_eq!(entry["models"]["granite4.1:3b"]["name"], "granite4.1:3b");
+    }
+
+    #[test]
     fn provider_entry_interpolates_env_when_key_present() {
         let b = AgentModelBinding {
             api_key: Some(Secret::from("sk-test")),
             ..binding()
         };
-        let entry = launcher(serde_json::json!({})).provider_entry(&b).unwrap();
+        let entry = launcher(serde_json::json!({}))
+            .provider_entry(&b, &[b.model_name.as_str()], API_KEY_ENV)
+            .unwrap();
         assert_eq!(
             entry["options"]["apiKey"],
             "{env:GRANITE_CLI_OPENCODE_API_KEY}"
+        );
+    }
+
+    #[test]
+    fn provider_entry_uses_the_given_api_key_env_name() {
+        let b = AgentModelBinding {
+            api_key: Some(Secret::from("sk-test")),
+            ..binding()
+        };
+        let entry = launcher(serde_json::json!({}))
+            .provider_entry(
+                &b,
+                &[b.model_name.as_str()],
+                "GRANITE_CLI_OPENCODE_API_KEY_1",
+            )
+            .unwrap();
+        assert_eq!(
+            entry["options"]["apiKey"],
+            "{env:GRANITE_CLI_OPENCODE_API_KEY_1}"
         );
     }
 
@@ -513,7 +755,9 @@ mod tests {
             api_key: Some(Secret::from("")),
             ..binding()
         };
-        let entry = launcher(serde_json::json!({})).provider_entry(&b).unwrap();
+        let entry = launcher(serde_json::json!({}))
+            .provider_entry(&b, &[b.model_name.as_str()], API_KEY_ENV)
+            .unwrap();
         assert!(entry["options"].get("apiKey").is_none());
     }
 
@@ -522,7 +766,10 @@ mod tests {
         let l = launcher(serde_json::json!({
             "provider_overrides": { "headers": { "X-Custom": "1" } }
         }));
-        let entry = l.provider_entry(&binding()).unwrap();
+        let b = binding();
+        let entry = l
+            .provider_entry(&b, &[b.model_name.as_str()], API_KEY_ENV)
+            .unwrap();
         assert_eq!(entry["headers"]["X-Custom"], "1");
         // Generated keys survive the merge.
         assert_eq!(entry["options"]["baseURL"], "http://localhost:11434/v1");
@@ -533,8 +780,226 @@ mod tests {
         let l = launcher(serde_json::json!({
             "provider_overrides": { "npm": "@ai-sdk/openai" }
         }));
-        let entry = l.provider_entry(&binding()).unwrap();
+        let b = binding();
+        let entry = l
+            .provider_entry(&b, &[b.model_name.as_str()], API_KEY_ENV)
+            .unwrap();
         assert_eq!(entry["npm"], "@ai-sdk/openai");
+    }
+
+    // -- provider_api_key_env ---------------------------------------------------
+
+    #[test]
+    fn provider_api_key_env_keeps_unsuffixed_name_at_index_zero() {
+        assert_eq!(provider_api_key_env(0), "GRANITE_CLI_OPENCODE_API_KEY");
+    }
+
+    #[test]
+    fn provider_api_key_env_suffixes_by_index_beyond_zero() {
+        assert_eq!(provider_api_key_env(1), "GRANITE_CLI_OPENCODE_API_KEY_1");
+        assert_eq!(provider_api_key_env(2), "GRANITE_CLI_OPENCODE_API_KEY_2");
+    }
+
+    // -- provider_groups ---------------------------------------------------------
+
+    fn sub_agent_binding(
+        description: &str,
+        provider_name: &str,
+        model_name: &str,
+        tools: Vec<ToolName>,
+    ) -> SubAgentBinding {
+        SubAgentBinding {
+            description: description.to_string(),
+            prompt: "You are a helpful sub-agent.".to_string(),
+            tools,
+            model: AgentModelBinding {
+                provider_name: provider_name.to_string(),
+                model_name: model_name.to_string(),
+                ..binding()
+            },
+            known_type: None,
+        }
+    }
+
+    #[test]
+    fn provider_groups_is_empty_with_nothing_bound() {
+        let l = launcher(serde_json::json!({}));
+        assert!(l.provider_groups().is_empty());
+    }
+
+    #[test]
+    fn provider_groups_includes_main_model_first() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_agent_model = Some(binding());
+        let groups = l.provider_groups();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0.provider_name, "my-ollama");
+        assert_eq!(groups[0].1, vec!["granite4.1:8b"]);
+    }
+
+    #[test]
+    fn provider_groups_gives_a_distinct_provider_its_own_group() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_agent_model = Some(binding());
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "other-provider", "other-model", vec![]),
+        )];
+        let groups = l.provider_groups();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[1].0.provider_name, "other-provider");
+        assert_eq!(groups[1].1, vec!["other-model"]);
+    }
+
+    #[test]
+    fn provider_groups_merges_model_names_sharing_a_provider() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_agent_model = Some(binding());
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "my-ollama", "granite4.1:3b", vec![]),
+        )];
+        let groups = l.provider_groups();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].1, vec!["granite4.1:8b", "granite4.1:3b"]);
+    }
+
+    #[test]
+    fn provider_groups_dedupes_identical_model_name_for_shared_provider() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_agent_model = Some(binding());
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "my-ollama", "granite4.1:8b", vec![]),
+        )];
+        let groups = l.provider_groups();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].1, vec!["granite4.1:8b"]);
+    }
+
+    // -- map_tool_name -----------------------------------------------------------
+
+    #[test]
+    fn map_tool_name_covers_every_canonical_variant_and_formats_mcp_references() {
+        let l = launcher(serde_json::json!({}));
+        assert_eq!(
+            l.map_tool_name(&ToolName::FileRead),
+            Some("read".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::FileWrite),
+            Some("write".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::FileEdit),
+            Some("edit".to_string())
+        );
+        assert_eq!(l.map_tool_name(&ToolName::Search), Some("grep".to_string()));
+        assert_eq!(
+            l.map_tool_name(&ToolName::FileSearch),
+            Some("glob".to_string())
+        );
+        assert_eq!(l.map_tool_name(&ToolName::Shell), Some("bash".to_string()));
+        assert_eq!(
+            l.map_tool_name(&ToolName::WebFetch),
+            Some("webfetch".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::WebSearch),
+            Some("websearch".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::Mcp {
+                server: "vision".to_string(),
+                tool: None,
+            }),
+            Some("vision_*".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::Mcp {
+                server: "vision".to_string(),
+                tool: Some("vlm_compare_images".to_string()),
+            }),
+            Some("vision_vlm_compare_images".to_string())
+        );
+        assert_eq!(
+            l.map_tool_name(&ToolName::Other("SomeRawTool".to_string())),
+            Some("SomeRawTool".to_string())
+        );
+    }
+
+    // -- build_agent_config -------------------------------------------------------
+
+    #[test]
+    fn build_agent_config_includes_description_prompt_and_model_but_omits_empty_tools() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "my-ollama", "granite4.1:8b", vec![]),
+        )];
+        let ui = CaptureUi::default();
+        let agent = l.build_agent_config(&ui);
+        let entry = &agent["reviewer"];
+        assert_eq!(entry["description"], "Reviews code");
+        assert_eq!(entry["prompt"], "You are a helpful sub-agent.");
+        assert_eq!(entry["model"], "my-ollama/granite4.1:8b");
+        assert!(entry.get("tools").is_none());
+    }
+
+    #[test]
+    fn build_agent_config_denies_by_default_and_allows_only_listed_tools() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding(
+                "Reviews code",
+                "my-ollama",
+                "granite4.1:8b",
+                vec![ToolName::FileRead, ToolName::Search],
+            ),
+        )];
+        let ui = CaptureUi::default();
+        let agent = l.build_agent_config(&ui);
+        assert_eq!(
+            agent["reviewer"]["tools"],
+            serde_json::json!({ "*": false, "read": true, "grep": true })
+        );
+    }
+
+    #[test]
+    fn build_agent_config_covers_every_bound_sub_agent_by_instance_id() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_sub_agents = vec![
+            (
+                "reviewer".to_string(),
+                sub_agent_binding("Reviews code", "my-ollama", "model-a", vec![]),
+            ),
+            (
+                "summarizer".to_string(),
+                sub_agent_binding("Summarizes text", "my-ollama", "model-b", vec![]),
+            ),
+        ];
+        let ui = CaptureUi::default();
+        let agent = l.build_agent_config(&ui);
+        assert_eq!(agent.len(), 2);
+        assert_eq!(agent["reviewer"]["model"], "my-ollama/model-a");
+        assert_eq!(agent["summarizer"]["model"], "my-ollama/model-b");
+    }
+
+    #[test]
+    fn build_agent_config_maps_known_types_onto_opencodes_own_builtin_agent_names() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_sub_agents = vec![(
+            "my-explorer".to_string(),
+            SubAgentBinding {
+                known_type: Some(KnownSubAgent::Explore),
+                ..sub_agent_binding("Explores code", "my-ollama", "granite4.1:8b", vec![])
+            },
+        )];
+        let ui = CaptureUi::default();
+        let agent = l.build_agent_config(&ui);
+        assert!(agent.contains_key("explore"));
+        assert!(!agent.contains_key("my-explorer"));
     }
 
     // -- base url ----------------------------------------------------------
@@ -557,8 +1022,12 @@ mod tests {
 
     #[test]
     fn generate_config_nests_entry_under_provider_name_and_sets_default_model() {
-        let entry = serde_json::json!({ "npm": "@ai-sdk/openai-compatible" });
-        let config = generate_config(Some(&binding()), Some(entry), &[]);
+        let mut providers = serde_json::Map::new();
+        providers.insert(
+            "my-ollama".to_string(),
+            serde_json::json!({ "npm": "@ai-sdk/openai-compatible" }),
+        );
+        let config = generate_config(Some(&binding()), providers, serde_json::Map::new(), &[]);
         assert_eq!(config["$schema"], "https://opencode.ai/config.json");
         assert_eq!(config["model"], "my-ollama/granite4.1:8b");
         assert_eq!(
@@ -573,10 +1042,39 @@ mod tests {
             url: "http://127.0.0.1:9999".to_string(),
             headers: Default::default(),
         };
-        let config = generate_config(None, None, &[("vision".to_string(), mcp_binding)]);
+        let config = generate_config(
+            None,
+            serde_json::Map::new(),
+            serde_json::Map::new(),
+            &[("vision".to_string(), mcp_binding)],
+        );
         assert!(config.get("model").is_none());
+        assert!(config.get("provider").is_none());
         assert_eq!(config["mcp"]["vision"]["type"], "remote");
         assert_eq!(config["mcp"]["vision"]["url"], "http://127.0.0.1:9999");
+    }
+
+    #[test]
+    fn generate_config_writes_agent_block_when_sub_agents_present() {
+        let mut agent = serde_json::Map::new();
+        agent.insert(
+            "reviewer".to_string(),
+            serde_json::json!({ "description": "Reviews code" }),
+        );
+        let config = generate_config(None, serde_json::Map::new(), agent, &[]);
+        assert!(config.get("model").is_none());
+        assert_eq!(config["agent"]["reviewer"]["description"], "Reviews code");
+    }
+
+    #[test]
+    fn generate_config_omits_agent_key_when_no_sub_agents_bound() {
+        let config = generate_config(
+            Some(&binding()),
+            serde_json::Map::new(),
+            serde_json::Map::new(),
+            &[],
+        );
+        assert!(config.get("agent").is_none());
     }
 
     // -- env overlay -----------------------------------------------------------
@@ -630,6 +1128,55 @@ mod tests {
             !overlay
                 .iter()
                 .any(|b| b.key == "GRANITE_CLI_OPENCODE_API_KEY")
+        );
+    }
+
+    #[tokio::test]
+    async fn env_overlay_exports_one_api_key_per_distinct_provider_when_sub_agents_present() {
+        let main = AgentModelBinding {
+            api_key: Some(Secret::from("main-key")),
+            ..binding()
+        };
+        let mut l = bound(serde_json::json!({}), main);
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            SubAgentBinding {
+                model: AgentModelBinding {
+                    provider_name: "other-provider".to_string(),
+                    model_name: "other-model".to_string(),
+                    api_key: Some(Secret::from("sub-key")),
+                    ..binding()
+                },
+                ..sub_agent_binding("Reviews code", "other-provider", "other-model", vec![])
+            },
+        )];
+
+        let overlay = l.env_overlay(&ctx(false)).await.unwrap();
+
+        let main_key = overlay
+            .iter()
+            .find(|b| b.key == "GRANITE_CLI_OPENCODE_API_KEY")
+            .expect("main model's api key");
+        assert_eq!(main_key.value, "main-key");
+
+        let sub_key = overlay
+            .iter()
+            .find(|b| b.key == "GRANITE_CLI_OPENCODE_API_KEY_1")
+            .expect("sub-agent's own api key, on its own suffixed env var");
+        assert_eq!(sub_key.value, "sub-key");
+    }
+
+    #[tokio::test]
+    async fn env_overlay_redirects_config_when_only_a_sub_agent_is_bound() {
+        let mut l = launcher(serde_json::json!({}));
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "my-ollama", "granite4.1:8b", vec![]),
+        )];
+        let overlay = l.env_overlay(&ctx(false)).await.unwrap();
+        assert!(
+            overlay.iter().any(|b| b.key == "OPENCODE_CONFIG"),
+            "a sub-agent alone (no main model, no MCP) must still redirect OPENCODE_CONFIG"
         );
     }
 
@@ -694,5 +1241,97 @@ mod tests {
         // Without a binding there is no generated config, so OpenCode keeps
         // using its own config chain.
         assert!(!infos.iter().any(|m| m.contains(CONFIG_ENV)));
+    }
+
+    #[tokio::test]
+    async fn dry_run_launch_with_sub_agents_writes_agent_and_provider_blocks() {
+        let mut l = bound(serde_json::json!({ "command_path": "ls" }), binding());
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding(
+                "Reviews code",
+                "other-provider",
+                "other-model",
+                vec![ToolName::FileRead],
+            ),
+        )];
+        let ui = CaptureUi::default();
+        l.launch(&[], &ctx(true), &ui).await.unwrap();
+
+        let infos = ui.infos.borrow();
+        let dump = infos.join("\n");
+        assert!(dump.contains(r#""reviewer""#), "{dump}");
+        assert!(dump.contains(r#""my-ollama/granite4.1:8b""#), "{dump}");
+        assert!(dump.contains(r#""other-provider""#), "{dump}");
+        // Both providers get their own entry, keyed by provider name.
+        assert!(dump.contains(r#""my-ollama": {"#), "{dump}");
+        assert!(dump.contains(r#""other-provider": {"#), "{dump}");
+    }
+
+    #[tokio::test]
+    async fn dry_run_launch_with_only_a_sub_agent_still_writes_a_config() {
+        let mut l = launcher(serde_json::json!({ "command_path": "ls" }));
+        l.bound_sub_agents = vec![(
+            "reviewer".to_string(),
+            sub_agent_binding("Reviews code", "my-ollama", "granite4.1:8b", vec![]),
+        )];
+        let ui = CaptureUi::default();
+        l.launch(&[], &ctx(true), &ui).await.unwrap();
+
+        let infos = ui.infos.borrow();
+        assert!(
+            infos
+                .iter()
+                .any(|m| m.contains("Would write OpenCode config")),
+            "a sub-agent alone (no main model, no MCP) must still trigger config generation, got {infos:?}"
+        );
+    }
+
+    /// Minimal `Capability` double that always resolves to a fixed
+    /// `SubAgentBinding`, mirroring `ClaudeLauncher`'s test of the same name.
+    struct FakeSubAgentCapability {
+        instance_id: String,
+        binding: SubAgentBinding,
+    }
+
+    impl crate::registry::Named for FakeSubAgentCapability {
+        fn instance_id(&self) -> &str {
+            &self.instance_id
+        }
+    }
+
+    #[async_trait]
+    impl Capability for FakeSubAgentCapability {
+        fn name(&self) -> &str {
+            "Fake Sub-Agent"
+        }
+        fn description(&self) -> &str {
+            "test double"
+        }
+        fn dependencies(&self) -> Vec<crate::capabilities::Dependency> {
+            vec![]
+        }
+        fn binding_types(&self) -> HashSet<BindingType> {
+            HashSet::from([BindingType::SubAgent])
+        }
+        async fn bind(
+            &self,
+            _request: crate::capabilities::BindingRequest,
+        ) -> anyhow::Result<Binding> {
+            Ok(Binding::SubAgent(self.binding.clone()))
+        }
+    }
+
+    #[tokio::test]
+    async fn bind_capability_pushes_sub_agent_binding() {
+        let mut l = launcher(serde_json::json!({}));
+        let cap = FakeSubAgentCapability {
+            instance_id: "reviewer".to_string(),
+            binding: sub_agent_binding("Reviews code", "my-ollama", "granite4.1:8b", vec![]),
+        };
+        l.bind_capability(&cap).await.unwrap();
+        assert_eq!(l.bound_sub_agents.len(), 1);
+        assert_eq!(l.bound_sub_agents[0].0, "reviewer");
+        assert_eq!(l.bound_sub_agents[0].1.model.model_name, "granite4.1:8b");
     }
 }

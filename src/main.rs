@@ -656,7 +656,7 @@ async fn run_launch(
     dry_run: bool,
     usage_tracking: bool,
 ) -> anyhow::Result<()> {
-    use crate::capabilities::CAPABILITY_REGISTRY;
+    use crate::capabilities::{BindingType, CAPABILITY_REGISTRY};
     use crate::launchers::LAUNCHER_REGISTRY;
     use crate::launchers::LaunchContext;
     use crate::proxy::ProxyServer;
@@ -674,23 +674,34 @@ async fn run_launch(
         })?
         .clone();
 
-    // The session proxy boots whenever usage tracking was requested OR a
-    // bound capability needs sub-agent routing (that routing is structurally
-    // required for sub-agents to reach their own providers through Claude
-    // Code's single base-URL env var, independent of whether `-u` was
-    // passed). Skipped entirely under `dry_run`: there's no subprocess to
-    // point a proxy at, and showing the real upstream URL in the overlay is
-    // more useful than a not-yet-running one. When booted, it's threaded
-    // through `config.model_proxy` so that any capability which resolves its
-    // model through `ModelSource` (see `AgentModelCapability::new`) is
+    // The session proxy boots whenever usage tracking was requested OR the
+    // `claude` launcher has a sub-agent capability bound (any of
+    // `SubAgentCapability`/`ExploreSubAgentCapability`/`PlanSubAgentCapability`
+    // -- checked via `BindingType::SubAgent` rather than a specific
+    // capability-type string, so it covers all of them). That routing is
+    // structurally required only for Claude Code: it has exactly one
+    // `ANTHROPIC_BASE_URL` for the whole session, so every sub-agent's model
+    // must be multiplexed through the mini-router regardless of whether `-u`
+    // was passed. `opencode` (and any other launcher that later gains
+    // `BindingType::SubAgent` support) configures each sub-agent's own
+    // provider directly in its multi-provider config, so it never needs this.
+    // Skipped entirely under `dry_run`: there's no subprocess to point a
+    // proxy at, and showing the real upstream URL in the overlay is more
+    // useful than a not-yet-running one. When booted, it's threaded through
+    // `config.model_proxy` so that any capability which resolves its model
+    // through `ModelSource` (see `AgentModelCapability::new`) is
     // transparently routed through it (and tracked, if a tracker is active)
     // -- no per-capability wrapping needed here.
-    let needs_sub_agent_routing = lc.enabled_capabilities.iter().any(|id| {
-        config
-            .get_capability(id)
-            .map(|c| c.capability_type == "sub-agent")
-            .unwrap_or(false)
-    });
+    let needs_sub_agent_routing = lc.launcher_type == "claude"
+        && lc.enabled_capabilities.iter().any(|id| {
+            config
+                .get_capability(id)
+                .and_then(|c| CAPABILITY_REGISTRY.get(&c.capability_type))
+                .is_some_and(|meta| {
+                    meta.supported_binding_types
+                        .contains(&BindingType::SubAgent)
+                })
+        });
     let boot_proxy = (usage_tracking || needs_sub_agent_routing) && !dry_run;
     let proxy_server = if boot_proxy {
         Some(ProxyServer::start()?)
