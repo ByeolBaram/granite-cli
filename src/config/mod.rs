@@ -115,6 +115,21 @@ impl Config {
         Ok(default_dir.join("granite-cli"))
     }
 
+    /// Backstop against a test writing into the user's real global config:
+    /// panics unless `GRANITE_CLI_HOME` has been pointed at an isolated
+    /// directory (see `TestConfigHome`). Called at the top of every
+    /// disk-mutating operation, never on the read-only path-resolution path.
+    #[cfg(test)]
+    fn assert_test_isolated() {
+        let home = std::env::var("GRANITE_CLI_HOME").unwrap_or_default();
+        assert!(
+            !home.is_empty(),
+            "Config write attempted during tests without GRANITE_CLI_HOME set -- \
+             wrap the test body in `let _home = crate::config::TestConfigHome::new();` \
+             so it never touches the real global config."
+        );
+    }
+
     fn models_dir() -> Result<PathBuf> {
         Ok(Self::config_dir()?.join("models"))
     }
@@ -142,6 +157,9 @@ impl Config {
     }
 
     fn ensure_directories() -> Result<()> {
+        #[cfg(test)]
+        Self::assert_test_isolated();
+
         let config_dir = Self::config_dir()?;
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)?;
@@ -231,6 +249,9 @@ impl Config {
     }
 
     fn save(&self) -> Result<()> {
+        #[cfg(test)]
+        Self::assert_test_isolated();
+
         // Save individual model files
         for (id, model) in &self.models {
             let path = Self::models_dir()?.join(format!("{id}.yaml"));
@@ -427,10 +448,48 @@ impl Default for LauncherConfig {
     }
 }
 
+/// Serializes access to `GRANITE_CLI_HOME`, which every `TestConfigHome`
+/// mutates -- it's process-global env state shared across concurrently
+/// running tests.
+#[cfg(test)]
+static CONFIG_HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Points `GRANITE_CLI_HOME` at a fresh temp directory for the guard's
+/// lifetime and restores it on drop -- including on panic or early return --
+/// so `Config` mutations in tests can never land in the user's real global
+/// config. Holds `CONFIG_HOME_LOCK` the whole time so concurrent tests using
+/// this guard never race each other over the shared env var.
+#[cfg(test)]
+pub(crate) struct TestConfigHome {
+    _tmp: tempfile::TempDir,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestConfigHome {
+    pub(crate) fn new() -> Self {
+        let guard = CONFIG_HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::TempDir::new().unwrap();
+        // SAFETY: serialized by CONFIG_HOME_LOCK, held for the guard's lifetime.
+        unsafe { std::env::set_var("GRANITE_CLI_HOME", tmp.path()) };
+        Self {
+            _tmp: tmp,
+            _guard: guard,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestConfigHome {
+    fn drop(&mut self) {
+        // SAFETY: still holding CONFIG_HOME_LOCK.
+        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn launcher_config_default_round_trips() {
@@ -444,10 +503,7 @@ mod tests {
 
     #[test]
     fn insert_and_remove_launcher() {
-        let tmp = TempDir::new().unwrap();
-        let home = tmp.path().join("granite-cli-test-2");
-        // SAFETY: single-threaded test; no other thread reads this var.
-        unsafe { std::env::set_var("GRANITE_CLI_HOME", &home) };
+        let _home = TestConfigHome::new();
 
         let mut config = Config::new().unwrap();
         let lc = LauncherConfig {
@@ -461,7 +517,5 @@ mod tests {
 
         config.remove_launcher("claude").unwrap();
         assert!(config.get_launcher("claude").is_none());
-
-        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
     }
 }

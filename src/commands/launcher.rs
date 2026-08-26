@@ -502,10 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn setup_warns_on_same_type_existing_instance() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let home = tmp.path().join("granite-cli-test-launcher-setup");
-        // SAFETY: single-threaded test; no other thread reads this var.
-        unsafe { std::env::set_var("GRANITE_CLI_HOME", &home) };
+        let _home = crate::config::TestConfigHome::new();
 
         // Pre-populate a "claude" instance named "claude-old"
         let mut ctx = ctx_with_launcher("claude-old", "claude");
@@ -519,8 +516,6 @@ mod tests {
             infos.iter().any(|m| m.contains("claude-old")),
             "expected clash warning to mention the existing instance"
         );
-
-        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
     }
 
     #[tokio::test]
@@ -534,6 +529,7 @@ mod tests {
 
     #[test]
     fn remove_existing_launcher_succeeds_and_disappears_from_list() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_launcher("my-claude", "claude");
         assert!(ctx.config.get_launcher("my-claude").is_some());
 
@@ -563,6 +559,7 @@ mod tests {
 
     #[test]
     fn list_does_not_show_removed_launcher() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_launcher("my-claude", "claude");
         LauncherCommands::remove(&mut ctx, "my-claude").unwrap();
         LauncherCommands::list(&ctx).unwrap();

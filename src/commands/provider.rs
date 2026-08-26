@@ -483,6 +483,7 @@ mod tests {
 
     #[test]
     fn remove_existing_provider_succeeds_and_disappears_from_list() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
         assert!(ctx.config.get_provider("my-ollama").is_some());
 
@@ -512,6 +513,7 @@ mod tests {
 
     #[test]
     fn list_does_not_show_removed_provider() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_provider("my-ollama", "http://localhost:11434");
         ProviderCommands::remove(&mut ctx, "my-ollama").unwrap();
         ProviderCommands::list(&ctx).unwrap();
