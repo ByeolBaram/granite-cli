@@ -151,7 +151,7 @@ pub use base::{
 };
 
 pub(crate) mod context_fit;
-pub use context_fit::ContextFit;
+pub use context_fit::{ContextFit, required_gb};
 
 pub mod huggingface;
 

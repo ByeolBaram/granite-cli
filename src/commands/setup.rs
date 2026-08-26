@@ -690,6 +690,11 @@ impl SetupCommands {
         let selected_providers =
             Self::select_providers(ctx, &discovery, &selected_models).await?;
 
+        // Phase 4.5: Variant selection (limited to formats the selected
+        // providers can actually run, with a VRAM estimate at full context)
+        let selected_variants =
+            Self::select_variants(ctx, &discovery, &selected_models, &selected_providers).await?;
+
         // Phase 5: Configuration
         Self::configure_all(
             ctx,
@@ -698,6 +703,7 @@ impl SetupCommands {
             &selected_launchers,
             &selected_providers,
             &selected_models,
+            &selected_variants,
         )
         .await?;
 
@@ -777,6 +783,9 @@ impl SetupCommands {
             })
             .collect();
 
+        // --auto is non-interactive, so there's no prompt for variant
+        // selection -- `configure_all` falls back to discovery's
+        // hardware-fit `best_variant` for every model.
         Self::configure_all(
             ctx,
             &discovery,
@@ -784,6 +793,7 @@ impl SetupCommands {
             &selected_launchers,
             &selected_providers,
             &selected_models,
+            &HashMap::new(),
         )
         .await?;
 
@@ -943,6 +953,126 @@ impl SetupCommands {
             .collect())
     }
 
+    /// Phase 4.5: let the user pick a specific variant for each selected
+    /// model, once both capabilities and providers are known. Options are
+    /// limited to variants at least one selected provider can actually run,
+    /// each annotated with an estimated VRAM/RAM footprint at the model's
+    /// full configured context length. Models with only one compatible
+    /// variant are auto-selected without prompting.
+    async fn select_variants(
+        ctx: &mut crate::AppContext,
+        discovery: &DiscoveryResult,
+        selected_models: &HashSet<String>,
+        selected_providers: &HashSet<String>,
+    ) -> Result<HashMap<String, ModelVariant>> {
+        let mut chosen = HashMap::new();
+
+        for model_id in selected_models {
+            let Some(md) = MODEL_REGISTRY.get(model_id) else {
+                continue;
+            };
+
+            let candidates = Self::candidate_variants(&md, selected_providers, ctx);
+            if candidates.is_empty() {
+                ctx.ui.warn(&format!(
+                    "No selected provider can run any variant of '{model_id}'; leaving its variant unset."
+                ));
+                continue;
+            }
+
+            if candidates.len() == 1 {
+                let (variant, gb) = &candidates[0];
+                ctx.ui.info(&format!(
+                    "Only one compatible variant for '{model_id}': {} — selected automatically.",
+                    Self::format_variant_option(variant, *gb, md.context_length)
+                ));
+                chosen.insert(model_id.clone(), variant.clone());
+                continue;
+            }
+
+            let recommended = discovery.recommendations.iter().find_map(|r| match r {
+                Recommendation::Model {
+                    model_id: rec_id,
+                    best_variant,
+                    ..
+                } if rec_id == model_id => Some(best_variant.clone()),
+                _ => None,
+            });
+
+            let default_idx = recommended
+                .as_ref()
+                .and_then(|rv| {
+                    candidates.iter().position(|(v, _)| {
+                        v.format.eq_ignore_ascii_case(&rv.format)
+                            && v.precision.eq_ignore_ascii_case(&rv.precision)
+                    })
+                })
+                .unwrap_or(0);
+
+            let items: Vec<String> = candidates
+                .iter()
+                .map(|(v, gb)| Self::format_variant_option(v, *gb, md.context_length))
+                .collect();
+
+            let idx = ctx.ui.select(
+                &format!("Select variant for {model_id}"),
+                &items,
+                default_idx,
+            )?;
+            chosen.insert(model_id.clone(), candidates[idx].0.clone());
+        }
+
+        Ok(chosen)
+    }
+
+    /// Variants of `md` that at least one selected provider can run, paired
+    /// with their estimated required memory (GB) at `md.context_length`
+    /// (i.e. full context). Providers are constructed transiently with
+    /// registry defaults, matching how discovery evaluates them, since this
+    /// runs before providers are written to config.
+    fn candidate_variants(
+        md: &ModelMetadata,
+        selected_providers: &HashSet<String>,
+        ctx: &crate::AppContext,
+    ) -> Vec<(ModelVariant, f64)> {
+        let providers: Vec<Box<dyn Provider>> = selected_providers
+            .iter()
+            .filter_map(|pid| {
+                let default_config = PROVIDER_REGISTRY.default_config(pid).unwrap_or_default();
+                PROVIDER_REGISTRY
+                    .construct(pid, pid, &default_config, &ctx.config)
+                    .ok()
+            })
+            .collect();
+
+        md.variants
+            .iter()
+            .filter(|v| providers.iter().any(|p| p.can_run_model(&v.format, &v.precision)))
+            .map(|v| {
+                let gb = crate::models::required_gb(
+                    &md.architecture,
+                    v,
+                    &md.native_dtype,
+                    md.context_length,
+                );
+                (v.clone(), gb)
+            })
+            .collect()
+    }
+
+    fn format_variant_option(variant: &ModelVariant, required_gb: f64, context_length: u64) -> String {
+        match variant.size_gb {
+            Some(size) => format!(
+                "{} / {} — {:.1} GB file, ~{:.1} GB VRAM @ full context ({context_length} tokens)",
+                variant.format, variant.precision, size, required_gb
+            ),
+            None => format!(
+                "{} / {} — ~{:.1} GB VRAM @ full context ({context_length} tokens)",
+                variant.format, variant.precision, required_gb
+            ),
+        }
+    }
+
     async fn select_models(
         ctx: &mut crate::AppContext,
         discovery: &DiscoveryResult,
@@ -1020,6 +1150,7 @@ impl SetupCommands {
         selected_launchers: &HashSet<String>,
         selected_providers: &HashSet<String>,
         selected_models: &HashSet<String>,
+        selected_variants: &HashMap<String, ModelVariant>,
     ) -> Result<()> {
         let ui = &*ctx.ui;
 
@@ -1070,16 +1201,21 @@ impl SetupCommands {
         for model_id in selected_models {
             ui.info(&format!("\nConfiguring model: {model_id}..."));
 
-            let best_variant = discovery.recommendations.iter().find_map(|r| match r {
-                Recommendation::Model {
-                    model_id: rec_id,
-                    best_variant,
-                    ..
-                } if rec_id == model_id => Some(best_variant.clone()),
-                _ => None,
+            // Prefer the variant the user picked in the variant-selection
+            // phase; fall back to discovery's hardware-fit recommendation
+            // (e.g. in --auto mode, where that phase never runs).
+            let chosen_variant = selected_variants.get(model_id).cloned().or_else(|| {
+                discovery.recommendations.iter().find_map(|r| match r {
+                    Recommendation::Model {
+                        model_id: rec_id,
+                        best_variant,
+                        ..
+                    } if rec_id == model_id => Some(best_variant.clone()),
+                    _ => None,
+                })
             });
 
-            let (provider_id, variant) = match &best_variant {
+            let (provider_id, variant) = match &chosen_variant {
                 Some(v) => (
                     Self::find_compatible_provider(v, selected_providers, ctx)
                         .or_else(|| selected_providers.iter().next().cloned()),
@@ -1653,6 +1789,148 @@ mod tests {
         assert!(filtered.is_empty());
     }
 
+    // -- Variant selection -------------------------------------------------------
+
+    fn model_recommendation(model_id: &str, md: &ModelMetadata, best_variant: ModelVariant) -> Recommendation {
+        Recommendation::Model {
+            model_id: model_id.to_string(),
+            family: md.family.clone(),
+            version: md.version.clone(),
+            size: format_size(md.size),
+            model_type: md.model_type.clone(),
+            best_variant,
+            context_fit: ContextFit::Full,
+            can_run_by: vec![],
+        }
+    }
+
+    #[test]
+    fn candidate_variants_excludes_formats_no_selected_provider_supports() {
+        let ctx = test_ctx();
+        let md = MODEL_REGISTRY
+            .get("granite-vision-4.1-4b")
+            .expect("fixture model should exist in the catalog");
+        let selected: HashSet<String> = ["lm-studio".to_string()].into_iter().collect();
+
+        let candidates = SetupCommands::candidate_variants(&md, &selected, &ctx);
+
+        assert!(
+            !candidates.is_empty(),
+            "lm-studio should be able to run at least one GGUF variant"
+        );
+        assert!(
+            candidates
+                .iter()
+                .all(|(v, gb)| v.format.eq_ignore_ascii_case("gguf") && *gb > 0.0),
+            "every candidate should be a GGUF variant with a positive VRAM estimate"
+        );
+        assert!(
+            !candidates
+                .iter()
+                .any(|(v, _)| v.format.eq_ignore_ascii_case("safetensors")),
+            "lm-studio cannot run safetensors, so it must not appear as a candidate"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_variants_auto_selects_when_only_one_candidate_without_prompting() {
+        let capture = Arc::new(CaptureUi::default());
+        let mut ctx = crate::AppContext {
+            config: Config::default(),
+            ui: capture.clone(),
+        };
+
+        // granite-docling-258M-mlx has exactly one (safetensors) variant;
+        // openai-compatible's default `can_run_model` accepts any format.
+        let md = MODEL_REGISTRY
+            .get("granite-docling-258M-mlx")
+            .expect("fixture model should exist in the catalog");
+        assert_eq!(md.variants.len(), 1, "fixture assumption: exactly one variant");
+
+        let discovery = DiscoveryResult {
+            recommendations: vec![model_recommendation(
+                "granite-docling-258M-mlx",
+                &md,
+                md.variants[0].clone(),
+            )],
+            configured_provider_ids: vec![],
+            configured_model_ids: vec![],
+            configured_launcher_ids: vec![],
+            configured_capability_ids: vec![],
+        };
+        let selected_models: HashSet<String> =
+            ["granite-docling-258M-mlx".to_string()].into_iter().collect();
+        let selected_providers: HashSet<String> =
+            ["openai-compatible".to_string()].into_iter().collect();
+
+        let chosen = SetupCommands::select_variants(&mut ctx, &discovery, &selected_models, &selected_providers)
+            .await
+            .unwrap();
+
+        let picked = chosen
+            .get("granite-docling-258M-mlx")
+            .expect("should have auto-selected the sole candidate");
+        assert_eq!(picked.format, md.variants[0].format);
+        assert_eq!(picked.precision, md.variants[0].precision);
+        assert!(
+            capture.select_prompts.borrow().is_empty(),
+            "a model with only one compatible variant should not prompt"
+        );
+    }
+
+    #[tokio::test]
+    async fn select_variants_defaults_to_discoverys_best_variant() {
+        let capture = Arc::new(CaptureUi::default());
+        let mut ctx = crate::AppContext {
+            config: Config::default(),
+            ui: capture.clone(),
+        };
+
+        let md = MODEL_REGISTRY
+            .get("granite-vision-4.1-4b")
+            .expect("fixture model should exist in the catalog");
+        let gguf_variants: Vec<ModelVariant> = md
+            .variants
+            .iter()
+            .filter(|v| v.format.eq_ignore_ascii_case("gguf"))
+            .cloned()
+            .collect();
+        assert!(
+            gguf_variants.len() > 1,
+            "fixture assumption: multiple GGUF variants, so a real choice is offered"
+        );
+        let recommended = gguf_variants[gguf_variants.len() / 2].clone();
+
+        let discovery = DiscoveryResult {
+            recommendations: vec![model_recommendation(
+                "granite-vision-4.1-4b",
+                &md,
+                recommended.clone(),
+            )],
+            configured_provider_ids: vec![],
+            configured_model_ids: vec![],
+            configured_launcher_ids: vec![],
+            configured_capability_ids: vec![],
+        };
+        let selected_models: HashSet<String> =
+            ["granite-vision-4.1-4b".to_string()].into_iter().collect();
+        let selected_providers: HashSet<String> = ["lm-studio".to_string()].into_iter().collect();
+
+        // No canned select answer -- CaptureUi::select falls back to
+        // whatever `default` it was passed, so this proves that default
+        // index actually points at discovery's recommended variant.
+        let chosen = SetupCommands::select_variants(&mut ctx, &discovery, &selected_models, &selected_providers)
+            .await
+            .unwrap();
+
+        let picked = chosen
+            .get("granite-vision-4.1-4b")
+            .expect("should have selected a variant");
+        assert_eq!(picked.format, recommended.format);
+        assert_eq!(picked.precision, recommended.precision);
+        assert_eq!(capture.select_prompts.borrow().len(), 1);
+    }
+
     // -- SetupCommands ---------------------------------------------------------
 
     #[tokio::test]
@@ -1745,4 +2023,3 @@ mod tests {
         );
     }
 }
-
