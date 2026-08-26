@@ -13,6 +13,7 @@ pub static CAPABILITY_REGISTRY: LazyLock<base::CapabilityFactory> = LazyLock::ne
     factory.register::<vision_mcp::VisionMCPCapability>("vision-mcp");
     factory.register::<sub_agent::SubAgentCapability>("sub-agent");
     factory.register::<sub_agent_explore::ExploreSubAgentCapability>("sub-agent-explore");
+    factory.register::<sub_agent_plan::PlanSubAgentCapability>("sub-agent-plan");
     factory
 });
 
@@ -96,6 +97,9 @@ pub use sub_agent::{SubAgentCapability, SubAgentCapabilityConfig};
 mod sub_agent_explore;
 pub use sub_agent_explore::{ExploreSubAgentCapability, ExploreSubAgentCapabilityConfig};
 
+mod sub_agent_plan;
+pub use sub_agent_plan::{PlanSubAgentCapability, PlanSubAgentCapabilityConfig};
+
 /*-- tests ---------------------------------------------------------------------*/
 
 #[cfg(test)]
@@ -160,5 +164,10 @@ mod tests {
     #[test]
     fn capability_registry_has_sub_agent() {
         assert!(CAPABILITY_REGISTRY.get("sub-agent").is_some());
+    }
+
+    #[test]
+    fn capability_registry_has_sub_agent_plan() {
+        assert!(CAPABILITY_REGISTRY.get("sub-agent-plan").is_some());
     }
 }

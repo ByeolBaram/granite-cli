@@ -102,12 +102,14 @@ mode doesn't care which credential scheme it's carrying, but genuinely
 cloud-provider-specific request signing is not something this proxy
 attempts.
 
-**Any launcher other than `claude`.** `pi`, `bob`, and `opencode` are
-unaffected — they simply don't declare `BindingType::SubAgent` in their
+**Any launcher other than `claude`.** `pi` and `bob` are unaffected — they
+simply don't declare `BindingType::SubAgent` in their
 `supported_capabilities`, so the existing subset check in
 `bind_capability`/`select_capabilities` rejects enabling a `SubAgentCapability`
 for them, the same way it already rejects any other unsupported binding
-type.
+type. (`opencode` gained `BindingType::SubAgent` support later, since its
+config's native multi-provider support means it needs none of this spec's
+mini-router -- see `src/launchers/opencode.rs`.)
 
 **Cost/pricing accounting for subscription vs. API-key billing** — per the
 issue's own caveat.

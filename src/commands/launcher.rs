@@ -1,4 +1,5 @@
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
 
 // Local
@@ -6,6 +7,8 @@ use crate::capabilities::{CAPABILITY_REGISTRY, CapabilitySource};
 use crate::dependency::Configured;
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::utils::prompt_from_schema;
+
+use_channel!("LNCHR");
 
 /*-- public --*/
 
@@ -173,10 +176,11 @@ impl LauncherCommands {
             .map(|lc| lc.config.clone())
             .or_else(|| LAUNCHER_REGISTRY.default_config(launcher_type))
             .unwrap_or_else(|| serde_json::json!({}));
+        alog_channel!(MessageLevel::Debug3, "Defaults: {:#?}", defaults);
 
         let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Normalise: an empty string for command_path means "use PATH" — treat
+        // Normalize: an empty string for command_path means "use PATH" — treat
         // it the same as absent so validate_command does a PATH lookup.
         if config.get("command_path").and_then(|v| v.as_str()) == Some("") {
             config
@@ -502,10 +506,7 @@ mod tests {
 
     #[tokio::test]
     async fn setup_warns_on_same_type_existing_instance() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let home = tmp.path().join("granite-cli-test-launcher-setup");
-        // SAFETY: single-threaded test; no other thread reads this var.
-        unsafe { std::env::set_var("GRANITE_CLI_HOME", &home) };
+        let _home = crate::config::TestConfigHome::new();
 
         // Pre-populate a "claude" instance named "claude-old"
         let mut ctx = ctx_with_launcher("claude-old", "claude");
@@ -519,8 +520,6 @@ mod tests {
             infos.iter().any(|m| m.contains("claude-old")),
             "expected clash warning to mention the existing instance"
         );
-
-        unsafe { std::env::remove_var("GRANITE_CLI_HOME") };
     }
 
     #[tokio::test]
@@ -534,6 +533,7 @@ mod tests {
 
     #[test]
     fn remove_existing_launcher_succeeds_and_disappears_from_list() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_launcher("my-claude", "claude");
         assert!(ctx.config.get_launcher("my-claude").is_some());
 
@@ -563,6 +563,7 @@ mod tests {
 
     #[test]
     fn list_does_not_show_removed_launcher() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_launcher("my-claude", "claude");
         LauncherCommands::remove(&mut ctx, "my-claude").unwrap();
         LauncherCommands::list(&ctx).unwrap();

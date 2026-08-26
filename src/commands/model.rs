@@ -1502,6 +1502,7 @@ mod tests {
 
     #[test]
     fn remove_existing_model_succeeds_and_disappears_from_list() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
         assert!(ctx.config.get_model("granite-3.1-8b-instruct").is_some());
 
@@ -1531,6 +1532,7 @@ mod tests {
 
     #[test]
     fn list_does_not_show_removed_model() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_model("granite-3.1-8b-instruct", Some("my-ollama"));
         ModelCommands::remove(&mut ctx, "granite-3.1-8b-instruct").unwrap();
         ModelCommands::list(&ctx, None).unwrap();

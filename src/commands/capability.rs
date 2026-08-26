@@ -664,6 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn setup_agent_model_persists_config() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_chat_capable_model();
         // CaptureUi's text() echoes back the default when prompted; here we
         // pass an explicit instance id so no prompt is needed. Exactly one
@@ -815,6 +816,7 @@ mod tests {
 
     #[test]
     fn remove_existing_capability_succeeds_and_disappears_from_list() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_capability("my-cap", "agent-model");
         assert!(ctx.config.get_capability("my-cap").is_some());
 
@@ -844,6 +846,7 @@ mod tests {
 
     #[test]
     fn list_does_not_show_removed_capability() {
+        let _home = crate::config::TestConfigHome::new();
         let mut ctx = ctx_with_capability("my-cap", "agent-model");
         CapabilityCommands::remove(&mut ctx, "my-cap").unwrap();
         CapabilityCommands::list(&ctx).unwrap();

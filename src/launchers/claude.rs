@@ -369,6 +369,7 @@ impl ClaudeLauncher {
                 // so the override sticks.
                 let mapped_name = match binding.known_type {
                     Some(KnownSubAgent::Explore) => "Explore".to_string(),
+                    Some(KnownSubAgent::Plan) => "Plan".to_string(),
                     _ => name.clone(),
                 };
                 alog_channel!(MessageLevel::Debug2, "Using agent name {} for {}", &mapped_name, &name);

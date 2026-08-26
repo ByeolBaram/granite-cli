@@ -147,6 +147,7 @@ pub enum ToolName {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum KnownSubAgent {
     Explore,
+    Plan,
 }
 
 /// Result payload for `BindingType::SubAgent`: a named sub-agent's prompt,

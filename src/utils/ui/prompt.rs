@@ -1,6 +1,11 @@
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use serde_json::Value;
 
+// Local
 use crate::utils::ui::Ui;
+
+use_channel!("PRMPT");
 
 /*-- Public entry point --------------------------------------------------------*/
 
@@ -32,6 +37,7 @@ fn prompt_value(
     if let Some(choices) = enum_choices(root, node) {
         return prompt_enum_scalar(ui, root, &choices, default, indent, label);
     }
+    alog_channel!(MessageLevel::Debug3, "Prompting for {:#?}", node);
     match get_promptable_type(node).as_deref() {
         Some("object") => prompt_object(ui, root, node, default, indent, label),
         Some("array") => prompt_array(ui, root, node, default, indent, label),
