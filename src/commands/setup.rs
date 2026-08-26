@@ -542,9 +542,14 @@ fn compare_versions_desc(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 fn find_latest_version(models: &[(String, ModelMetadata)]) -> Option<&(String, ModelMetadata)> {
+    // `compare_versions_desc` is a *reversed* comparator (higher version
+    // sorts first when fed to `sort_by`/`sort_by_key`, i.e. it reports the
+    // higher version as `Less`) -- so picking the "latest" requires
+    // `min_by`, not `max_by`. `max_by` would select the lowest version in
+    // the family instead.
     models
         .iter()
-        .max_by(|(_, a), (_, b)| compare_versions_desc(&a.version, &b.version))
+        .min_by(|(_, a), (_, b)| compare_versions_desc(&a.version, &b.version))
 }
 
 fn format_size(size: u64) -> String {
@@ -1055,19 +1060,38 @@ impl SetupCommands {
             }
         }
 
-        // Configure models
+        // Configure models. Providers were just configured above, so
+        // `ctx.config` already has real entries for every id in
+        // `selected_providers` -- look one up and construct it live to
+        // check actual format/precision compatibility, rather than relying
+        // on discovery's `can_run_by` (which only reflects providers that
+        // were *already* configured before this wizard run, and so is
+        // always empty on a first-time setup).
         for model_id in selected_models {
             ui.info(&format!("\nConfiguring model: {model_id}..."));
 
-            // Prefer a selected provider that can actually run this model's
-            // variant; fall back to any selected provider.
-            let provider_id = Self::find_provider_for_model(model_id, selected_providers, discovery)
-                .or_else(|| selected_providers.iter().next().cloned());
+            let best_variant = discovery.recommendations.iter().find_map(|r| match r {
+                Recommendation::Model {
+                    model_id: rec_id,
+                    best_variant,
+                    ..
+                } if rec_id == model_id => Some(best_variant.clone()),
+                _ => None,
+            });
+
+            let (provider_id, variant) = match &best_variant {
+                Some(v) => (
+                    Self::find_compatible_provider(v, selected_providers, ctx)
+                        .or_else(|| selected_providers.iter().next().cloned()),
+                    Some(format!("{}/{}", v.format, v.precision)),
+                ),
+                None => (selected_providers.iter().next().cloned(), None),
+            };
 
             let model_config = crate::config::ModelConfig {
                 model_id: model_id.clone(),
                 provider_id,
-                variant: None,
+                variant,
             };
 
             if ctx.config.insert_model(model_id, model_config).is_err() {
@@ -1108,24 +1132,28 @@ impl SetupCommands {
         Ok(())
     }
 
-    /// Pick a selected provider that can run `model_id`'s recommended variant,
-    /// per the `can_run_by` list computed during discovery.
-    fn find_provider_for_model(
-        model_id: &str,
+    /// Picks a selected provider that can actually run `variant`, by
+    /// constructing each one and checking `can_run_model`. Assumes providers
+    /// have already been written to `ctx.config` (as `configure_all` does,
+    /// before configuring models).
+    fn find_compatible_provider(
+        variant: &ModelVariant,
         selected_providers: &HashSet<String>,
-        discovery: &DiscoveryResult,
+        ctx: &crate::AppContext,
     ) -> Option<String> {
-        discovery.recommendations.iter().find_map(|r| match r {
-            Recommendation::Model {
-                model_id: rec_id,
-                can_run_by,
-                ..
-            } if rec_id == model_id => can_run_by
-                .iter()
-                .find(|p| selected_providers.contains(*p))
-                .cloned(),
-            _ => None,
-        })
+        selected_providers
+            .iter()
+            .find(|pid| {
+                ctx.config
+                    .get_provider(pid)
+                    .and_then(|pc| {
+                        PROVIDER_REGISTRY
+                            .construct(&pc.provider_type, &pc.provider_id, &pc.config, &ctx.config)
+                            .ok()
+                    })
+                    .is_some_and(|p| p.can_run_model(&variant.format, &variant.precision))
+            })
+            .cloned()
     }
 
     /// Find a model_id from selected_models that satisfies a capability's model
@@ -1470,6 +1498,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn find_latest_version_picks_the_highest_version_not_the_lowest() {
+        // Regression test: `compare_versions_desc` is a reversed comparator
+        // (by design, for descending display sorts), so `find_latest_version`
+        // must pair it with `min_by`, not `max_by` -- using `max_by` silently
+        // picked the *lowest* version in the family instead.
+        fn md(version: &str) -> ModelMetadata {
+            ModelMetadata {
+                family: "Test Family".to_string(),
+                version: version.to_string(),
+                size: 0,
+                context_length: 0,
+                model_type: ModelType::Text,
+                huggingface_repo: String::new(),
+                native_dtype: String::new(),
+                architecture: crate::models::ModelArchitecture {
+                    num_hidden_layers: 0,
+                    hidden_size: 0,
+                    num_attention_heads: 0,
+                    num_key_value_heads: 0,
+                    head_dim: 0,
+                    layer_types: vec![],
+                },
+                variants: vec![],
+                description: None,
+                tags: vec![],
+                supported_functions: vec![],
+            }
+        }
+        let models = vec![
+            ("a".to_string(), md("4.0")),
+            ("b".to_string(), md("3.1")),
+            ("c".to_string(), md("4.1")),
+            ("d".to_string(), md("3.3")),
+        ];
+        let (id, latest) = find_latest_version(&models).expect("non-empty input");
+        assert_eq!(id, "c");
+        assert_eq!(latest.version, "4.1");
+    }
+
     // -- size helpers ----------------------------------------------------------
 
     #[test]
@@ -1639,4 +1707,42 @@ mod tests {
         assert_eq!(items.len(), 1, "the missing binary should have been excluded");
         assert!(items[0].contains("found"));
     }
+
+    #[tokio::test]
+    async fn find_compatible_provider_rejects_format_mismatch() {
+        let mut ctx = test_ctx();
+        ctx.config.providers.insert(
+            "lm-studio".to_string(),
+            crate::config::ProviderConfig {
+                provider_id: "lm-studio".to_string(),
+                provider_type: "lm-studio".to_string(),
+                config: PROVIDER_REGISTRY.default_config("lm-studio").unwrap_or_default(),
+            },
+        );
+        let selected: HashSet<String> = ["lm-studio".to_string()].into_iter().collect();
+
+        let gguf_variant = ModelVariant {
+            format: "GGUF".to_string(),
+            precision: "Q4_K_M".to_string(),
+            size_gb: Some(4.0),
+            url: "https://example.com/model.gguf".to_string(),
+        };
+        assert_eq!(
+            SetupCommands::find_compatible_provider(&gguf_variant, &selected, &ctx),
+            Some("lm-studio".to_string())
+        );
+
+        let safetensors_variant = ModelVariant {
+            format: "safetensors".to_string(),
+            precision: "bfloat16".to_string(),
+            size_gb: Some(4.0),
+            url: "https://example.com/model".to_string(),
+        };
+        assert_eq!(
+            SetupCommands::find_compatible_provider(&safetensors_variant, &selected, &ctx),
+            None,
+            "lm-studio cannot serve safetensors and should not be picked"
+        );
+    }
 }
+
