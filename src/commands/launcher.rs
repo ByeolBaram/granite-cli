@@ -1,4 +1,5 @@
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
 
 // Local
@@ -6,6 +7,8 @@ use crate::capabilities::{CAPABILITY_REGISTRY, CapabilitySource};
 use crate::dependency::Configured;
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::utils::prompt_from_schema;
+
+use_channel!("LNCHR");
 
 /*-- public --*/
 
@@ -173,10 +176,11 @@ impl LauncherCommands {
             .map(|lc| lc.config.clone())
             .or_else(|| LAUNCHER_REGISTRY.default_config(launcher_type))
             .unwrap_or_else(|| serde_json::json!({}));
+        alog_channel!(MessageLevel::Debug3, "Defaults: {:#?}", defaults);
 
         let mut config = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
 
-        // Normalise: an empty string for command_path means "use PATH" — treat
+        // Normalize: an empty string for command_path means "use PATH" — treat
         // it the same as absent so validate_command does a PATH lookup.
         if config.get("command_path").and_then(|v| v.as_str()) == Some("") {
             config
