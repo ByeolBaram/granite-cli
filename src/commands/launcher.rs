@@ -281,72 +281,81 @@ async fn select_capabilities(
         return Ok(vec![]);
     }
 
-    let source = CapabilitySource::from_config(&ctx.config);
+    // `enabled` accumulates the user's final selections across loop iterations.
+    let mut enabled: Vec<String> = previously_enabled.to_vec();
+    // Newly-configured capability IDs collected across loop iterations.
+    let mut result: Vec<String> = vec![];
 
-    // Instances whose binding_types() intersect the launcher's supported set.
-    let mut compatible_instances: Vec<String> = source
-        .instances()
-        .into_iter()
-        .filter(|(_, cap)| {
-            cap.binding_types()
-                .iter()
-                .any(|bt| launcher_def.supported_capabilities.contains(bt))
-        })
-        .map(|(id, _)| id)
-        .collect();
-    compatible_instances.sort();
+    loop {
+        let source = CapabilitySource::from_config(&ctx.config);
 
-    // Catalog types whose supported_binding_types intersect the launcher's set.
-    let compatible_types: Vec<&'static str> = {
-        let mut types: Vec<&'static str> = CAPABILITY_REGISTRY
-            .entries()
+        // Instances whose binding_types() intersect the launcher's supported set.
+        let mut compatible_instances: Vec<String> = source
+            .instances()
             .into_iter()
-            .filter(|(_, meta)| {
-                meta.supported_binding_types
+            .filter(|(_, cap)| {
+                cap.binding_types()
                     .iter()
                     .any(|bt| launcher_def.supported_capabilities.contains(bt))
             })
-            .map(|(name, _)| name)
+            .map(|(id, _)| id)
             .collect();
-        types.sort();
-        types
-    };
+        compatible_instances.sort();
 
-    if compatible_instances.is_empty() && compatible_types.is_empty() {
-        ctx.ui
-            .info("No compatible capabilities are configured or available for this launcher.");
-        return Ok(vec![]);
-    }
+        // Catalog types whose supported_binding_types intersect the launcher's set.
+        let compatible_types: Vec<&'static str> = {
+            let mut types: Vec<&'static str> = CAPABILITY_REGISTRY
+                .entries()
+                .into_iter()
+                .filter(|(_, meta)| {
+                    meta.supported_binding_types
+                        .iter()
+                        .any(|bt| launcher_def.supported_capabilities.contains(bt))
+                })
+                .map(|(name, _)| name)
+                .collect();
+            types.sort();
+            types
+        };
 
-    const CONFIGURE_NEW: &str = "Configure a new capability...";
-
-    // Build display list: sorted instances, then sentinel if types exist.
-    let mut items: Vec<String> = compatible_instances.clone();
-    if !compatible_types.is_empty() {
-        items.push(CONFIGURE_NEW.to_string());
-    }
-
-    // Pre-check items that were previously enabled.
-    let defaults: Vec<bool> = items
-        .iter()
-        .map(|item| item != CONFIGURE_NEW && previously_enabled.contains(item))
-        .collect();
-
-    let selected = ctx
-        .ui
-        .multi_select("Select capabilities to enable", &items, &defaults)?;
-
-    let mut result: Vec<String> = vec![];
-    let mut configure_new_chosen = false;
-    for idx in selected {
-        if items[idx] == CONFIGURE_NEW {
-            configure_new_chosen = true;
-        } else {
-            result.push(items[idx].clone());
+        if compatible_instances.is_empty() && compatible_types.is_empty() {
+            ctx.ui
+                .info("No compatible capabilities are configured or available for this launcher.");
+            return Ok(vec![]);
         }
-    }
 
-    if configure_new_chosen {
+        const CONFIGURE_NEW: &str = "Configure a new capability...";
+
+        // Build display list: sorted instances, then sentinel if types exist.
+        let mut items: Vec<String> = compatible_instances.clone();
+        if !compatible_types.is_empty() {
+            items.push(CONFIGURE_NEW.to_string());
+        }
+
+        // Pre-check items that were previously enabled or added this session.
+        let defaults: Vec<bool> = items
+            .iter()
+            .map(|item| item != CONFIGURE_NEW && enabled.contains(item))
+            .collect();
+
+        let selected = ctx
+            .ui
+            .multi_select("Select capabilities to enable", &items, &defaults)?;
+
+        result.clear();
+        let mut configure_new_chosen = false;
+        for idx in selected {
+            if items[idx] == CONFIGURE_NEW {
+                configure_new_chosen = true;
+            } else {
+                result.push(items[idx].clone());
+            }
+        }
+
+        if !configure_new_chosen {
+            break;
+        }
+
         // Mirror the select_provider pattern: auto-select when only one type,
         // otherwise let the user pick.
         let cap_type = if compatible_types.len() == 1 {
@@ -363,6 +372,9 @@ async fn select_capabilities(
         let nickname = ctx.ui.text("Name this capability instance", cap_type)?;
 
         crate::commands::CapabilityCommands::setup(ctx, cap_type, Some(&nickname)).await?;
+
+        // Pre-select the new capability on the next iteration.
+        enabled.push(nickname.clone());
         result.push(nickname);
     }
 
