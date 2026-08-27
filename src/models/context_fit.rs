@@ -101,8 +101,12 @@ pub(crate) fn estimate(
 
 /// Total memory (weights + KV cache / recurrent state, with runtime
 /// overhead) required to run `variant` at `context_tokens` tokens of
-/// context.
-fn required_gb(
+/// context, in gigabytes. Exposed beyond this module (e.g. to the setup
+/// wizard) so a variant's estimated VRAM/RAM footprint can be shown
+/// alongside it wherever the model's `ModelArchitecture` and `native_dtype`
+/// are available -- most usefully at `context_tokens = model.context_length`
+/// for a "full context" estimate.
+pub fn required_gb(
     architecture: &ModelArchitecture,
     variant: &ModelVariant,
     native_dtype: &str,

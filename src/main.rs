@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 // Local
 use commands::{
     CapabilityCommands, HardwareCommands, LauncherCommands, ModelCommands, ProviderCommands,
+    SetupCommands,
 };
 use utils::ui::{UI_REGISTRY, Ui, run_interactive_tui};
 
@@ -130,6 +131,20 @@ enum Commands {
 
     /// Launcher management commands
     Launcher(LauncherWithOutput),
+
+    /// Unified setup wizard: discover and configure providers, models, launchers,
+    /// and capabilities in a single guided flow.
+    Setup {
+        /// Auto-detect and configure everything that can be auto-configured.
+        /// Consent is implied. Uses registry defaults for all config fields.
+        #[arg(long)]
+        auto: bool,
+
+        /// Skip the model weight pull prompt at the end of the wizard.
+        /// Model weights are never auto-pulled in --auto mode regardless.
+        #[arg(long)]
+        skip_pull: bool,
+    },
 
     /// Show hardware profile and recommended precision
     Hardware,
@@ -489,6 +504,18 @@ async fn main() {
                 log_thread_id,
             );
             run_launcher_command(&mut ctx, wrapper.subcommand)
+                .await
+                .map_err(|e| ctx.ui.error(&e.to_string()))
+        }
+        Some(Commands::Setup { auto, skip_pull }) => {
+            let mut ctx = construct_context(
+                "terminal",
+                &log_level,
+                &log_filters,
+                log_json,
+                log_thread_id,
+            );
+            SetupCommands::run(&mut ctx, auto, skip_pull)
                 .await
                 .map_err(|e| ctx.ui.error(&e.to_string()))
         }
