@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use crate::capabilities::{BindingType, CAPABILITY_REGISTRY, Dependency, ModelRequirement};
 use crate::dependency::Requirement;
 use crate::launchers::LAUNCHER_REGISTRY;
-use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType, ModelVariant};
+use crate::models::{ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant};
 use crate::providers::{HealthStatus, PROVIDER_REGISTRY, Provider};
 use crate::utils::hardware::detect_hardware;
 
@@ -526,7 +526,9 @@ impl Revaluator {
                     // alone can't tell us `supported_functions`, which most
                     // capability requirements actually key on).
                     match MODEL_REGISTRY.get(model_id) {
-                        Some(md) => all_requirements.iter().any(|req| req.admits_type(&md)),
+                        Some(md) => all_requirements
+                            .iter()
+                            .any(|req| admits_for_recommendation(req, &md)),
                         None => false,
                     }
                 } else {
@@ -703,6 +705,39 @@ fn sort_model_recommendations(recommendations: &mut [Recommendation]) {
             .then_with(|| compare_versions_desc(a_version, b_version))
             .then_with(|| b_size.cmp(&a_size))
     });
+}
+
+/// Model functions that make a model "multi-modal" -- image or audio
+/// input. A model reporting one of these can usually still `Chat`, but it's
+/// not *intended* as a general chat model, so it shouldn't be recommended
+/// for a capability that only asked for `Chat`/`ToolCalling`/etc.
+const MULTIMODAL_FUNCTIONS: &[ModelFunction] = &[
+    ModelFunction::ImageUnderstanding,
+    ModelFunction::Transcription,
+    ModelFunction::Translation,
+    ModelFunction::SpeakerAttribution,
+    ModelFunction::KeywordBiasing,
+];
+
+/// Whether `md` should be recommended for a capability declaring `req`.
+/// Layers an extra rule on top of `ModelRequirement::admits_type`: if `req`
+/// doesn't itself ask for any multi-modal function, a multi-modal model is
+/// excluded even though it technically satisfies the requirement's function
+/// list (e.g. a vision model supports `Chat` too, but a plain agent-model
+/// binding isn't looking for a vision model).
+fn admits_for_recommendation(req: &ModelRequirement, md: &ModelMetadata) -> bool {
+    if !req.admits_type(md) {
+        return false;
+    }
+    let req_wants_multimodal = req
+        .supported_functions
+        .iter()
+        .any(|f| MULTIMODAL_FUNCTIONS.contains(f));
+    req_wants_multimodal
+        || !md
+            .supported_functions
+            .iter()
+            .any(|f| MULTIMODAL_FUNCTIONS.contains(f))
 }
 
 /*-- SetupCommands -----------------------------------------------------------*/
