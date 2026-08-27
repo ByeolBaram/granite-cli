@@ -9,6 +9,7 @@ use crate::capabilities::base::KnownSubAgent;
 use crate::capabilities::base::ToolName;
 use crate::declare_sub_agent_basic;
 
+const EXPLORE_DESCRIPTION: &str = "Thoroughly search and explore the codebase to find files, read implementations, and understand patterns. Use when the user needs to find specific files, understand code structure, or locate implementations.";
 // CITE: https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/agent-prompt-explore.md
 const EXPLORE_PROMPT: &str = "You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
@@ -48,6 +49,7 @@ declare_sub_agent_basic!(
     "Explore Sub-Agent";
     "Defines a named exploration sub-agent (static prompt, fixed tools, and model) that a launched coding agent can delegate to.";
     ["agent", "explore"]
+    EXPLORE_DESCRIPTION.to_string();
     EXPLORE_PROMPT.to_string();
     vec![ToolName::FileRead, ToolName::Search, ToolName::Shell];
     Some(KnownSubAgent::Explore)
@@ -224,7 +226,6 @@ mod tests {
         let cap = ExploreSubAgentCapability::new(
             "explorer",
             &serde_json::json!({
-                "description": "Explores code",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
@@ -239,6 +240,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         }
@@ -264,7 +266,6 @@ mod tests {
         let cap = ExploreSubAgentCapability::new(
             "explorer",
             &serde_json::json!({
-                "description": "Explores code",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
@@ -279,6 +280,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         };
@@ -287,7 +289,7 @@ mod tests {
         let Binding::SubAgent(binding) = binding else {
             panic!("expected SubAgent binding")
         };
-        assert_eq!(binding.description, "Explores code");
+        assert_eq!(binding.description, EXPLORE_DESCRIPTION);
         assert_eq!(binding.prompt, EXPLORE_PROMPT.to_string());
         assert_eq!(
             binding.tools,

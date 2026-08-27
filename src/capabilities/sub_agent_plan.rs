@@ -10,6 +10,7 @@ use crate::capabilities::base::KnownSubAgent;
 use crate::capabilities::base::ToolName;
 use crate::declare_sub_agent_basic;
 
+const PLAN_DESCRIPTION: &str = "Explore the codebase and design detailed implementation plans. Use when the user needs a structured plan with steps, file references, and architectural decisions before implementation.";
 const PLAN_PROMPT: &str = "You are a software architect and planning specialist. Your role is to explore the codebase and design implementation plans.
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
@@ -67,6 +68,7 @@ declare_sub_agent_basic!(
     "Plan Sub-Agent";
     "Defines a named planning sub-agent (static prompt, fixed read-only tools, and model) that a launched coding agent can delegate implementation-plan design to.";
     ["agent", "plan"]
+    PLAN_DESCRIPTION.to_string();
     PLAN_PROMPT.to_string();
     vec![
         ToolName::FileRead,
@@ -250,7 +252,6 @@ mod tests {
         let cap = PlanSubAgentCapability::new(
             "planner",
             &serde_json::json!({
-                "description": "Plans changes",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
@@ -265,6 +266,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         }
@@ -290,7 +292,6 @@ mod tests {
         let cap = PlanSubAgentCapability::new(
             "planner",
             &serde_json::json!({
-                "description": "Plans changes",
                 "model_id": "granite-3.1-8b-instruct",
             }),
             &config,
@@ -305,6 +306,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         };
@@ -313,7 +315,7 @@ mod tests {
         let Binding::SubAgent(binding) = binding else {
             panic!("expected SubAgent binding")
         };
-        assert_eq!(binding.description, "Plans changes");
+        assert_eq!(binding.description, PLAN_DESCRIPTION);
         assert_eq!(binding.prompt, PLAN_PROMPT.to_string());
         assert_eq!(
             binding.tools,

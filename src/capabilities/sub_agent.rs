@@ -18,16 +18,13 @@ macro_rules! declare_sub_agent_basic {
         $name_cap:expr;
         $description_cap:expr;
         [$($tag:expr),* $(,)?]
+        $description_expr:expr;
         $prompt_expr:expr;
         $tools_expr:expr;
         $known_type:expr
     ) => {
         #[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
         pub struct $config_struct {
-            /// Shown to the main agent so it can decide when to delegate to this
-            /// sub-agent.
-            #[validate(min_length = 1)]
-            pub description: String,
             /// Key into the configured models map (the user-chosen instance ID) for
             /// the model this sub-agent runs on.
             #[validate(min_length = 1)]
@@ -38,7 +35,11 @@ macro_rules! declare_sub_agent_basic {
             instance_id: String,
             config: $config_struct,
             configured_model: $crate::models::ConfiguredModel,
+            /// Description shown to the parent agent for deciding when to delegate.
+            pub description: String,
+            /// Static prompt for this sub-agent.
             pub prompt: String,
+            /// Static tool allow-list for this sub-agent.
             pub tools: Vec<$crate::capabilities::base::ToolName>,
         }
 
@@ -53,12 +54,14 @@ macro_rules! declare_sub_agent_basic {
                 let config: $config_struct =
                     serde_json::from_value(cfg.clone()).unwrap_or_default();
                 let configured_model = $crate::models::ConfiguredModel::resolve(&config.model_id, global_config);
+                let description = $description_expr;
                 let prompt = $prompt_expr;
                 let tools = $tools_expr;
                 Self {
                     instance_id: instance_id.to_string(),
                     config,
                     configured_model,
+                    description,
                     prompt,
                     tools,
                 }
@@ -114,7 +117,7 @@ macro_rules! declare_sub_agent_basic {
                     $crate::models::ModelFunction::Chat,
                 )?;
                 Ok($crate::capabilities::base::Binding::SubAgent($crate::capabilities::base::SubAgentBinding {
-                    description: self.config.description.clone(),
+                    description: self.description.clone(),
                     prompt: self.prompt.clone(),
                     tools: self.tools.clone(),
                     model: $crate::capabilities::base::AgentModelBinding {
@@ -171,7 +174,8 @@ macro_rules! declare_sub_agent_full {
         #[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
         pub struct $config_struct {
             /// Shown to the main agent so it can decide when to delegate to this
-            /// sub-agent.
+            /// sub-agent -- the same role Claude Code's own subagent `description`
+            /// field plays.
             #[validate(min_length = 1)]
             pub description: String,
             /// Key into the configured models map (the user-chosen instance ID) for
@@ -185,7 +189,11 @@ macro_rules! declare_sub_agent_full {
             instance_id: String,
             config: $config_struct,
             configured_model: $crate::models::ConfiguredModel,
+            /// Description shown to the parent agent for deciding when to delegate.
+            pub description: String,
+            /// Configurable prompt for this sub-agent.
             pub prompt: String,
+            /// Configurable tool allow-list for this sub-agent.
             pub tools: Vec<$crate::capabilities::base::ToolName>,
         }
 
@@ -200,12 +208,14 @@ macro_rules! declare_sub_agent_full {
                 let config: $config_struct =
                     serde_json::from_value(cfg.clone()).unwrap_or_default();
                 let configured_model = $crate::models::ConfiguredModel::resolve(&config.model_id, global_config);
+                let description = config.description.clone();
                 let prompt = config.prompt.clone();
                 let tools = config.tools.clone();
                 Self {
                     instance_id: instance_id.to_string(),
                     config,
                     configured_model,
+                    description,
                     prompt,
                     tools,
                 }
@@ -261,7 +271,7 @@ macro_rules! declare_sub_agent_full {
                     $crate::models::ModelFunction::Chat,
                 )?;
                 Ok($crate::capabilities::base::Binding::SubAgent($crate::capabilities::base::SubAgentBinding {
-                    description: self.config.description.clone(),
+                    description: self.description.clone(),
                     prompt: self.prompt.clone(),
                     tools: self.tools.clone(),
                     model: $crate::capabilities::base::AgentModelBinding {
@@ -508,6 +518,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         }
@@ -550,6 +561,7 @@ mod tests {
                 }),
                 None,
             ),
+            description: cap.description,
             prompt: cap.prompt,
             tools: cap.tools,
         };
