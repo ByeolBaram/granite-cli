@@ -144,6 +144,10 @@ impl Ui for JsonOutput {
         base::non_interactive()
     }
 
+    fn text_optional(&self, _prompt: &str, _default: &str) -> anyhow::Result<String> {
+        base::non_interactive()
+    }
+
     fn password(&self, _prompt: &str) -> anyhow::Result<String> {
         base::non_interactive()
     }

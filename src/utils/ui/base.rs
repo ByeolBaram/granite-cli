@@ -217,11 +217,25 @@ pub trait Ui: Send + Sync + Any {
             .interact()?)
     }
 
-    /// Ask for a line of free text, pre-filled with `default`.
+    /// Ask for a line of free text, pre-filled with `default`. Rejects a
+    /// blank submission, re-prompting instead of returning "".
     fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
         Ok(dialoguer::Input::new()
             .with_prompt(prompt)
             .with_initial_text(default)
+            .interact_text()?)
+    }
+
+    /// Like [`text`](Ui::text), but accepts a blank submission as a
+    /// legitimate answer instead of re-prompting. For fields where empty
+    /// means "unset" -- e.g. an optional `command_path` that falls back to
+    /// PATH discovery -- rather than a value that's merely allowed to be
+    /// the empty string.
+    fn text_optional(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+        Ok(dialoguer::Input::new()
+            .with_prompt(prompt)
+            .with_initial_text(default)
+            .allow_empty(true)
             .interact_text()?)
     }
 
@@ -453,6 +467,10 @@ pub(crate) mod tests {
                 .borrow_mut()
                 .pop_front()
                 .unwrap_or_else(|| default.to_string()))
+        }
+
+        fn text_optional(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+            self.text(prompt, default)
         }
 
         fn password(&self, prompt: &str) -> anyhow::Result<String> {

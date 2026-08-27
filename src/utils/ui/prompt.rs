@@ -301,8 +301,18 @@ fn prompt_string(
         };
         Ok(Value::String(value))
     } else {
-        let entered = ui.text(&prompt, &default_str)?;
-        Ok(Value::String(entered))
+        let is_optional = is_optional_field(node);
+        let entered = if is_optional {
+            ui.text_optional(&prompt, &default_str)?
+        } else {
+            ui.text(&prompt, &default_str)?
+        };
+        // For optional fields, treat empty input (when default is also empty) as None
+        if is_optional && entered.is_empty() && default_str.is_empty() {
+            Ok(Value::Null)
+        } else {
+            Ok(Value::String(entered))
+        }
     }
 }
 
@@ -351,6 +361,23 @@ fn prompt_bool(ui: &dyn Ui, default: &Value, indent: &str, label: &str) -> anyho
 /// `"format": "password"` marker -- never guessed from a field name.
 fn is_secret_schema(node: &Value) -> bool {
     node.get("format").and_then(Value::as_str) == Some("password")
+}
+
+/// True when the schema represents an optional scalar field (`Option<T>`
+/// for a plain, non-`$ref` `T` such as `String`), recognized from schemars'
+/// `type: [T, "null"]` array.
+///
+/// Doesn't recognize `Option<T>` for a `$ref`-backed `T` (e.g.
+/// `Option<Secret>`), which schemars instead renders as `anyOf` wrapping the
+/// `$ref` alongside a null variant -- `resolve_ref` discards that null
+/// variant when it follows the `$ref` through, so by the time a node reaches
+/// here the signal is already gone. See
+/// `is_optional_field_cannot_detect_ref_wrapped_options` for why this is an
+/// accepted gap rather than a bug.
+fn is_optional_field(node: &Value) -> bool {
+    node.get("type")
+        .and_then(Value::as_array)
+        .is_some_and(|types| types.iter().any(|t| t.as_str() == Some("null")))
 }
 
 /// Extract the promptable type from a schema node. Returns the concrete type
@@ -469,6 +496,114 @@ mod tests {
         assert!(!is_secret_schema(
             &json!({"type": "string", "title": "api_key"})
         ));
+    }
+
+    #[test]
+    fn is_optional_field_detects_type_array_with_null() {
+        // Type arrays can appear after schema resolution
+        assert!(is_optional_field(&json!({"type": ["string", "null"]})));
+        assert!(is_optional_field(&json!({"type": ["integer", "null"]})));
+        assert!(!is_optional_field(&json!({"type": "string"})));
+        assert!(!is_optional_field(&json!({"type": ["string", "integer"]})));
+    }
+
+    #[test]
+    fn prompt_from_schema_returns_null_for_empty_optional_string() {
+        use crate::utils::ui::base::tests::CaptureUi;
+
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+        struct TestConfig {
+            command_path: Option<String>,
+        }
+
+        let ui = CaptureUi::default();
+        // Empty string input for optional field
+        ui.text_answers.borrow_mut().push_back("".to_string());
+
+        let schema = schemars::schema_for!(TestConfig);
+        let result = prompt_from_schema(&ui, &schema, &json!({})).unwrap();
+
+        // Should be null, not empty string
+        assert_eq!(result["command_path"], json!(null));
+
+        // Should deserialize correctly as None
+        let config: TestConfig = serde_json::from_value(result).unwrap();
+        assert!(config.command_path.is_none());
+    }
+
+    #[test]
+    fn prompt_from_schema_returns_string_for_non_empty_optional_string() {
+        use crate::utils::ui::base::tests::CaptureUi;
+
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+        struct TestConfig {
+            command_path: Option<String>,
+        }
+
+        let ui = CaptureUi::default();
+        // Non-empty string input for optional field
+        ui.text_answers
+            .borrow_mut()
+            .push_back("/usr/bin/bob".to_string());
+
+        let schema = schemars::schema_for!(TestConfig);
+        let result = prompt_from_schema(&ui, &schema, &json!({})).unwrap();
+
+        // Should be the entered string
+        assert_eq!(result["command_path"], json!("/usr/bin/bob"));
+
+        // Should deserialize correctly as Some
+        let config: TestConfig = serde_json::from_value(result).unwrap();
+        assert_eq!(config.command_path, Some("/usr/bin/bob".to_string()));
+    }
+
+    #[test]
+    fn prompt_from_schema_keeps_default_for_empty_input_on_optional_string() {
+        use crate::utils::ui::base::tests::CaptureUi;
+
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+        struct TestConfig {
+            command_path: Option<String>,
+        }
+
+        let ui = CaptureUi::default();
+        // Empty string input, but there's a default value
+        ui.text_answers.borrow_mut().push_back("".to_string());
+
+        let schema = schemars::schema_for!(TestConfig);
+        let defaults = json!({"command_path": "/existing/path"});
+        let result = prompt_from_schema(&ui, &schema, &defaults).unwrap();
+
+        // Should keep the default, not return null
+        assert_eq!(result["command_path"], json!(""));
+
+        // Empty string is still a valid value when there was a default
+        let config: TestConfig = serde_json::from_value(result).unwrap();
+        assert_eq!(config.command_path, Some("".to_string()));
+    }
+
+    #[test]
+    fn prompt_from_schema_returns_empty_string_for_required_string() {
+        use crate::utils::ui::base::tests::CaptureUi;
+
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+        struct TestConfig {
+            name: String,
+        }
+
+        let ui = CaptureUi::default();
+        // Empty string input for required field
+        ui.text_answers.borrow_mut().push_back("".to_string());
+
+        let schema = schemars::schema_for!(TestConfig);
+        let result = prompt_from_schema(&ui, &schema, &json!({})).unwrap();
+
+        // Should be empty string, not null (required field)
+        assert_eq!(result["name"], json!(""));
+
+        // Should deserialize correctly as empty string
+        let config: TestConfig = serde_json::from_value(result).unwrap();
+        assert_eq!(config.name, "");
     }
 
     #[test]
@@ -642,6 +777,32 @@ mod tests {
         assert_eq!(resolved.get("type").and_then(Value::as_str), Some("string"));
         assert!(is_secret_schema(resolved));
         assert_eq!(get_promptable_type(resolved), Some("string".to_string()));
+    }
+
+    #[test]
+    fn is_optional_field_cannot_detect_ref_wrapped_options() {
+        // Same anyOf-wrapping-a-$ref shape as
+        // any_of_option_wrapper_around_a_ref_resolves_through_both (how schemars
+        // renders Option<Secret>). See is_optional_field's doc comment for why
+        // this is an accepted gap, not a bug.
+        let root = json!({
+            "$defs": {
+                "Secret": {"type": "string", "format": "password"}
+            }
+        });
+        let raw = json!({"anyOf": [{"$ref": "#/$defs/Secret"}, {"type": "null"}]});
+        assert!(!is_optional_field(&raw));
+        assert!(!is_optional_field(resolve_ref(&root, &raw)));
+    }
+
+    #[test]
+    fn is_optional_field_detects_plain_scalar_options_before_and_after_resolve() {
+        // Option<String> has no $ref to resolve, so the null marker survives
+        // resolve_ref untouched -- the shape is_optional_field is built to detect.
+        let root = json!({});
+        let raw = json!({"type": ["string", "null"]});
+        assert!(is_optional_field(&raw));
+        assert!(is_optional_field(resolve_ref(&root, &raw)));
     }
 
     #[test]
