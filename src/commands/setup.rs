@@ -1,7 +1,9 @@
+// Standard
+use std::collections::{HashMap, HashSet};
+
 // Third Party
 use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
 
 // Local
 use crate::capabilities::{BindingType, CAPABILITY_REGISTRY, Dependency, ModelRequirement};
