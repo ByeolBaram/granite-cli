@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 // Local
 use crate::capabilities::{BindingType, CAPABILITY_REGISTRY, Dependency, ModelRequirement};
 use crate::commands::model::ModelCommands;
-use crate::dependency::Requirement;
+use crate::dependency::{Configured, Requirement};
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::models::{
     ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant,
@@ -1440,6 +1440,46 @@ impl SetupCommands {
             }
         }
 
+        // Enable every configured capability on each configured launcher
+        // that supports it. Must run after both loops above, since it needs
+        // a live `CapabilitySource` built from the now-populated capability
+        // configs.
+        let capability_source = crate::capabilities::CapabilitySource::from_config(&ctx.config);
+        for launcher_id in selected_launchers {
+            let Some(launcher_type) = ctx
+                .config
+                .get_launcher(launcher_id)
+                .map(|l| l.launcher_type.clone())
+            else {
+                continue;
+            };
+            let Some(launcher_meta) = LAUNCHER_REGISTRY.get(&launcher_type) else {
+                continue;
+            };
+
+            let mut enabled: Vec<String> = capability_source
+                .instances()
+                .into_iter()
+                .filter(|(_, cap)| {
+                    cap.binding_types()
+                        .iter()
+                        .any(|bt| launcher_meta.supported_capabilities.contains(bt))
+                })
+                .map(|(id, _)| id)
+                .collect();
+            enabled.sort();
+
+            if ctx
+                .config
+                .update_launcher(launcher_id, |l| l.enabled_capabilities = enabled.clone())
+                .is_err()
+            {
+                ui.warn(&format!(
+                    "Failed to enable capabilities for launcher '{launcher_id}'"
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -2408,6 +2448,55 @@ mod tests {
             chosen,
             HashSet::from(["granite-4.2-30b".to_string()]),
             "should have picked exactly the manually-chosen partial-fit model"
+        );
+    }
+
+    // -- configure_all -----------------------------------------------------
+
+    #[tokio::test]
+    async fn configure_all_enables_only_capabilities_a_launcher_supports() {
+        let _home = crate::config::TestConfigHome::new();
+        let mut ctx = test_ctx();
+        let discovery = run_discovery(&ctx).await;
+
+        // claude supports the AgentModel binding that "agent-model" uses;
+        // bob supports only the Mcp binding, so it must not get it.
+        let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
+        let selected_launchers: HashSet<String> = ["claude".to_string(), "bob".to_string()]
+            .into_iter()
+            .collect();
+        let selected_providers: HashSet<String> = ["ollama".to_string()].into_iter().collect();
+        let selected_models: HashSet<String> = ["granite-3.1-8b-instruct".to_string()]
+            .into_iter()
+            .collect();
+
+        SetupCommands::configure_all(
+            &mut ctx,
+            &discovery,
+            &selected_caps,
+            &selected_launchers,
+            &selected_providers,
+            &selected_models,
+            &HashMap::new(),
+        )
+        .await
+        .unwrap();
+
+        let claude_enabled = &ctx
+            .config
+            .get_launcher("claude")
+            .unwrap()
+            .enabled_capabilities;
+        assert_eq!(
+            claude_enabled,
+            &vec!["agent-model".to_string()],
+            "claude supports the AgentModel binding, so agent-model should be enabled"
+        );
+
+        let bob_enabled = &ctx.config.get_launcher("bob").unwrap().enabled_capabilities;
+        assert!(
+            bob_enabled.is_empty(),
+            "bob only supports the Mcp binding, so agent-model must not be enabled"
         );
     }
 
