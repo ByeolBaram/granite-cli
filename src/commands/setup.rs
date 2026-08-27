@@ -1,4 +1,5 @@
 // Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
@@ -9,6 +10,8 @@ use crate::launchers::LAUNCHER_REGISTRY;
 use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType, ModelVariant};
 use crate::providers::{HealthStatus, PROVIDER_REGISTRY, Provider};
 use crate::utils::hardware::detect_hardware;
+
+use_channel!("SETUP");
 
 /*-- public --*/
 
@@ -1004,7 +1007,7 @@ impl SetupCommands {
                 format!("{} — {} ({})", id, name, status)
             })
             .collect();
-        let defaults = vec![true; items.len()];
+        let defaults = vec![false; items.len()];
 
         let selected = ui.multi_select(
             "Select providers to configure",
@@ -1459,6 +1462,7 @@ impl SetupCommands {
             .collect();
 
         if pullable.is_empty() {
+            alog_channel!(MessageLevel::Debug2, "No pullable models");
             return Ok(());
         }
 
