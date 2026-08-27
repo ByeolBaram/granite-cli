@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 // Local
 use crate::capabilities::{BindingType, CAPABILITY_REGISTRY, Dependency, ModelRequirement};
+use crate::commands::model::ModelCommands;
 use crate::dependency::Requirement;
 use crate::launchers::LAUNCHER_REGISTRY;
 use crate::models::{ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant};
@@ -1462,11 +1463,16 @@ impl SetupCommands {
 
         // Check each selected model's real catalog metadata to see if it
         // satisfies any requirement.
-        selected_models.iter().find(|model_id| {
-            MODEL_REGISTRY
-                .get(model_id)
-                .is_some_and(|md| all_requirements.iter().any(|req| req.admits_type(&md)))
-        }).cloned()
+        selected_models
+            .iter()
+            .find(|model_id| {
+                MODEL_REGISTRY.get(model_id).is_some_and(|md| {
+                    all_requirements
+                        .iter()
+                        .any(|req| admits_for_recommendation(req, &md))
+                })
+            })
+            .cloned()
     }
 
     /*-- Pull phase ----------------------------------------------------------*/
@@ -1475,7 +1481,9 @@ impl SetupCommands {
         ctx: &mut crate::AppContext,
         selected_models: &HashSet<String>,
     ) -> Result<()> {
-        let ui = &*ctx.ui;
+        // Cloned (not `&*ctx.ui`) so it doesn't hold a borrow of `ctx` --
+        // `ModelCommands::pull` below needs `&mut ctx` for the whole struct.
+        let ui = ctx.ui.clone();
 
         // Find local provider models that were configured
         let pullable: Vec<_> = selected_models
@@ -1500,6 +1508,7 @@ impl SetupCommands {
             alog_channel!(MessageLevel::Debug2, "No pullable models");
             return Ok(());
         }
+        alog_channel!(MessageLevel::Debug2, "Pullable models: {:#?}", pullable);
 
         let items: Vec<String> = pullable
             .iter()
@@ -1518,11 +1527,13 @@ impl SetupCommands {
 
         if pull_now {
             for (model_id, _provider_id, _provider_type) in &pullable {
-                ui.info(&format!("Pulling {}...", model_id));
-                // Pull is delegated to the model command; in auto mode we just
-                // log it here. The actual pull would be triggered by
-                // `ModelCommands::pull` which requires the model to be fully
-                // configured with a variant.
+                ui.info(&format!("Pulling {model_id}..."));
+                // `ModelCommands::pull` already reports success/failure to
+                // `ctx.ui` itself; just keep going on error rather than
+                // aborting the rest of the pull phase over one model.
+                if let Err(e) = ModelCommands::pull(ctx, model_id).await {
+                    alog_channel!(MessageLevel::Warning, "Pull failed for '{model_id}': {e}");
+                }
             }
         }
 
@@ -1934,6 +1945,106 @@ mod tests {
         }
     }
 
+    #[test]
+    fn admits_for_recommendation_excludes_unrequested_multimodal_functions() {
+        fn md_with_functions(functions: Vec<ModelFunction>) -> ModelMetadata {
+            ModelMetadata {
+                family: "Test".to_string(),
+                version: "1.0".to_string(),
+                size: 0,
+                context_length: 8192,
+                model_type: ModelType::Text,
+                huggingface_repo: String::new(),
+                native_dtype: String::new(),
+                architecture: crate::models::ModelArchitecture {
+                    num_hidden_layers: 0,
+                    hidden_size: 0,
+                    num_attention_heads: 0,
+                    num_key_value_heads: 0,
+                    head_dim: 0,
+                    layer_types: vec![],
+                },
+                variants: vec![],
+                description: None,
+                tags: vec![],
+                supported_functions: functions,
+            }
+        }
+
+        let chat_only_req = ModelRequirement {
+            supported_functions: vec![ModelFunction::Chat, ModelFunction::ToolCalling],
+            ..Default::default()
+        };
+        let vision_req = ModelRequirement {
+            supported_functions: vec![
+                ModelFunction::Chat,
+                ModelFunction::ToolCalling,
+                ModelFunction::ImageUnderstanding,
+            ],
+            ..Default::default()
+        };
+
+        let text_model = md_with_functions(vec![ModelFunction::Chat, ModelFunction::ToolCalling]);
+        let vision_model = md_with_functions(vec![
+            ModelFunction::Chat,
+            ModelFunction::ToolCalling,
+            ModelFunction::ImageUnderstanding,
+        ]);
+        let speech_model = md_with_functions(vec![ModelFunction::Chat, ModelFunction::Transcription]);
+
+        assert!(admits_for_recommendation(&chat_only_req, &text_model));
+        assert!(
+            !admits_for_recommendation(&chat_only_req, &vision_model),
+            "a plain Chat/ToolCalling requirement should exclude a vision model even though it can chat"
+        );
+        assert!(
+            !admits_for_recommendation(&chat_only_req, &speech_model),
+            "a plain Chat/ToolCalling requirement should exclude a speech model even though it can chat"
+        );
+        // A requirement that explicitly wants vision should still admit it.
+        assert!(admits_for_recommendation(&vision_req, &vision_model));
+    }
+
+    #[tokio::test]
+    async fn revaluator_for_models_excludes_multimodal_for_plain_chat_capability() {
+        let ctx = test_ctx();
+        let discovery = Discover::run(&ctx).await;
+
+        // agent-model only requires Chat + ToolCalling -- no multi-modal
+        // function -- so vision/speech models must not show up even though
+        // `all_model_candidates` (unlike the deduped default list) is
+        // guaranteed to contain some.
+        let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
+        let filtered = Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
+
+        assert!(!filtered.is_empty());
+        for rec in &filtered {
+            if let Recommendation::Model { model_id, .. } = rec {
+                let md = MODEL_REGISTRY.get(model_id).expect("real catalog entry");
+                assert!(
+                    !md.supported_functions
+                        .iter()
+                        .any(|f| MULTIMODAL_FUNCTIONS.contains(f)),
+                    "{model_id} is multi-modal and should be excluded from a plain-chat capability's recommendations"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn revaluator_for_models_still_includes_vision_for_vision_mcp() {
+        let ctx = test_ctx();
+        let discovery = Discover::run(&ctx).await;
+
+        let selected_caps: HashSet<String> = ["vision-mcp".to_string()].into_iter().collect();
+        let filtered = Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
+
+        assert!(
+            filtered.iter().any(|r| matches!(r, Recommendation::Model { model_id, .. } if model_id.contains("vision"))),
+            "vision-mcp explicitly requires ImageUnderstanding, so vision models must still be recommended"
+        );
+    }
+
     #[tokio::test]
     async fn revaluator_for_models_with_no_requirements_returns_all() {
         let ctx = test_ctx();
@@ -2200,6 +2311,65 @@ mod tests {
     // -- SetupCommands ---------------------------------------------------------
 
     #[tokio::test]
+    async fn prompt_pull_actually_invokes_model_commands_pull() {
+        // Regression test: `prompt_pull` used to just log "Pulling
+        // {model}..." and do nothing -- the pull was never actually
+        // triggered. Point the configured provider at a closed local port
+        // so the real pull attempt fails fast (no network dependency), and
+        // assert on the error message that only `ModelCommands::pull`
+        // itself produces, proving it was actually called rather than the
+        // old no-op.
+        let capture = Arc::new(CaptureUi::default());
+        capture.confirm_answers.borrow_mut().push_back(true);
+        let mut ctx = crate::AppContext {
+            config: Config::default(),
+            ui: capture.clone(),
+        };
+
+        ctx.config.providers.insert(
+            "ollama".to_string(),
+            ProviderConfig {
+                provider_id: "ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({ "base_url": "http://127.0.0.1:1" }),
+            },
+        );
+
+        let model_id = "granite-3.1-8b-instruct";
+        let md = MODEL_REGISTRY.get(model_id).expect("fixture model should exist");
+        let variant = md
+            .variants
+            .iter()
+            .find(|v| v.format.eq_ignore_ascii_case("ollama"))
+            .expect("fixture model should have an Ollama-format variant");
+        ctx.config.models.insert(
+            model_id.to_string(),
+            ModelConfig {
+                model_id: model_id.to_string(),
+                provider_id: Some("ollama".to_string()),
+                variant: Some(format!("{}/{}", variant.format, variant.precision)),
+            },
+        );
+
+        let selected_models: HashSet<String> = [model_id.to_string()].into_iter().collect();
+        let result = SetupCommands::prompt_pull(&mut ctx, &selected_models).await;
+
+        assert!(
+            result.is_ok(),
+            "prompt_pull should not propagate a per-model pull failure"
+        );
+        assert!(
+            capture
+                .errors
+                .borrow()
+                .iter()
+                .any(|e| e.contains("Failed to pull model")),
+            "expected ModelCommands::pull's own failure message, proving it was actually invoked; got: {:?}",
+            capture.errors.borrow()
+        );
+    }
+
+    #[tokio::test]
     async fn run_wizard_with_empty_config_shows_info() {
         let mut ctx = test_ctx();
         let _ = SetupCommands::run(&mut ctx, false, true).await;
@@ -2290,4 +2460,3 @@ mod tests {
         );
     }
 }
-
