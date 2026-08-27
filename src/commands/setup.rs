@@ -8,7 +8,9 @@ use crate::capabilities::{BindingType, CAPABILITY_REGISTRY, Dependency, ModelReq
 use crate::commands::model::ModelCommands;
 use crate::dependency::Requirement;
 use crate::launchers::LAUNCHER_REGISTRY;
-use crate::models::{ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant};
+use crate::models::{
+    ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant,
+};
 use crate::providers::{HealthStatus, PROVIDER_REGISTRY, Provider};
 use crate::utils::hardware::detect_hardware;
 
@@ -72,12 +74,8 @@ impl Discover {
         let model_recs = Self::discover_models(ctx, &configured_providers);
         let all_model_candidates = Self::discover_all_model_candidates(ctx, &configured_providers);
         let (launcher_recs, configured_launchers) = Self::discover_launchers(ctx).await;
-        let (capability_recs, configured_capabilities) = Self::discover_capabilities(
-            ctx,
-            &provider_recs,
-            &model_recs,
-            &configured_providers,
-        );
+        let (capability_recs, configured_capabilities) =
+            Self::discover_capabilities(ctx, &provider_recs, &model_recs, &configured_providers);
 
         let mut recommendations: Vec<Recommendation> = Vec::new();
         recommendations.extend(provider_recs);
@@ -100,10 +98,9 @@ impl Discover {
 
     // -- Provider discovery --------------------------------------------------
 
-    async fn discover_providers(
-        ctx: &crate::AppContext,
-    ) -> (Vec<Recommendation>, Vec<String>) {
-        let configured_ids: HashSet<&str> = ctx.config.providers.keys().map(|s| s.as_str()).collect();
+    async fn discover_providers(ctx: &crate::AppContext) -> (Vec<Recommendation>, Vec<String>) {
+        let configured_ids: HashSet<&str> =
+            ctx.config.providers.keys().map(|s| s.as_str()).collect();
         let mut configured: Vec<String> = Vec::new();
         let mut recommendations: Vec<Recommendation> = Vec::new();
 
@@ -114,7 +111,9 @@ impl Discover {
             }
 
             // Construct a transient instance with default config and run health check
-            let default_config = PROVIDER_REGISTRY.default_config(provider_type).unwrap_or_default();
+            let default_config = PROVIDER_REGISTRY
+                .default_config(provider_type)
+                .unwrap_or_default();
             let result = PROVIDER_REGISTRY.construct(
                 provider_type,
                 provider_type,
@@ -144,7 +143,9 @@ impl Discover {
                         provider_type,
                         provider_name: metadata.name.clone(),
                         health_healthy: false,
-                        health_error: Some("Could not construct provider with default config".to_string()),
+                        health_error: Some(
+                            "Could not construct provider with default config".to_string(),
+                        ),
                     });
                 }
             }
@@ -155,7 +156,9 @@ impl Discover {
         (recommendations, configured)
     }
 
-    async fn run_health_check(provider: &dyn Provider) -> Result<HealthStatus, crate::providers::ProviderError> {
+    async fn run_health_check(
+        provider: &dyn Provider,
+    ) -> Result<HealthStatus, crate::providers::ProviderError> {
         provider.health_check().await
     }
 
@@ -201,7 +204,14 @@ impl Discover {
                 .iter()
                 .filter(|(_, md)| &md.version == latest_version)
                 .filter_map(|(id, md)| {
-                    Self::build_model_recommendation(id, md, &profile, configured_provider_ids, ctx, true)
+                    Self::build_model_recommendation(
+                        id,
+                        md,
+                        &profile,
+                        configured_provider_ids,
+                        ctx,
+                        true,
+                    )
                 })
                 .max_by_key(|rec| match rec {
                     Recommendation::Model { size, .. } => parse_size(size),
@@ -233,7 +243,14 @@ impl Discover {
             .into_iter()
             .filter(|(model_id, _)| !configured_ids.contains(*model_id))
             .filter_map(|(model_id, md)| {
-                Self::build_model_recommendation(model_id, &md, &profile, configured_provider_ids, ctx, false)
+                Self::build_model_recommendation(
+                    model_id,
+                    &md,
+                    &profile,
+                    configured_provider_ids,
+                    ctx,
+                    false,
+                )
             })
             .collect();
 
@@ -281,12 +298,7 @@ impl Discover {
             .filter_map(|pid| ctx.config.get_provider(pid))
             .filter_map(|pc| {
                 PROVIDER_REGISTRY
-                    .construct(
-                        &pc.provider_type,
-                        &pc.provider_id,
-                        &pc.config,
-                        &ctx.config,
-                    )
+                    .construct(&pc.provider_type, &pc.provider_id, &pc.config, &ctx.config)
                     .ok()
                     .filter(|p| p.can_run_model(&variant.format, &variant.precision))
             })
@@ -296,10 +308,9 @@ impl Discover {
 
     // -- Launcher discovery --------------------------------------------------
 
-    async fn discover_launchers(
-        ctx: &crate::AppContext,
-    ) -> (Vec<Recommendation>, Vec<String>) {
-        let configured_ids: HashSet<&str> = ctx.config.launchers.keys().map(|s| s.as_str()).collect();
+    async fn discover_launchers(ctx: &crate::AppContext) -> (Vec<Recommendation>, Vec<String>) {
+        let configured_ids: HashSet<&str> =
+            ctx.config.launchers.keys().map(|s| s.as_str()).collect();
         let mut configured: Vec<String> = Vec::new();
         let mut recommendations: Vec<Recommendation> = Vec::new();
 
@@ -310,7 +321,9 @@ impl Discover {
             }
 
             // Construct a transient instance with default config
-            let default_config = LAUNCHER_REGISTRY.default_config(launcher_type).unwrap_or_default();
+            let default_config = LAUNCHER_REGISTRY
+                .default_config(launcher_type)
+                .unwrap_or_default();
             match LAUNCHER_REGISTRY.construct(
                 launcher_type,
                 launcher_type,
@@ -353,12 +366,8 @@ impl Discover {
         _model_recs: &[Recommendation],
         _configured_provider_ids: &[String],
     ) -> (Vec<Recommendation>, Vec<String>) {
-        let configured_ids: Vec<&str> = ctx
-            .config
-            .capabilities
-            .keys()
-            .map(|s| s.as_str())
-            .collect();
+        let configured_ids: Vec<&str> =
+            ctx.config.capabilities.keys().map(|s| s.as_str()).collect();
         let configured: Vec<String> = configured_ids.iter().copied().map(String::from).collect();
 
         let mut recommendations: Vec<Recommendation> = Vec::new();
@@ -561,7 +570,10 @@ impl Revaluator {
             .recommendations
             .iter()
             .filter(move |r| {
-                if let Recommendation::Capability { capability_type, .. } = r {
+                if let Recommendation::Capability {
+                    capability_type, ..
+                } = r
+                {
                     if let Some(cap_meta) = CAPABILITY_REGISTRY.get(capability_type) {
                         return cap_meta
                             .supported_binding_types
@@ -671,9 +683,7 @@ fn display_name(rec: &Recommendation) -> String {
             size,
             ..
         } => format!("{family} {version} {size}"),
-        Recommendation::Launcher {
-            launcher_name, ..
-        } => launcher_name.clone(),
+        Recommendation::Launcher { launcher_name, .. } => launcher_name.clone(),
         Recommendation::Capability {
             capability_name, ..
         } => capability_name.clone(),
@@ -747,11 +757,7 @@ pub struct SetupCommands;
 
 impl SetupCommands {
     /// Entry point for `granite-cli setup`.
-    pub async fn run(
-        ctx: &mut crate::AppContext,
-        auto: bool,
-        skip_pull: bool,
-    ) -> Result<()> {
+    pub async fn run(ctx: &mut crate::AppContext, auto: bool, skip_pull: bool) -> Result<()> {
         if auto {
             Self::run_auto(ctx).await
         } else {
@@ -760,10 +766,7 @@ impl SetupCommands {
     }
 
     /// Run the interactive wizard.
-    async fn run_wizard(
-        ctx: &mut crate::AppContext,
-        skip_pull: bool,
-    ) -> Result<()> {
+    async fn run_wizard(ctx: &mut crate::AppContext, skip_pull: bool) -> Result<()> {
         let ui = &*ctx.ui;
         ui.info("=== granite-cli Setup Wizard ===\n");
         ui.info("Discovering available components...\n");
@@ -776,7 +779,9 @@ impl SetupCommands {
             && discovery.configured_launcher_ids.is_empty()
             && discovery.configured_capability_ids.is_empty()
         {
-            ui.info("Nothing to configure. All components are either not available or already set up.");
+            ui.info(
+                "Nothing to configure. All components are either not available or already set up.",
+            );
             return Ok(());
         }
 
@@ -791,8 +796,7 @@ impl SetupCommands {
         let selected_models = Self::select_models(ctx, &discovery, &selected_caps).await?;
 
         // Phase 4: Providers selection (only healthy, filtered by model compatibility)
-        let selected_providers =
-            Self::select_providers(ctx, &discovery, &selected_models).await?;
+        let selected_providers = Self::select_providers(ctx, &discovery, &selected_models).await?;
 
         // Phase 4.5: Variant selection (limited to formats the selected
         // providers can actually run, with a VRAM estimate at full context)
@@ -857,35 +861,38 @@ impl SetupCommands {
             })
             .collect();
 
-        let selected_caps: HashSet<String> = Revaluator::for_capabilities(&discovery, &selected_launchers)
-            .into_iter()
-            .filter_map(|r| match r {
-                Recommendation::Capability {
-                    capability_type, ..
-                } => Some(capability_type.clone()),
-                _ => None,
-            })
-            .collect();
+        let selected_caps: HashSet<String> =
+            Revaluator::for_capabilities(&discovery, &selected_launchers)
+                .into_iter()
+                .filter_map(|r| match r {
+                    Recommendation::Capability {
+                        capability_type, ..
+                    } => Some(capability_type.clone()),
+                    _ => None,
+                })
+                .collect();
 
-        let selected_models: HashSet<String> = Revaluator::for_models(&discovery.recommendations, &selected_caps)
-            .into_iter()
-            .filter_map(|r| match r {
-                Recommendation::Model { model_id, .. } => Some(model_id.clone()),
-                _ => None,
-            })
-            .collect();
+        let selected_models: HashSet<String> =
+            Revaluator::for_models(&discovery.recommendations, &selected_caps)
+                .into_iter()
+                .filter_map(|r| match r {
+                    Recommendation::Model { model_id, .. } => Some(model_id.clone()),
+                    _ => None,
+                })
+                .collect();
 
-        let selected_providers: HashSet<String> = Revaluator::for_providers(&discovery, &selected_models, ctx)
-            .into_iter()
-            .filter_map(|r| match r {
-                Recommendation::Provider {
-                    provider_type,
-                    health_healthy,
-                    ..
-                } if *health_healthy => Some(provider_type.to_string()),
-                _ => None,
-            })
-            .collect();
+        let selected_providers: HashSet<String> =
+            Revaluator::for_providers(&discovery, &selected_models, ctx)
+                .into_iter()
+                .filter_map(|r| match r {
+                    Recommendation::Provider {
+                        provider_type,
+                        health_healthy,
+                        ..
+                    } if *health_healthy => Some(provider_type.to_string()),
+                    _ => None,
+                })
+                .collect();
 
         // --auto is non-interactive, so there's no prompt for variant
         // selection -- `configure_all` falls back to discovery's
@@ -940,20 +947,13 @@ impl SetupCommands {
 
         let items: Vec<String> = caps
             .iter()
-            .map(|(id, name)| format!("{} — {}", id, name))
+            .map(|(id, name)| format!("{id} — {name}"))
             .collect();
         let defaults = vec![true; items.len()];
 
-        let selected = ui.multi_select(
-            "Select capabilities to configure",
-            &items,
-            &defaults,
-        )?;
+        let selected = ui.multi_select("Select capabilities to configure", &items, &defaults)?;
 
-        Ok(selected
-            .into_iter()
-            .map(|i| caps[i].0.clone())
-            .collect())
+        Ok(selected.into_iter().map(|i| caps[i].0.clone()).collect())
     }
 
     async fn select_launchers(
@@ -981,15 +981,11 @@ impl SetupCommands {
 
         let items: Vec<String> = filtered
             .iter()
-            .map(|(id, name, path)| format!("{} — {} ({})", id, name, path))
+            .map(|(id, name, path)| format!("{id} — {name} ({path})"))
             .collect();
         let defaults = vec![false; items.len()];
 
-        let selected = ui.multi_select(
-            "Select launchers to configure",
-            &items,
-            &defaults,
-        )?;
+        let selected = ui.multi_select("Select launchers to configure", &items, &defaults)?;
 
         Ok(selected
             .into_iter()
@@ -1004,12 +1000,8 @@ impl SetupCommands {
     ) -> Result<HashSet<String>> {
         let ui = &*ctx.ui;
 
-        let filtered: Vec<_> = Revaluator::for_providers(
-            discovery,
-            selected_models,
-            ctx,
-        )
-        .into_iter()
+        let filtered: Vec<_> = Revaluator::for_providers(discovery, selected_models, ctx)
+            .into_iter()
             .filter_map(|r| match r {
                 Recommendation::Provider {
                     provider_type,
@@ -1023,7 +1015,7 @@ impl SetupCommands {
                 )),
                 _ => None,
             })
-        .collect();
+            .collect();
 
         if filtered.is_empty() {
             ui.info("No healthy providers available to configure.");
@@ -1040,16 +1032,12 @@ impl SetupCommands {
                 } else {
                     "healthy".to_string()
                 };
-                format!("{} — {} ({})", id, name, status)
+                format!("{id} — {name} ({status})")
             })
             .collect();
         let defaults = vec![false; items.len()];
 
-        let selected = ui.multi_select(
-            "Select providers to configure",
-            &items,
-            &defaults,
-        )?;
+        let selected = ui.multi_select("Select providers to configure", &items, &defaults)?;
 
         Ok(selected
             .into_iter()
@@ -1151,7 +1139,11 @@ impl SetupCommands {
 
         md.variants
             .iter()
-            .filter(|v| providers.iter().any(|p| p.can_run_model(&v.format, &v.precision)))
+            .filter(|v| {
+                providers
+                    .iter()
+                    .any(|p| p.can_run_model(&v.format, &v.precision))
+            })
             .map(|v| {
                 let gb = crate::models::required_gb(
                     &md.architecture,
@@ -1164,7 +1156,11 @@ impl SetupCommands {
             .collect()
     }
 
-    fn format_variant_option(variant: &ModelVariant, required_gb: f64, context_length: u64) -> String {
+    fn format_variant_option(
+        variant: &ModelVariant,
+        required_gb: f64,
+        context_length: u64,
+    ) -> String {
         match variant.size_gb {
             Some(size) => format!(
                 "{} / {} — {:.1} GB file, ~{:.1} GB VRAM @ full context ({context_length} tokens)",
@@ -1199,7 +1195,12 @@ impl SetupCommands {
                     context_fit,
                     can_run_by,
                     ..
-                } => Some((model_id.clone(), size.clone(), *context_fit, can_run_by.clone())),
+                } => Some((
+                    model_id.clone(),
+                    size.clone(),
+                    *context_fit,
+                    can_run_by.clone(),
+                )),
                 _ => None,
             })
             .collect()
@@ -1212,7 +1213,10 @@ impl SetupCommands {
     ) -> Result<HashSet<String>> {
         let ui = &*ctx.ui;
 
-        let filtered = Self::model_options(Revaluator::for_models(&discovery.recommendations, selected_caps));
+        let filtered = Self::model_options(Revaluator::for_models(
+            &discovery.recommendations,
+            selected_caps,
+        ));
 
         let mut chosen: HashSet<String> = HashSet::new();
         let mut choose_different = filtered.is_empty();
@@ -1223,7 +1227,9 @@ impl SetupCommands {
             let escape_hatch_idx = filtered.len();
             let mut items: Vec<String> = filtered
                 .iter()
-                .map(|(id, size, fit, providers)| Self::format_model_option(id, size, *fit, providers))
+                .map(|(id, size, fit, providers)| {
+                    Self::format_model_option(id, size, *fit, providers)
+                })
                 .collect();
             items.push(Self::CHOOSE_DIFFERENT_MODELS_LABEL.to_string());
 
@@ -1311,8 +1317,14 @@ impl SetupCommands {
                 config: default_config,
             };
 
-            if ctx.config.insert_provider(provider_id, provider_config).is_err() {
-                ui.warn(&format!("Failed to save provider config for '{provider_id}'"));
+            if ctx
+                .config
+                .insert_provider(provider_id, provider_config)
+                .is_err()
+            {
+                ui.warn(&format!(
+                    "Failed to save provider config for '{provider_id}'"
+                ));
             }
         }
 
@@ -1330,8 +1342,14 @@ impl SetupCommands {
                 config: default_config,
             };
 
-            if ctx.config.insert_launcher(launcher_id, launcher_config).is_err() {
-                ui.warn(&format!("Failed to save launcher config for '{launcher_id}'"));
+            if ctx
+                .config
+                .insert_launcher(launcher_id, launcher_config)
+                .is_err()
+            {
+                ui.warn(&format!(
+                    "Failed to save launcher config for '{launcher_id}'"
+                ));
             }
         }
 
@@ -1493,13 +1511,9 @@ impl SetupCommands {
                     .get_model(model_id)
                     .and_then(|mc| mc.provider_id.clone())
                     .and_then(|provider_id| {
-                        ctx.config.get_provider(&provider_id).map(|pc| {
-                            (
-                                model_id.clone(),
-                                provider_id,
-                                pc.provider_type.clone(),
-                            )
-                        })
+                        ctx.config
+                            .get_provider(&provider_id)
+                            .map(|pc| (model_id.clone(), provider_id, pc.provider_type.clone()))
                     })
             })
             .collect();
@@ -1512,18 +1526,10 @@ impl SetupCommands {
 
         let items: Vec<String> = pullable
             .iter()
-            .map(|(model, provider, ptype)| {
-                format!(
-                    "{} → {} ({})",
-                    provider, model, ptype
-                )
-            })
+            .map(|(model, provider, ptype)| format!("{provider} → {model} ({ptype})"))
             .collect();
 
-        let pull_now = ui.confirm(
-            "\n→ Pull model weights now?",
-            !items.is_empty(),
-        )?;
+        let pull_now = ui.confirm("\n→ Pull model weights now?", !items.is_empty())?;
 
         if pull_now {
             for (model_id, _provider_id, _provider_type) in &pullable {
@@ -1557,7 +1563,11 @@ impl SetupCommands {
             if selected_providers.is_empty() {
                 "none".to_string()
             } else {
-                selected_providers.iter().cloned().collect::<Vec<_>>().join(", ")
+                selected_providers
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }
         ));
         ui.info(&format!(
@@ -1565,7 +1575,11 @@ impl SetupCommands {
             if selected_models.is_empty() {
                 "none".to_string()
             } else {
-                selected_models.iter().cloned().collect::<Vec<_>>().join(", ")
+                selected_models
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }
         ));
         ui.info(&format!(
@@ -1573,7 +1587,11 @@ impl SetupCommands {
             if selected_launchers.is_empty() {
                 "none".to_string()
             } else {
-                selected_launchers.iter().cloned().collect::<Vec<_>>().join(", ")
+                selected_launchers
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }
         ));
         ui.info(&format!(
@@ -1585,9 +1603,7 @@ impl SetupCommands {
             }
         ));
 
-        ui.info(
-            "\nRun `granite-cli launcher list` to see configured launchers.",
-        );
+        ui.info("\nRun `granite-cli launcher list` to see configured launchers.");
         if !selected_launchers.is_empty() {
             let first_launcher = selected_launchers.iter().next().unwrap();
             ui.info(&format!(
@@ -1613,7 +1629,11 @@ mod tests {
         }
     }
 
-    fn ctx_with_provider(id: &str, provider_type: &str, config: serde_json::Value) -> crate::AppContext {
+    fn ctx_with_provider(
+        id: &str,
+        provider_type: &str,
+        config: serde_json::Value,
+    ) -> crate::AppContext {
         let mut ctx = test_ctx();
         ctx.config.providers.insert(
             id.to_string(),
@@ -1645,7 +1665,11 @@ mod tests {
     async fn discover_providers_skips_configured() {
         let ctx = ctx_with_provider("ollama", "ollama", serde_json::json!({}));
         let result = Discover::run(&ctx).await;
-        assert!(result.configured_provider_ids.contains(&"ollama".to_string()));
+        assert!(
+            result
+                .configured_provider_ids
+                .contains(&"ollama".to_string())
+        );
     }
 
     #[tokio::test]
@@ -1687,7 +1711,10 @@ mod tests {
         let ctx = test_ctx();
         let result = Discover::run(&ctx).await;
         for rec in &result.recommendations {
-            if let Recommendation::Model { model_id, family, .. } = rec {
+            if let Recommendation::Model {
+                model_id, family, ..
+            } = rec
+            {
                 assert!(
                     MODEL_REGISTRY.get(model_id).is_some(),
                     "model_id '{model_id}' should be a real catalog key, not the family name"
@@ -1709,10 +1736,9 @@ mod tests {
         let ctx = test_ctx();
         let result = Discover::run(&ctx).await;
 
-        let rec = result
-            .recommendations
-            .iter()
-            .find(|r| matches!(r, Recommendation::Model { family, .. } if family == "Granite Language"));
+        let rec = result.recommendations.iter().find(
+            |r| matches!(r, Recommendation::Model { family, .. } if family == "Granite Language"),
+        );
 
         if let Some(Recommendation::Model {
             model_id,
@@ -1766,12 +1792,13 @@ mod tests {
 
     #[tokio::test]
     async fn discover_models_skips_configured() {
-        let ctx = ctx_with_model(
-            "granite-3.1-8b-instruct",
-            Some("ollama"),
-        );
+        let ctx = ctx_with_model("granite-3.1-8b-instruct", Some("ollama"));
         let result = Discover::run(&ctx).await;
-        assert!(result.configured_model_ids.contains(&"granite-3.1-8b-instruct".to_string()));
+        assert!(
+            result
+                .configured_model_ids
+                .contains(&"granite-3.1-8b-instruct".to_string())
+        );
     }
 
     // -- discover_launchers ----------------------------------------------------
@@ -1789,7 +1816,11 @@ mod tests {
             },
         );
         let result = Discover::run(&ctx).await;
-        assert!(result.configured_launcher_ids.contains(&"claude".to_string()));
+        assert!(
+            result
+                .configured_launcher_ids
+                .contains(&"claude".to_string())
+        );
     }
 
     #[tokio::test]
@@ -1828,9 +1859,18 @@ mod tests {
 
     #[test]
     fn compare_versions_desc_simple() {
-        assert_eq!(compare_versions_desc("3.1", "3.0"), std::cmp::Ordering::Less);
-        assert_eq!(compare_versions_desc("3.0", "3.1"), std::cmp::Ordering::Greater);
-        assert_eq!(compare_versions_desc("3.1", "3.1"), std::cmp::Ordering::Equal);
+        assert_eq!(
+            compare_versions_desc("3.1", "3.0"),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_versions_desc("3.0", "3.1"),
+            std::cmp::Ordering::Greater
+        );
+        assert_eq!(
+            compare_versions_desc("3.1", "3.1"),
+            std::cmp::Ordering::Equal
+        );
     }
 
     #[test]
@@ -1938,7 +1978,8 @@ mod tests {
             if let Recommendation::Model { model_id, .. } = rec {
                 let md = MODEL_REGISTRY.get(model_id).expect("real catalog entry");
                 assert!(
-                    md.supported_functions.contains(&crate::models::ModelFunction::Chat),
+                    md.supported_functions
+                        .contains(&crate::models::ModelFunction::Chat),
                     "{model_id} should support Chat"
                 );
             }
@@ -1990,7 +2031,8 @@ mod tests {
             ModelFunction::ToolCalling,
             ModelFunction::ImageUnderstanding,
         ]);
-        let speech_model = md_with_functions(vec![ModelFunction::Chat, ModelFunction::Transcription]);
+        let speech_model =
+            md_with_functions(vec![ModelFunction::Chat, ModelFunction::Transcription]);
 
         assert!(admits_for_recommendation(&chat_only_req, &text_model));
         assert!(
@@ -2110,7 +2152,11 @@ mod tests {
 
     // -- Variant selection -------------------------------------------------------
 
-    fn model_recommendation(model_id: &str, md: &ModelMetadata, best_variant: ModelVariant) -> Recommendation {
+    fn model_recommendation(
+        model_id: &str,
+        md: &ModelMetadata,
+        best_variant: ModelVariant,
+    ) -> Recommendation {
         Recommendation::Model {
             model_id: model_id.to_string(),
             family: md.family.clone(),
@@ -2164,7 +2210,11 @@ mod tests {
         let md = MODEL_REGISTRY
             .get("granite-docling-258M-mlx")
             .expect("fixture model should exist in the catalog");
-        assert_eq!(md.variants.len(), 1, "fixture assumption: exactly one variant");
+        assert_eq!(
+            md.variants.len(),
+            1,
+            "fixture assumption: exactly one variant"
+        );
 
         let discovery = DiscoveryResult {
             recommendations: vec![model_recommendation(
@@ -2178,14 +2228,20 @@ mod tests {
             configured_launcher_ids: vec![],
             configured_capability_ids: vec![],
         };
-        let selected_models: HashSet<String> =
-            ["granite-docling-258M-mlx".to_string()].into_iter().collect();
+        let selected_models: HashSet<String> = ["granite-docling-258M-mlx".to_string()]
+            .into_iter()
+            .collect();
         let selected_providers: HashSet<String> =
             ["openai-compatible".to_string()].into_iter().collect();
 
-        let chosen = SetupCommands::select_variants(&mut ctx, &discovery, &selected_models, &selected_providers)
-            .await
-            .unwrap();
+        let chosen = SetupCommands::select_variants(
+            &mut ctx,
+            &discovery,
+            &selected_models,
+            &selected_providers,
+        )
+        .await
+        .unwrap();
 
         let picked = chosen
             .get("granite-docling-258M-mlx")
@@ -2240,9 +2296,14 @@ mod tests {
         // No canned select answer -- CaptureUi::select falls back to
         // whatever `default` it was passed, so this proves that default
         // index actually points at discovery's recommended variant.
-        let chosen = SetupCommands::select_variants(&mut ctx, &discovery, &selected_models, &selected_providers)
-            .await
-            .unwrap();
+        let chosen = SetupCommands::select_variants(
+            &mut ctx,
+            &discovery,
+            &selected_models,
+            &selected_providers,
+        )
+        .await
+        .unwrap();
 
         let picked = chosen
             .get("granite-vision-4.1-4b")
@@ -2266,19 +2327,21 @@ mod tests {
         // granite-4.2-30b only partially fits, so it must not be in the
         // default recommendation list, but must be reachable through
         // "choose different models".
-        let default_ids: HashSet<&str> = Revaluator::for_models(&discovery.recommendations, &selected_caps)
-            .into_iter()
-            .filter_map(|r| match r {
-                Recommendation::Model { model_id, .. } => Some(model_id.as_str()),
-                _ => None,
-            })
-            .collect();
+        let default_ids: HashSet<&str> =
+            Revaluator::for_models(&discovery.recommendations, &selected_caps)
+                .into_iter()
+                .filter_map(|r| match r {
+                    Recommendation::Model { model_id, .. } => Some(model_id.as_str()),
+                    _ => None,
+                })
+                .collect();
         assert!(
             !default_ids.contains("granite-4.2-30b"),
             "granite-4.2-30b only partially fits and must not be a default recommendation"
         );
 
-        let manual_candidates = Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
+        let manual_candidates =
+            Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
         let thirty_b_idx = manual_candidates
             .iter()
             .position(|r| matches!(r, Recommendation::Model { model_id, .. } if model_id == "granite-4.2-30b"))
@@ -2336,7 +2399,9 @@ mod tests {
         );
 
         let model_id = "granite-3.1-8b-instruct";
-        let md = MODEL_REGISTRY.get(model_id).expect("fixture model should exist");
+        let md = MODEL_REGISTRY
+            .get(model_id)
+            .expect("fixture model should exist");
         let variant = md
             .variants
             .iter()
@@ -2419,7 +2484,11 @@ mod tests {
 
         let prompts = capture.multi_select_prompts.borrow();
         let (_, items, _) = &prompts[0];
-        assert_eq!(items.len(), 1, "the missing binary should have been excluded");
+        assert_eq!(
+            items.len(),
+            1,
+            "the missing binary should have been excluded"
+        );
         assert!(items[0].contains("found"));
     }
 
@@ -2431,7 +2500,9 @@ mod tests {
             crate::config::ProviderConfig {
                 provider_id: "lm-studio".to_string(),
                 provider_type: "lm-studio".to_string(),
-                config: PROVIDER_REGISTRY.default_config("lm-studio").unwrap_or_default(),
+                config: PROVIDER_REGISTRY
+                    .default_config("lm-studio")
+                    .unwrap_or_default(),
             },
         );
         let selected: HashSet<String> = ["lm-studio".to_string()].into_iter().collect();
