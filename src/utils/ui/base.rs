@@ -220,12 +220,27 @@ pub trait Ui: Send + Sync + Any {
     /// Ask for a line of free text, pre-filled with `default`.
     ///
     /// `allow_empty` controls whether submitting a blank line (Enter with no
-    /// input) is accepted: dialoguer rejects an empty submission by default,
-    /// re-prompting silently instead of returning "" -- from the terminal
-    /// this looks like Enter does nothing. Every caller currently passes
-    /// `false`, preserving that behavior; a follow-up change teaches
-    /// `prompt_string()` in `prompt.rs` to pass `true` for `Option<String>`
-    /// fields, where a blank answer is a legitimate "unset".
+    /// input) is accepted:
+    ///
+    /// dialoguer rejects an empty submission by default, re-prompting
+    /// silently instead of returning "" -- from the terminal this looks
+    /// like Enter does nothing. That's the *right* behavior for most
+    /// callers here: instance names (`ctx.ui.text("Instance name: ", ..)`
+    /// in `commands/{provider,launcher,capability}.rs`) become config map
+    /// keys and must not be empty, and `prompt_number` in `prompt.rs`
+    /// would otherwise hand a blank string to `str::parse`.
+    ///
+    /// The one caller that needs `allow_empty = true` is `prompt_string()`
+    /// in `prompt.rs`, and only when the field being prompted for is
+    /// `Option<String>`: there, an empty submission is a legitimate answer
+    /// meaning "unset" (e.g. an unset launcher `command_path`, meant to
+    /// fall back to PATH discovery at `validate_command()` time), and
+    /// `prompt_string` already knows -- from the JSON schema -- whether
+    /// that's the case, so it's the right place to make this call, not the
+    /// default for every text prompt in the app. See issue #84: the
+    /// previous commit taught `prompt_string` to map an empty optional
+    /// string to `None`, but it had no effect until this commit let an
+    /// empty answer reach it in the first place.
     fn text(&self, prompt: &str, default: &str, allow_empty: bool) -> anyhow::Result<String> {
         Ok(dialoguer::Input::new()
             .with_prompt(prompt)
