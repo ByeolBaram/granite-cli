@@ -386,7 +386,11 @@ impl App {
                     .filter(|r| filtered_ids.contains(&r[0]))
                     .collect();
 
-                let header = Row::new(vec!["ID", "FAMILY", "SIZE", "TYPE"]).style(
+                // Model instances are keyed by model ID directly
+                let configured_ids: std::collections::HashSet<&str> =
+                    self.ctx.config.models.keys().map(|k| k.as_str()).collect();
+
+                let header = Row::new(vec!["", "ID", "FAMILY", "SIZE", "TYPE"]).style(
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -403,8 +407,14 @@ impl App {
                         } else {
                             Style::default().bg(Color::Rgb(20, 20, 20))
                         };
+                        let marker = if configured_ids.contains(r[0].as_str()) {
+                            Cell::from("✓").style(Style::default().fg(Color::Green))
+                        } else {
+                            Cell::from("")
+                        };
                         // columns: [0]=id [1]=family [2]=size [3]=context [4]=type
                         Row::new(vec![
+                            marker,
                             Cell::from(r[0].clone()),
                             Cell::from(r[1].clone()),
                             Cell::from(r[2].clone()),
@@ -417,7 +427,8 @@ impl App {
                 let table = Table::new(
                     rows,
                     [
-                        Constraint::Percentage(45),
+                        Constraint::Length(2),
+                        Constraint::Percentage(43),
                         Constraint::Percentage(25),
                         Constraint::Percentage(10),
                         Constraint::Percentage(20),
@@ -441,7 +452,16 @@ impl App {
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "DEFAULT URL"]).style(
+                // Collect configured types for marker column
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .providers
+                    .values()
+                    .map(|c| c.provider_type.clone())
+                    .collect();
+
+                let header = Row::new(vec!["", "ID", "DEFAULT URL"]).style(
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -456,7 +476,13 @@ impl App {
                         } else {
                             Style::default()
                         };
+                        let marker = if configured_types.contains(*id) {
+                            Cell::from("✓").style(Style::default().fg(Color::Green))
+                        } else {
+                            Cell::from("")
+                        };
                         Row::new(vec![
+                            marker,
                             Cell::from(id.to_string()),
                             Cell::from(p.default_endpoint.clone()),
                         ])
@@ -466,7 +492,11 @@ impl App {
 
                 let table = Table::new(
                     rows,
-                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                    [
+                        Constraint::Length(2),
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(68),
+                    ],
                 )
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Providers "));
@@ -489,7 +519,16 @@ impl App {
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "DEFAULT COMMAND"]).style(
+                // Collect configured types for marker column
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .launchers
+                    .values()
+                    .map(|c| c.launcher_type.clone())
+                    .collect();
+
+                let header = Row::new(vec!["", "ID", "DEFAULT COMMAND"]).style(
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -504,7 +543,13 @@ impl App {
                         } else {
                             Style::default()
                         };
+                        let marker = if configured_types.contains(*id) {
+                            Cell::from("✓").style(Style::default().fg(Color::Green))
+                        } else {
+                            Cell::from("")
+                        };
                         Row::new(vec![
+                            marker,
                             Cell::from(id.to_string()),
                             Cell::from(l.default_command.clone()),
                         ])
@@ -514,7 +559,11 @@ impl App {
 
                 let table = Table::new(
                     rows,
-                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                    [
+                        Constraint::Length(2),
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(68),
+                    ],
                 )
                 .header(header)
                 .block(Block::default().borders(Borders::ALL).title(" Launchers "));
@@ -537,7 +586,16 @@ impl App {
                     .filter(|(id, _)| filtered_ids.contains(&id.to_string()))
                     .collect();
 
-                let header = Row::new(vec!["ID", "DESCRIPTION"]).style(
+                // Collect configured types for marker column
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .capabilities
+                    .values()
+                    .map(|c| c.capability_type.clone())
+                    .collect();
+
+                let header = Row::new(vec!["", "ID", "DESCRIPTION"]).style(
                     Style::default()
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
@@ -552,7 +610,13 @@ impl App {
                         } else {
                             Style::default()
                         };
+                        let marker = if configured_types.contains(*id) {
+                            Cell::from("✓").style(Style::default().fg(Color::Green))
+                        } else {
+                            Cell::from("")
+                        };
                         Row::new(vec![
+                            marker,
                             Cell::from(id.to_string()),
                             Cell::from(c.description.clone()),
                         ])
@@ -562,7 +626,11 @@ impl App {
 
                 let table = Table::new(
                     rows,
-                    [Constraint::Percentage(30), Constraint::Percentage(70)],
+                    [
+                        Constraint::Length(2),
+                        Constraint::Percentage(30),
+                        Constraint::Percentage(68),
+                    ],
                 )
                 .header(header)
                 .block(
@@ -702,8 +770,22 @@ impl App {
                         .collect();
                     endpoints_lines.sort();
                     let endpoints = endpoints_lines.join("\n");
+                    let mut instances: Vec<String> = self
+                        .ctx
+                        .config
+                        .providers
+                        .iter()
+                        .filter(|(_, c)| c.provider_type == id)
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    instances.sort();
+                    let instances_str = if instances.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        instances.join(", ")
+                    };
                     format!(
-                        "Provider: {}\n\nName: {}\nType: {}\nDefault URL: {}\nAPI Types: {}\nFormats: {}\n\nEndpoints:\n{}\n\nDescription: {}",
+                        "Provider: {}\n\nName: {}\nType: {}\nDefault URL: {}\nAPI Types: {}\nFormats: {}\n\nEndpoints:\n{}\n\nConfigured instances: {}\n\nDescription: {}",
                         id,
                         p.name,
                         p.provider_type,
@@ -711,6 +793,7 @@ impl App {
                         api_types,
                         formats,
                         endpoints,
+                        instances_str,
                         p.description
                     )
                 } else {
@@ -719,8 +802,22 @@ impl App {
             }
             Section::Launchers => {
                 if let Some(l) = crate::launchers::LAUNCHER_REGISTRY.get(id) {
+                    let mut instances: Vec<String> = self
+                        .ctx
+                        .config
+                        .launchers
+                        .iter()
+                        .filter(|(_, c)| c.launcher_type == id)
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    instances.sort();
+                    let instances_str = if instances.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        instances.join(", ")
+                    };
                     format!(
-                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}",
+                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}\n\nConfigured instances: {}",
                         l.default_command,
                         l.description,
                         if l.supported_capabilities.is_empty() {
@@ -733,7 +830,8 @@ impl App {
                                 .collect();
                             caps.sort();
                             caps.join(", ")
-                        }
+                        },
+                        instances_str,
                     )
                 } else {
                     format!("Launcher '{id}' not found.")
@@ -766,9 +864,23 @@ impl App {
                             .collect::<Vec<_>>()
                             .join(", ")
                     };
+                    let mut instances: Vec<String> = self
+                        .ctx
+                        .config
+                        .capabilities
+                        .iter()
+                        .filter(|(_, cfg)| cfg.capability_type == id)
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    instances.sort();
+                    let instances_str = if instances.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        instances.join(", ")
+                    };
                     format!(
-                        "Capability: {id}\n\nName: {}\nDescription: {}\nBinding Types: {}\nTags: {}\nDependencies: {}",
-                        c.name, c.description, binding_types, tags, deps
+                        "Capability: {id}\n\nName: {}\nDescription: {}\nBinding Types: {}\nTags: {}\nDependencies: {}\n\nConfigured instances: {}",
+                        c.name, c.description, binding_types, tags, deps, instances_str
                     )
                 } else {
                     format!("Capability '{id}' not found.")
@@ -808,7 +920,7 @@ impl App {
                 "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
             }
             AppMode::Browse => {
-                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit"
+                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit  ✓ = configured"
             }
             AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
             AppMode::Detail(_) => "[↑↓/jk] Scroll  [Backspace/Esc/q] Back",
