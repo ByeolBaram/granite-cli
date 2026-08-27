@@ -44,6 +44,11 @@ pub enum Recommendation {
 /// The complete output of the discovery engine.
 pub struct DiscoveryResult {
     pub recommendations: Vec<Recommendation>,
+    /// Every unconfigured model with at least a partial hardware fit, one
+    /// entry per catalog model_id (not deduplicated by family/version like
+    /// `recommendations` is). Used by the "choose different models" escape
+    /// hatch so a user can see and pick models that don't fully fit.
+    pub all_model_candidates: Vec<Recommendation>,
     pub configured_provider_ids: Vec<String>,
     pub configured_model_ids: Vec<String>,
     pub configured_launcher_ids: Vec<String>,
@@ -61,6 +66,7 @@ impl Discover {
     pub async fn run(ctx: &crate::AppContext) -> DiscoveryResult {
         let (provider_recs, configured_providers) = Self::discover_providers(ctx).await;
         let model_recs = Self::discover_models(ctx, &configured_providers);
+        let all_model_candidates = Self::discover_all_model_candidates(ctx, &configured_providers);
         let (launcher_recs, configured_launchers) = Self::discover_launchers(ctx).await;
         let (capability_recs, configured_capabilities) = Self::discover_capabilities(
             ctx,
@@ -80,6 +86,7 @@ impl Discover {
 
         DiscoveryResult {
             recommendations,
+            all_model_candidates,
             configured_provider_ids: configured_providers,
             configured_model_ids: ctx.config.models.keys().cloned().collect(),
             configured_launcher_ids: configured_launchers,
@@ -174,44 +181,90 @@ impl Discover {
         let mut recommendations: Vec<Recommendation> = Vec::new();
 
         for models in family_groups.values() {
-            // Find latest version in this family
-            let latest = find_latest_version(models);
+            // Find the latest version string present in this family (a
+            // family can release several sizes at the same version, e.g.
+            // granite-4.2-3b/8b/30b are all version "4.2").
+            let Some((_, sample)) = find_latest_version(models) else {
+                continue;
+            };
+            let latest_version = &sample.version;
 
-            if let Some((model_id, latest_model)) = latest {
-                // Find best variant for this model
-                if let Some((best_variant, best_fit)) = best_variant(latest_model, &profile) {
-                    // Check which configured providers can run this variant
-                    let can_run_by = Self::find_can_run_providers(
-                        &best_variant,
-                        configured_provider_ids,
-                        ctx,
-                    );
+            // Among every size released at that version, recommend only
+            // the largest one that *fully* fits the current hardware.
+            // Partially-fitting models are never auto-recommended here --
+            // the user can still reach them via `select_models_manually`.
+            let best = models
+                .iter()
+                .filter(|(_, md)| &md.version == latest_version)
+                .filter_map(|(id, md)| {
+                    Self::build_model_recommendation(id, md, &profile, configured_provider_ids, ctx, true)
+                })
+                .max_by_key(|rec| match rec {
+                    Recommendation::Model { size, .. } => parse_size(size),
+                    _ => 0,
+                });
 
-                    recommendations.push(Recommendation::Model {
-                        model_id: model_id.clone(),
-                        family: latest_model.family.clone(),
-                        version: latest_model.version.clone(),
-                        size: format_size(latest_model.size),
-                        model_type: latest_model.model_type.clone(),
-                        best_variant,
-                        context_fit: best_fit,
-                        can_run_by,
-                    });
-                }
+            if let Some(rec) = best {
+                recommendations.push(rec);
             }
         }
 
-        // Sort by family, then version desc, then size desc
-        recommendations.sort_by(|a, b| {
-            let (a_family, a_version, a_size) = model_sort_key(a);
-            let (b_family, b_version, b_size) = model_sort_key(b);
-            a_family
-                .cmp(b_family)
-                .then_with(|| compare_versions_desc(a_version, b_version))
-                .then_with(|| b_size.cmp(&a_size))
-        });
-
+        sort_model_recommendations(&mut recommendations);
         recommendations
+    }
+
+    /// Every unconfigured model with at least a partial fit, one entry per
+    /// catalog model_id -- the full pool "choose different models" picks
+    /// from, unfiltered by the "only fully-fitting" / "one per family" rules
+    /// `discover_models` applies for the default recommendation.
+    fn discover_all_model_candidates(
+        ctx: &crate::AppContext,
+        configured_provider_ids: &[String],
+    ) -> Vec<Recommendation> {
+        let profile = detect_hardware();
+        let configured_ids: HashSet<&str> = ctx.config.models.keys().map(|s| s.as_str()).collect();
+
+        let mut recommendations: Vec<Recommendation> = MODEL_REGISTRY
+            .entries()
+            .into_iter()
+            .filter(|(model_id, _)| !configured_ids.contains(*model_id))
+            .filter_map(|(model_id, md)| {
+                Self::build_model_recommendation(model_id, &md, &profile, configured_provider_ids, ctx, false)
+            })
+            .collect();
+
+        sort_model_recommendations(&mut recommendations);
+        recommendations
+    }
+
+    /// Builds a `Recommendation::Model` for `model_id` using its best-fitting
+    /// variant for `profile`. When `require_full_fit` is true, only a
+    /// `ContextFit::Full` result is accepted (used for the default,
+    /// one-per-family recommendation); otherwise any non-`None` fit is
+    /// accepted (used for the full candidate pool).
+    fn build_model_recommendation(
+        model_id: &str,
+        md: &ModelMetadata,
+        profile: &crate::utils::hardware::HardwareProfile,
+        configured_provider_ids: &[String],
+        ctx: &crate::AppContext,
+        require_full_fit: bool,
+    ) -> Option<Recommendation> {
+        let (variant, fit) = best_variant(md, profile)?;
+        if require_full_fit && fit != ContextFit::Full {
+            return None;
+        }
+        let can_run_by = Self::find_can_run_providers(&variant, configured_provider_ids, ctx);
+        Some(Recommendation::Model {
+            model_id: model_id.to_string(),
+            family: md.family.clone(),
+            version: md.version.clone(),
+            size: format_size(md.size),
+            model_type: md.model_type.clone(),
+            best_variant: variant,
+            context_fit: fit,
+            can_run_by,
+        })
     }
 
     fn find_can_run_providers(
@@ -432,7 +485,7 @@ impl Revaluator {
     /// Filter model recommendations to only those that would be used by at least
     /// one selected capability (i.e., satisfy the capability's `ModelRequirement`).
     fn for_models<'a>(
-        discovery: &'a DiscoveryResult,
+        recommendations: &'a [Recommendation],
         selected_cap_types: &HashSet<String>,
     ) -> Vec<&'a Recommendation> {
         // Collect all model requirements from selected capabilities
@@ -456,15 +509,13 @@ impl Revaluator {
 
         if all_requirements.is_empty() {
             // No model requirements — show all model recommendations
-            return discovery
-                .recommendations
+            return recommendations
                 .iter()
                 .filter(|r| matches!(r, Recommendation::Model { .. }))
                 .collect();
         }
 
-        discovery
-            .recommendations
+        recommendations
             .iter()
             .filter(move |r| {
                 if let Recommendation::Model { model_id, .. } = r {
@@ -637,6 +688,20 @@ fn model_sort_key(rec: &Recommendation) -> (&str, &str, u64) {
     }
 }
 
+/// Sorts model recommendations by family, then version descending, then
+/// size descending -- shared by every discovery pass that produces a list
+/// of `Recommendation::Model`.
+fn sort_model_recommendations(recommendations: &mut [Recommendation]) {
+    recommendations.sort_by(|a, b| {
+        let (a_family, a_version, a_size) = model_sort_key(a);
+        let (b_family, b_version, b_size) = model_sort_key(b);
+        a_family
+            .cmp(b_family)
+            .then_with(|| compare_versions_desc(a_version, b_version))
+            .then_with(|| b_size.cmp(&a_size))
+    });
+}
+
 /*-- SetupCommands -----------------------------------------------------------*/
 
 pub struct SetupCommands;
@@ -763,7 +828,7 @@ impl SetupCommands {
             })
             .collect();
 
-        let selected_models: HashSet<String> = Revaluator::for_models(&discovery, &selected_caps)
+        let selected_models: HashSet<String> = Revaluator::for_models(&discovery.recommendations, &selected_caps)
             .into_iter()
             .filter_map(|r| match r {
                 Recommendation::Model { model_id, .. } => Some(model_id.clone()),
@@ -879,7 +944,7 @@ impl SetupCommands {
             .iter()
             .map(|(id, name, path)| format!("{} — {} ({})", id, name, path))
             .collect();
-        let defaults = vec![true; items.len()];
+        let defaults = vec![false; items.len()];
 
         let selected = ui.multi_select(
             "Select launchers to configure",
@@ -1073,6 +1138,34 @@ impl SetupCommands {
         }
     }
 
+    /// Label for the extra row appended to the default model list that
+    /// hands off to `select_models_manually`.
+    const CHOOSE_DIFFERENT_MODELS_LABEL: &'static str = "→ Choose different models…";
+
+    fn format_model_option(id: &str, size: &str, fit: ContextFit, providers: &[String]) -> String {
+        let providers_str = if providers.is_empty() {
+            "none".to_string()
+        } else {
+            providers.join(", ")
+        };
+        format!("{id} — {size} — Fit: {fit} ({providers_str})")
+    }
+
+    fn model_options(recs: Vec<&Recommendation>) -> Vec<(String, String, ContextFit, Vec<String>)> {
+        recs.into_iter()
+            .filter_map(|r| match r {
+                Recommendation::Model {
+                    model_id,
+                    size,
+                    context_fit,
+                    can_run_by,
+                    ..
+                } => Some((model_id.clone(), size.clone(), *context_fit, can_run_by.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
     async fn select_models(
         ctx: &mut crate::AppContext,
         discovery: &DiscoveryResult,
@@ -1080,60 +1173,72 @@ impl SetupCommands {
     ) -> Result<HashSet<String>> {
         let ui = &*ctx.ui;
 
-        let filtered: Vec<_> = Revaluator::for_models(discovery, selected_caps)
-            .into_iter()
-            .filter_map(|r| match r {
-                Recommendation::Model {
-                    model_id,
-                    family,
-                    version,
-                    size,
-                    model_type,
-                    best_variant,
-                    context_fit,
-                    can_run_by,
-                } => Some((
-                    model_id.clone(),
-                    family,
-                    version,
-                    size,
-                    model_type,
-                    best_variant,
-                    context_fit,
-                    can_run_by,
-                )),
-                _ => None,
-            })
-            .collect();
+        let filtered = Self::model_options(Revaluator::for_models(&discovery.recommendations, selected_caps));
+
+        let mut chosen: HashSet<String> = HashSet::new();
+        let mut choose_different = filtered.is_empty();
 
         if filtered.is_empty() {
-            ui.info("No models available for the selected capabilities.");
+            ui.info("No models fully fit your hardware for the selected capabilities.");
+        } else {
+            let escape_hatch_idx = filtered.len();
+            let mut items: Vec<String> = filtered
+                .iter()
+                .map(|(id, size, fit, providers)| Self::format_model_option(id, size, *fit, providers))
+                .collect();
+            items.push(Self::CHOOSE_DIFFERENT_MODELS_LABEL.to_string());
+
+            let mut defaults = vec![true; filtered.len()];
+            defaults.push(false);
+
+            let selected = ui.multi_select("Select models to configure", &items, &defaults)?;
+
+            choose_different = selected.contains(&escape_hatch_idx);
+            chosen = selected
+                .into_iter()
+                .filter(|&i| i < escape_hatch_idx)
+                .map(|i| filtered[i].0.clone())
+                .collect();
+        }
+
+        if choose_different {
+            let manual = Self::select_models_manually(ctx, discovery, selected_caps).await?;
+            chosen.extend(manual);
+        }
+
+        Ok(chosen)
+    }
+
+    /// Escape hatch from `select_models`: lets the user pick directly from
+    /// every model that satisfies the selected capabilities' requirements,
+    /// regardless of family/version deduplication or hardware fit (so long
+    /// as it fits at least partially) -- with each option's fit value shown,
+    /// including partial fits `discover_models` excludes from the default
+    /// recommendation.
+    async fn select_models_manually(
+        ctx: &mut crate::AppContext,
+        discovery: &DiscoveryResult,
+        selected_caps: &HashSet<String>,
+    ) -> Result<HashSet<String>> {
+        let ui = &*ctx.ui;
+
+        let filtered = Self::model_options(Revaluator::for_models(
+            &discovery.all_model_candidates,
+            selected_caps,
+        ));
+
+        if filtered.is_empty() {
+            ui.info("No candidate models satisfy the selected capabilities.");
             return Ok(HashSet::new());
         }
 
         let items: Vec<String> = filtered
             .iter()
-            .map(|(id, _family, _version, size, _model_type, _variant, fit, providers)| {
-                let fit_str = match fit {
-                    ContextFit::Full => "Full".to_string(),
-                    ContextFit::Partial(_) => "Partial".to_string(),
-                    ContextFit::None => "None".to_string(),
-                };
-                let providers_str = if providers.is_empty() {
-                    "none".to_string()
-                } else {
-                    providers.join(", ")
-                };
-                format!("{} — {} — Fit: {} ({})", id, size, fit_str, providers_str)
-            })
+            .map(|(id, size, fit, providers)| Self::format_model_option(id, size, *fit, providers))
             .collect();
-        let defaults = vec![true; items.len()];
+        let defaults = vec![false; items.len()];
 
-        let selected = ui.multi_select(
-            "Select models to configure",
-            &items,
-            &defaults,
-        )?;
+        let selected = ui.multi_select("Choose models directly", &items, &defaults)?;
 
         Ok(selected
             .into_iter()
@@ -1546,6 +1651,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn discover_models_only_recommends_full_fit_and_picks_largest_full_fitting_size() {
+        // Granite Language 4.2 ships three sizes (3b/8b/30b) at the same
+        // version. The 30b only partially fits typical hardware -- it must
+        // never be the default recommendation, and whichever size *is*
+        // recommended must be a full fit.
+        let ctx = test_ctx();
+        let result = Discover::run(&ctx).await;
+
+        let rec = result
+            .recommendations
+            .iter()
+            .find(|r| matches!(r, Recommendation::Model { family, .. } if family == "Granite Language"));
+
+        if let Some(Recommendation::Model {
+            model_id,
+            context_fit,
+            ..
+        }) = rec
+        {
+            assert_eq!(
+                *context_fit,
+                ContextFit::Full,
+                "the default recommendation must fully fit, got {model_id} with {context_fit}"
+            );
+            assert_ne!(
+                model_id, "granite-4.2-30b",
+                "the 30b variant only partially fits on typical hardware and must not be auto-recommended"
+            );
+        }
+        // If no size fully fits, no recommendation for the family is also
+        // acceptable -- the important thing is a partial fit is never
+        // silently promoted to the default recommendation.
+    }
+
+    #[tokio::test]
+    async fn discover_all_model_candidates_includes_every_size_with_its_own_fit() {
+        let ctx = test_ctx();
+        let result = Discover::run(&ctx).await;
+
+        let granite_4_2: Vec<_> = result
+            .all_model_candidates
+            .iter()
+            .filter_map(|r| match r {
+                Recommendation::Model {
+                    model_id,
+                    family,
+                    version,
+                    ..
+                } if family == "Granite Language" && version == "4.2" => Some(model_id.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            granite_4_2.contains(&"granite-4.2-8b"),
+            "expected granite-4.2-8b among all-candidates, got {granite_4_2:?}"
+        );
+        assert!(
+            granite_4_2.contains(&"granite-4.2-30b"),
+            "the 30b size should still appear in the full candidate pool despite only partially fitting, got {granite_4_2:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn discover_models_skips_configured() {
         let ctx = ctx_with_model(
             "granite-3.1-8b-instruct",
@@ -1705,7 +1874,7 @@ mod tests {
 
         // agent-model requires Chat + ToolCalling support.
         let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
-        let filtered = Revaluator::for_models(&discovery, &selected_caps);
+        let filtered = Revaluator::for_models(&discovery.recommendations, &selected_caps);
 
         assert!(
             !filtered.is_empty(),
@@ -1730,7 +1899,7 @@ mod tests {
     async fn revaluator_for_models_with_no_requirements_returns_all() {
         let ctx = test_ctx();
         let discovery = Discover::run(&ctx).await;
-        let filtered = Revaluator::for_models(&discovery, &HashSet::new());
+        let filtered = Revaluator::for_models(&discovery.recommendations, &HashSet::new());
         let all_models: Vec<_> = discovery
             .recommendations
             .iter()
@@ -1853,6 +2022,7 @@ mod tests {
                 &md,
                 md.variants[0].clone(),
             )],
+            all_model_candidates: vec![],
             configured_provider_ids: vec![],
             configured_model_ids: vec![],
             configured_launcher_ids: vec![],
@@ -1907,6 +2077,7 @@ mod tests {
                 &md,
                 recommended.clone(),
             )],
+            all_model_candidates: vec![],
             configured_provider_ids: vec![],
             configured_model_ids: vec![],
             configured_launcher_ids: vec![],
@@ -1929,6 +2100,62 @@ mod tests {
         assert_eq!(picked.format, recommended.format);
         assert_eq!(picked.precision, recommended.precision);
         assert_eq!(capture.select_prompts.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn select_models_choose_different_models_surfaces_partial_fit_candidates() {
+        let capture = Arc::new(CaptureUi::default());
+        let mut ctx = crate::AppContext {
+            config: Config::default(),
+            ui: capture.clone(),
+        };
+
+        let discovery = Discover::run(&ctx).await;
+        let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
+
+        // granite-4.2-30b only partially fits, so it must not be in the
+        // default recommendation list, but must be reachable through
+        // "choose different models".
+        let default_ids: HashSet<&str> = Revaluator::for_models(&discovery.recommendations, &selected_caps)
+            .into_iter()
+            .filter_map(|r| match r {
+                Recommendation::Model { model_id, .. } => Some(model_id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !default_ids.contains("granite-4.2-30b"),
+            "granite-4.2-30b only partially fits and must not be a default recommendation"
+        );
+
+        let manual_candidates = Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
+        let thirty_b_idx = manual_candidates
+            .iter()
+            .position(|r| matches!(r, Recommendation::Model { model_id, .. } if model_id == "granite-4.2-30b"))
+            .expect("granite-4.2-30b should be a manual candidate");
+
+        // First multi_select (the default list): pick only the escape hatch
+        // row (its index is the number of default items).
+        let default_count = default_ids.len();
+        capture
+            .multi_select_answers
+            .borrow_mut()
+            .push_back(vec![default_count]);
+        // Second multi_select (the manual list): pick granite-4.2-30b.
+        capture
+            .multi_select_answers
+            .borrow_mut()
+            .push_back(vec![thirty_b_idx]);
+
+        let chosen = SetupCommands::select_models(&mut ctx, &discovery, &selected_caps)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            chosen,
+            HashSet::from(["granite-4.2-30b".to_string()]),
+            "should have picked exactly the manually-chosen partial-fit model"
+        );
     }
 
     // -- SetupCommands ---------------------------------------------------------
@@ -1970,6 +2197,7 @@ mod tests {
                     binary_path: None,
                 },
             ],
+            all_model_candidates: vec![],
             configured_provider_ids: vec![],
             configured_model_ids: vec![],
             configured_launcher_ids: vec![],
@@ -2023,3 +2251,4 @@ mod tests {
         );
     }
 }
+
