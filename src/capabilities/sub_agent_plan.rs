@@ -3,42 +3,12 @@
 //! WebFetch, WebSearch -- everything read-only, no FileWrite/FileEdit), and a
 //! `Model`/`Provider` of its own. Mirrors `ExploreSubAgentCapability`.
 
-// Standard
-use serde_valid::Validate;
-use std::collections::HashSet;
-
-// Third Party
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_valid::Validate;
 
-// Local
-use crate::capabilities::ModelRequirement;
-use crate::capabilities::base::{
-    AgentModelBinding, Binding, BindingRequest, BindingType, Capability, CapabilityMetadata,
-    Dependency, HasCapabilityMetadata, KnownSubAgent, SubAgentBinding, SubAgentBindingRequest,
-    ToolName,
-};
-use crate::models::{ConfiguredModel, ModelFunction};
-use crate::registry::ConfigConstructable;
-
-/*-- PlanSubAgentCapabilityConfig --------------------------------------------*/
-
-/// Configuration for the plan sub-agent capability. Unlike `SubAgentCapability`,
-/// the prompt and tools are static (not configurable via JSON), leaving only the
-/// description (what the sub-agent does) and model_id as configurable.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema, Validate)]
-pub struct PlanSubAgentCapabilityConfig {
-    /// Shown to the main agent so it can decide when to delegate to this
-    /// plan sub-agent.
-    #[validate(min_length = 1)]
-    pub description: String,
-    /// Key into the configured models map (the user-chosen instance ID) for
-    /// the model this sub-agent runs on.
-    #[validate(min_length = 1)]
-    pub model_id: String,
-}
-
-/*-- PlanSubAgentCapability -----------------------------------------------*/
+use crate::capabilities::base::KnownSubAgent;
+use crate::capabilities::base::ToolName;
+use crate::declare_sub_agent_basic;
 
 const PLAN_PROMPT: &str = "You are a software architect and planning specialist. Your role is to explore the codebase and design implementation plans.
 
@@ -91,156 +61,43 @@ List 3-5 files most critical for implementing this plan:
 
 REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or modify any files. You do NOT have access to file editing tools.";
 
-pub struct PlanSubAgentCapability {
-    instance_id: String,
-    config: PlanSubAgentCapabilityConfig,
-    configured_model: ConfiguredModel,
-    /// Static prompt for the plan sub-agent (placeholder for now; user can
-    /// override by editing this field later).
-    pub prompt: String,
-    /// Static tool allow-list for the plan sub-agent.
-    pub tools: Vec<ToolName>,
-}
-
-impl ConfigConstructable for PlanSubAgentCapability {
-    type Config = PlanSubAgentCapabilityConfig;
-
-    /// Constructs the capability by resolving its model through
-    /// `ConfiguredModel`, exactly like `AgentModelCapability::new` -- so
-    /// `model.provider()` works at bind time and, when a usage-tracking
-    /// session is active, the model is transparently tracked.
-    fn new(
-        instance_id: &str,
-        cfg: &serde_json::Value,
-        global_config: &crate::config::Config,
-    ) -> Self {
-        let config: PlanSubAgentCapabilityConfig =
-            serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
-
-        // Static prompt
-        // TODO: Make prompt a template that should be expanded by the launcher
-        let prompt = PLAN_PROMPT.to_string();
-        // Static tools: everything read-only (no FileWrite/FileEdit)
-        let tools = vec![
-            ToolName::FileRead,
-            ToolName::Search,
-            ToolName::FileSearch,
-            ToolName::Shell,
-            ToolName::WebFetch,
-            ToolName::WebSearch,
-        ];
-
-        Self {
-            instance_id: instance_id.to_string(),
-            config,
-            configured_model,
-            prompt,
-            tools,
-        }
-    }
-}
-
-impl crate::registry::Named for PlanSubAgentCapability {
-    fn instance_id(&self) -> &str {
-        &self.instance_id
-    }
-}
-
-#[async_trait]
-impl Capability for PlanSubAgentCapability {
-    fn name(&self) -> &str {
-        "Plan Sub-Agent"
-    }
-
-    fn description(&self) -> &str {
-        "Defines a named planning sub-agent (static prompt, fixed read-only tools, and model) that a launched coding agent can delegate implementation-plan design to."
-    }
-
-    fn dependencies(&self) -> Vec<Dependency> {
-        vec![Dependency::Model {
-            config_key: "model_id".to_string(),
-            requirement: ModelRequirement {
-                supported_functions: vec![ModelFunction::Chat, ModelFunction::ToolCalling],
-                ..Default::default()
-            },
-            resolved_id: Some(self.config.model_id.clone()),
-            required: true,
-        }]
-    }
-
-    fn binding_types(&self) -> HashSet<BindingType> {
-        HashSet::from([BindingType::SubAgent])
-    }
-
-    async fn bind(&self, request: BindingRequest) -> anyhow::Result<Binding> {
-        let api_type = match request {
-            BindingRequest::SubAgent(SubAgentBindingRequest { api_type }) => api_type,
-            other => anyhow::bail!(
-                "PlanSubAgentCapability does not handle {:?} binding requests",
-                other.binding_type()
-            ),
-        };
-        let model_id = &self.config.model_id;
-
-        let (provider, endpoint, model_name) = self.configured_model.resolve_provider_endpoint(
-            model_id,
-            api_type.clone(),
-            ModelFunction::Chat,
-            ModelFunction::Chat,
-        )?;
-
-        Ok(Binding::SubAgent(SubAgentBinding {
-            description: self.config.description.clone(),
-            prompt: self.prompt.clone(),
-            tools: self.tools.clone(),
-            model: AgentModelBinding {
-                api_type,
-                provider_name: provider.instance_id().to_string(),
-                base_url: provider.base_url().to_string(),
-                model_name,
-                endpoint_path: endpoint.path().to_string(),
-                api_key: provider.api_key().cloned(),
-                verify_ssl: provider.verify_ssl(),
-                context_length: Some(self.configured_model.model.context_length()),
-            },
-            known_type: Some(KnownSubAgent::Plan),
-        }))
-    }
-}
-
-impl HasCapabilityMetadata for PlanSubAgentCapability {
-    fn metadata() -> CapabilityMetadata {
-        CapabilityMetadata {
-            name: "Plan Sub-Agent".to_string(),
-            description: "Defines a named planning sub-agent (static prompt, fixed read-only tools, and model) that a launched coding agent can delegate implementation-plan design to.".to_string(),
-            dependencies: vec![Dependency::Model {
-                config_key: "model_id".to_string(),
-                requirement: ModelRequirement {
-                    supported_functions: vec![ModelFunction::Chat, ModelFunction::ToolCalling],
-                    ..Default::default()
-                },
-                resolved_id: None,
-                required: true,
-            }],
-            tags: vec!["agent".to_string(), "plan".to_string()],
-            supported_binding_types: HashSet::from([BindingType::SubAgent]),
-        }
-    }
-}
+declare_sub_agent_basic!(
+    PlanSubAgentCapability
+    PlanSubAgentCapabilityConfig
+    "Plan Sub-Agent";
+    "Defines a named planning sub-agent (static prompt, fixed read-only tools, and model) that a launched coding agent can delegate implementation-plan design to.";
+    ["agent", "plan"]
+    PLAN_PROMPT.to_string();
+    vec![
+        ToolName::FileRead,
+        ToolName::Search,
+        ToolName::FileSearch,
+        ToolName::Shell,
+        ToolName::WebFetch,
+        ToolName::WebSearch,
+    ];
+    Some(KnownSubAgent::Plan)
+);
 
 /*-- tests -------------------------------------------------------------------*/
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities::base::{
+        Binding, BindingRequest, BindingType, Capability, Dependency, HasCapabilityMetadata,
+        SubAgentBindingRequest,
+    };
     use crate::config::{Config, ModelConfig};
-    use crate::models::Model;
+    use crate::models::{Model, ModelFunction};
     use crate::providers::{
         ApiEndpoint, ApiType, HealthStatus, ModelFormat, Provider, ProviderError,
     };
+    use crate::registry::ConfigConstructable;
     use crate::registry::Secret;
+    use async_trait::async_trait;
     use std::collections::HashMap;
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     #[derive(Clone, Default)]
@@ -375,9 +232,6 @@ mod tests {
         }
     }
 
-    /// Builds a `PlanSubAgentCapability` with a real registry model id (so
-    /// construction succeeds) and then swaps in a test double model/provider,
-    /// mirroring the test pattern from `sub_agent_explore.rs`.
     fn plan_capability_with_test_model(
         functions: Vec<ModelFunction>,
         provider: FakeProvider,
