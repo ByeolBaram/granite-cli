@@ -301,7 +301,9 @@ fn prompt_string(
         };
         Ok(Value::String(value))
     } else {
-        let entered = ui.text(&prompt, &default_str)?;
+        // No optional-field handling here yet -- this field always requires
+        // the caller-set default. That's added in the next commit.
+        let entered = ui.text(&prompt, &default_str, false)?;
         Ok(Value::String(entered))
     }
 }
@@ -319,7 +321,9 @@ fn prompt_number(
         .map(|n| n.to_string())
         .unwrap_or_else(|| "0".to_string());
 
-    let entered = ui.text(&format!("{indent}{label}"), &default_str)?;
+    // Numeric fields always require a parseable value; an empty submission
+    // would just fail the parse below, so don't let dialoguer accept one.
+    let entered = ui.text(&format!("{indent}{label}"), &default_str, false)?;
 
     let number = if is_integer {
         entered

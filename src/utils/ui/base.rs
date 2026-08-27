@@ -218,10 +218,19 @@ pub trait Ui: Send + Sync + Any {
     }
 
     /// Ask for a line of free text, pre-filled with `default`.
-    fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+    ///
+    /// `allow_empty` controls whether submitting a blank line (Enter with no
+    /// input) is accepted: dialoguer rejects an empty submission by default,
+    /// re-prompting silently instead of returning "" -- from the terminal
+    /// this looks like Enter does nothing. Every caller currently passes
+    /// `false`, preserving that behavior; a follow-up change teaches
+    /// `prompt_string()` in `prompt.rs` to pass `true` for `Option<String>`
+    /// fields, where a blank answer is a legitimate "unset".
+    fn text(&self, prompt: &str, default: &str, allow_empty: bool) -> anyhow::Result<String> {
         Ok(dialoguer::Input::new()
             .with_prompt(prompt)
             .with_initial_text(default)
+            .allow_empty(allow_empty)
             .interact_text()?)
     }
 
@@ -444,7 +453,7 @@ pub(crate) mod tests {
                 .unwrap_or(default))
         }
 
-        fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+        fn text(&self, prompt: &str, default: &str, _allow_empty: bool) -> anyhow::Result<String> {
             self.text_prompts
                 .borrow_mut()
                 .push((prompt.to_string(), default.to_string()));
@@ -650,14 +659,14 @@ pub(crate) mod tests {
     #[test]
     fn text_falls_back_to_default_when_no_canned_answer() {
         let ui = make();
-        assert_eq!(ui.text("Name?", "bob").unwrap(), "bob");
+        assert_eq!(ui.text("Name?", "bob", false).unwrap(), "bob");
     }
 
     #[test]
     fn text_consumes_canned_answer() {
         let ui = make();
         ui.text_answers.borrow_mut().push_back("alice".to_string());
-        assert_eq!(ui.text("Name?", "bob").unwrap(), "alice");
+        assert_eq!(ui.text("Name?", "bob", false).unwrap(), "alice");
     }
 
     #[test]

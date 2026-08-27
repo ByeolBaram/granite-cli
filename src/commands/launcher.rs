@@ -114,7 +114,8 @@ impl LauncherCommands {
         // Resolve instance id (prompt only when not passed as arg)
         let instance_id = match instance_id {
             Some(id) => id.to_string(),
-            None => ctx.ui.text("Instance name: ", launcher_type)?,
+            // Becomes a config map key -- must not be empty.
+            None => ctx.ui.text("Instance name: ", launcher_type, false)?,
         };
 
         // --- Type-aware clash detection (diverges from Provider pattern) ---
@@ -360,7 +361,10 @@ async fn select_capabilities(
             compatible_types[idx]
         };
 
-        let nickname = ctx.ui.text("Name this capability instance", cap_type)?;
+        // Becomes a config map key -- must not be empty.
+        let nickname = ctx
+            .ui
+            .text("Name this capability instance", cap_type, false)?;
 
         crate::commands::CapabilityCommands::setup(ctx, cap_type, Some(&nickname)).await?;
         result.push(nickname);

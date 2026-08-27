@@ -83,7 +83,7 @@ impl Ui for MarkdownOutput {
         base::non_interactive()
     }
 
-    fn text(&self, _prompt: &str, _default: &str) -> anyhow::Result<String> {
+    fn text(&self, _prompt: &str, _default: &str, _allow_empty: bool) -> anyhow::Result<String> {
         base::non_interactive()
     }
 

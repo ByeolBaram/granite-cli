@@ -147,7 +147,8 @@ impl ProviderCommands {
         // Get a name for this instance
         let instance_id = match instance_id {
             Some(instance_id_arg) => instance_id_arg.to_string(),
-            _ => ctx.ui.text("Instance name: ", provider_type)?,
+            // Becomes a config map key -- must not be empty.
+            _ => ctx.ui.text("Instance name: ", provider_type, false)?,
         };
 
         if !provider_def.authentication.is_empty() {
