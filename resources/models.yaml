@@ -2537,6 +2537,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - DocumentConversion
   variants:
     - format: GGUF
       precision: BF16
@@ -2582,6 +2583,7 @@
   supported_functions:
     - Chat
     - ImageUnderstanding
+    - DocumentConversion
   variants:
     - format: safetensors
       precision: null
