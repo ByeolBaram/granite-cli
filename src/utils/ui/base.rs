@@ -217,35 +217,25 @@ pub trait Ui: Send + Sync + Any {
             .interact()?)
     }
 
-    /// Ask for a line of free text, pre-filled with `default`.
-    ///
-    /// `allow_empty` controls whether submitting a blank line (Enter with no
-    /// input) is accepted:
-    ///
-    /// dialoguer rejects an empty submission by default, re-prompting
-    /// silently instead of returning "" -- from the terminal this looks
-    /// like Enter does nothing. That's the *right* behavior for most
-    /// callers here: instance names (`ctx.ui.text("Instance name: ", ..)`
-    /// in `commands/{provider,launcher,capability}.rs`) become config map
-    /// keys and must not be empty, and `prompt_number` in `prompt.rs`
-    /// would otherwise hand a blank string to `str::parse`.
-    ///
-    /// The one caller that needs `allow_empty = true` is `prompt_string()`
-    /// in `prompt.rs`, and only when the field being prompted for is
-    /// `Option<String>`: there, an empty submission is a legitimate answer
-    /// meaning "unset" (e.g. an unset launcher `command_path`, meant to
-    /// fall back to PATH discovery at `validate_command()` time), and
-    /// `prompt_string` already knows -- from the JSON schema -- whether
-    /// that's the case, so it's the right place to make this call, not the
-    /// default for every text prompt in the app. See issue #84: the
-    /// previous commit taught `prompt_string` to map an empty optional
-    /// string to `None`, but it had no effect until this commit let an
-    /// empty answer reach it in the first place.
-    fn text(&self, prompt: &str, default: &str, allow_empty: bool) -> anyhow::Result<String> {
+    /// Ask for a line of free text, pre-filled with `default`. Rejects a
+    /// blank submission, re-prompting instead of returning "".
+    fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
         Ok(dialoguer::Input::new()
             .with_prompt(prompt)
             .with_initial_text(default)
-            .allow_empty(allow_empty)
+            .interact_text()?)
+    }
+
+    /// Like [`text`](Ui::text), but accepts a blank submission as a
+    /// legitimate answer instead of re-prompting. For fields where empty
+    /// means "unset" -- e.g. an optional `command_path` that falls back to
+    /// PATH discovery -- rather than a value that's merely allowed to be
+    /// the empty string.
+    fn text_optional(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+        Ok(dialoguer::Input::new()
+            .with_prompt(prompt)
+            .with_initial_text(default)
+            .allow_empty(true)
             .interact_text()?)
     }
 
@@ -468,7 +458,7 @@ pub(crate) mod tests {
                 .unwrap_or(default))
         }
 
-        fn text(&self, prompt: &str, default: &str, _allow_empty: bool) -> anyhow::Result<String> {
+        fn text(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
             self.text_prompts
                 .borrow_mut()
                 .push((prompt.to_string(), default.to_string()));
@@ -477,6 +467,10 @@ pub(crate) mod tests {
                 .borrow_mut()
                 .pop_front()
                 .unwrap_or_else(|| default.to_string()))
+        }
+
+        fn text_optional(&self, prompt: &str, default: &str) -> anyhow::Result<String> {
+            self.text(prompt, default)
         }
 
         fn password(&self, prompt: &str) -> anyhow::Result<String> {
@@ -674,14 +668,14 @@ pub(crate) mod tests {
     #[test]
     fn text_falls_back_to_default_when_no_canned_answer() {
         let ui = make();
-        assert_eq!(ui.text("Name?", "bob", false).unwrap(), "bob");
+        assert_eq!(ui.text("Name?", "bob").unwrap(), "bob");
     }
 
     #[test]
     fn text_consumes_canned_answer() {
         let ui = make();
         ui.text_answers.borrow_mut().push_back("alice".to_string());
-        assert_eq!(ui.text("Name?", "bob", false).unwrap(), "alice");
+        assert_eq!(ui.text("Name?", "bob").unwrap(), "alice");
     }
 
     #[test]

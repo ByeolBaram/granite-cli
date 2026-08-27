@@ -146,8 +146,7 @@ impl CapabilityCommands {
 
         let instance_id = match instance_id {
             Some(id) => id.to_string(),
-            // Becomes a config map key -- must not be empty.
-            None => ctx.ui.text("Instance name: ", capability_type, false)?,
+            None => ctx.ui.text("Instance name: ", capability_type)?,
         };
 
         let existing_config = ctx.config.get_capability(&instance_id);
@@ -448,10 +447,7 @@ impl CapabilityCommands {
             configurable_types[index]
         };
 
-        // Becomes a config map key -- must not be empty.
-        let nickname = ctx
-            .ui
-            .text("Name this provider instance", provider_type, false)?;
+        let nickname = ctx.ui.text("Name this provider instance", provider_type)?;
         ProviderCommands::setup(ctx, provider_type, Some(&nickname)).await?;
 
         let (existing_after, _) = Self::provider_candidates(ctx, requirement);

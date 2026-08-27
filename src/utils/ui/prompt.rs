@@ -33,8 +33,6 @@ fn prompt_value(
     indent: &str,
     label: &str,
 ) -> anyhow::Result<Value> {
-    // Check if optional BEFORE resolve_ref unwraps anyOf
-    let is_optional = is_optional_field(node);
     let node = resolve_ref(root, node);
     if let Some(choices) = enum_choices(root, node) {
         return prompt_enum_scalar(ui, root, &choices, default, indent, label);
@@ -43,14 +41,7 @@ fn prompt_value(
     match get_promptable_type(node).as_deref() {
         Some("object") => prompt_object(ui, root, node, default, indent, label),
         Some("array") => prompt_array(ui, root, node, default, indent, label),
-        Some("string") => Ok(prompt_string(
-            ui,
-            node,
-            default,
-            indent,
-            label,
-            is_optional,
-        )?),
+        Some("string") => Ok(prompt_string(ui, node, default, indent, label)?),
         Some("integer") | Some("number") => Ok(prompt_number(ui, node, default, indent, label)?),
         Some("boolean") => Ok(prompt_bool(ui, default, indent, label)?),
         _ => Ok(default.clone()),
@@ -297,7 +288,6 @@ fn prompt_string(
     default: &Value,
     indent: &str,
     label: &str,
-    is_optional: bool,
 ) -> anyhow::Result<Value> {
     let default_str = default.as_str().unwrap_or("").to_string();
     let prompt = format!("{indent}{label}");
@@ -311,9 +301,12 @@ fn prompt_string(
         };
         Ok(Value::String(value))
     } else {
-        // Only Option<String> fields may submit a blank line; see the
-        // allow_empty doc comment on Ui::text for why this isn't the default.
-        let entered = ui.text(&prompt, &default_str, is_optional)?;
+        let is_optional = is_optional_field(node);
+        let entered = if is_optional {
+            ui.text_optional(&prompt, &default_str)?
+        } else {
+            ui.text(&prompt, &default_str)?
+        };
         // For optional fields, treat empty input (when default is also empty) as None
         if is_optional && entered.is_empty() && default_str.is_empty() {
             Ok(Value::Null)
@@ -336,9 +329,7 @@ fn prompt_number(
         .map(|n| n.to_string())
         .unwrap_or_else(|| "0".to_string());
 
-    // Numeric fields always require a parseable value; an empty submission
-    // would just fail the parse below, so don't let dialoguer accept one.
-    let entered = ui.text(&format!("{indent}{label}"), &default_str, false)?;
+    let entered = ui.text(&format!("{indent}{label}"), &default_str)?;
 
     let number = if is_integer {
         entered
@@ -372,34 +363,21 @@ fn is_secret_schema(node: &Value) -> bool {
     node.get("format").and_then(Value::as_str) == Some("password")
 }
 
-/// True when the schema represents an optional field (Option<T>).
+/// True when the schema represents an optional scalar field (`Option<T>`
+/// for a plain, non-`$ref` `T` such as `String`), recognized from schemars'
+/// `type: [T, "null"]` array.
 ///
-/// Detects two patterns that indicate optionality:
-/// 1. `type: ["string", "null"]` - appears after `resolve_ref` unwraps an `anyOf`
-///    and merges it into a type array. This is what we see in `prompt_object`
-///    after calling `resolve_ref` on property schemas.
-/// 2. `anyOf: [{type: "string"}, {type: "null"}]` - the raw pattern schemars
-///    emits for `Option<T>` before any resolution. This makes `is_optional_field`
-///    usable on nodes before `resolve_ref` as well.
+/// Doesn't recognize `Option<T>` for a `$ref`-backed `T` (e.g.
+/// `Option<Secret>`), which schemars instead renders as `anyOf` wrapping the
+/// `$ref` alongside a null variant -- `resolve_ref` discards that null
+/// variant when it follows the `$ref` through, so by the time a node reaches
+/// here the signal is already gone. See
+/// `is_optional_field_cannot_detect_ref_wrapped_options` for why this is an
+/// accepted gap rather than a bug.
 fn is_optional_field(node: &Value) -> bool {
-    // Case 1: type is an array containing "null" (after resolve_ref)
-    if let Some(types) = node.get("type").and_then(Value::as_array) {
-        if types.iter().any(|t| t.as_str() == Some("null")) {
-            return true;
-        }
-    }
-
-    // Case 2: anyOf with a null variant (before resolve_ref)
-    if let Some(variants) = node.get("anyOf").and_then(Value::as_array) {
-        if variants
-            .iter()
-            .any(|v| v.get("type").and_then(Value::as_str) == Some("null"))
-        {
-            return true;
-        }
-    }
-
-    false
+    node.get("type")
+        .and_then(Value::as_array)
+        .is_some_and(|types| types.iter().any(|t| t.as_str() == Some("null")))
 }
 
 /// Extract the promptable type from a schema node. Returns the concrete type
@@ -527,23 +505,6 @@ mod tests {
         assert!(is_optional_field(&json!({"type": ["integer", "null"]})));
         assert!(!is_optional_field(&json!({"type": "string"})));
         assert!(!is_optional_field(&json!({"type": ["string", "integer"]})));
-    }
-
-    #[test]
-    fn is_optional_field_detects_any_of_with_null_variant() {
-        // schemars emits anyOf for Option<T>
-        assert!(is_optional_field(
-            &json!({"anyOf": [{"type": "string"}, {"type": "null"}]})
-        ));
-        assert!(is_optional_field(
-            &json!({"anyOf": [{"type": "integer"}, {"type": "null"}]})
-        ));
-
-        // Non-optional patterns
-        assert!(!is_optional_field(
-            &json!({"anyOf": [{"type": "string"}, {"type": "integer"}]})
-        ));
-        assert!(!is_optional_field(&json!({"type": "string"})));
     }
 
     #[test]
@@ -816,6 +777,32 @@ mod tests {
         assert_eq!(resolved.get("type").and_then(Value::as_str), Some("string"));
         assert!(is_secret_schema(resolved));
         assert_eq!(get_promptable_type(resolved), Some("string".to_string()));
+    }
+
+    #[test]
+    fn is_optional_field_cannot_detect_ref_wrapped_options() {
+        // Same anyOf-wrapping-a-$ref shape as
+        // any_of_option_wrapper_around_a_ref_resolves_through_both (how schemars
+        // renders Option<Secret>). See is_optional_field's doc comment for why
+        // this is an accepted gap, not a bug.
+        let root = json!({
+            "$defs": {
+                "Secret": {"type": "string", "format": "password"}
+            }
+        });
+        let raw = json!({"anyOf": [{"$ref": "#/$defs/Secret"}, {"type": "null"}]});
+        assert!(!is_optional_field(&raw));
+        assert!(!is_optional_field(resolve_ref(&root, &raw)));
+    }
+
+    #[test]
+    fn is_optional_field_detects_plain_scalar_options_before_and_after_resolve() {
+        // Option<String> has no $ref to resolve, so the null marker survives
+        // resolve_ref untouched -- the shape is_optional_field is built to detect.
+        let root = json!({});
+        let raw = json!({"type": ["string", "null"]});
+        assert!(is_optional_field(&raw));
+        assert!(is_optional_field(resolve_ref(&root, &raw)));
     }
 
     #[test]

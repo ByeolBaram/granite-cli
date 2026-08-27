@@ -762,10 +762,7 @@ impl ModelCommands {
             resolution.configurable_types[type_index]
         };
 
-        // Becomes a config map key -- must not be empty.
-        let nickname = ctx
-            .ui
-            .text("Name this provider instance", provider_type, false)?;
+        let nickname = ctx.ui.text("Name this provider instance", provider_type)?;
 
         ProviderCommands::setup(ctx, provider_type, Some(&nickname)).await?;
 
