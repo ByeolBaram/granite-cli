@@ -12,7 +12,7 @@ use crate::models::{
     ContextFit, MODEL_REGISTRY, ModelFunction, ModelMetadata, ModelType, ModelVariant,
 };
 use crate::providers::{HealthStatus, PROVIDER_REGISTRY, Provider};
-use crate::utils::hardware::detect_hardware;
+use crate::utils::hardware::{HardwareProfile, detect_hardware};
 
 use_channel!("SETUP");
 
@@ -68,11 +68,24 @@ pub struct DiscoveryResult {
 struct Discover;
 
 impl Discover {
-    /// Run the full discovery pipeline.
+    /// Run the full discovery pipeline against the machine's real hardware.
     pub async fn run(ctx: &crate::AppContext) -> DiscoveryResult {
+        Self::run_with_hardware(ctx, &detect_hardware()).await
+    }
+
+    /// Run the full discovery pipeline against a given hardware profile.
+    /// Split out from `run` so tests can pin the hardware profile instead of
+    /// depending on `detect_hardware()`'s result on whatever machine the
+    /// test happens to run on -- model-fit outcomes (and therefore which
+    /// recommendations come out) are a direct function of the profile.
+    async fn run_with_hardware(
+        ctx: &crate::AppContext,
+        profile: &HardwareProfile,
+    ) -> DiscoveryResult {
         let (provider_recs, configured_providers) = Self::discover_providers(ctx).await;
-        let model_recs = Self::discover_models(ctx, &configured_providers);
-        let all_model_candidates = Self::discover_all_model_candidates(ctx, &configured_providers);
+        let model_recs = Self::discover_models(ctx, &configured_providers, profile);
+        let all_model_candidates =
+            Self::discover_all_model_candidates(ctx, &configured_providers, profile);
         let (launcher_recs, configured_launchers) = Self::discover_launchers(ctx).await;
         let (capability_recs, configured_capabilities) =
             Self::discover_capabilities(ctx, &provider_recs, &model_recs, &configured_providers);
@@ -167,8 +180,8 @@ impl Discover {
     fn discover_models(
         ctx: &crate::AppContext,
         configured_provider_ids: &[String],
+        profile: &HardwareProfile,
     ) -> Vec<Recommendation> {
-        let profile = detect_hardware();
         let configured_ids: HashSet<&str> = ctx.config.models.keys().map(|s| s.as_str()).collect();
 
         // Group models by family, keeping each model's real catalog id
@@ -207,7 +220,7 @@ impl Discover {
                     Self::build_model_recommendation(
                         id,
                         md,
-                        &profile,
+                        profile,
                         configured_provider_ids,
                         ctx,
                         true,
@@ -234,8 +247,8 @@ impl Discover {
     fn discover_all_model_candidates(
         ctx: &crate::AppContext,
         configured_provider_ids: &[String],
+        profile: &HardwareProfile,
     ) -> Vec<Recommendation> {
-        let profile = detect_hardware();
         let configured_ids: HashSet<&str> = ctx.config.models.keys().map(|s| s.as_str()).collect();
 
         let mut recommendations: Vec<Recommendation> = MODEL_REGISTRY
@@ -246,7 +259,7 @@ impl Discover {
                 Self::build_model_recommendation(
                     model_id,
                     &md,
-                    &profile,
+                    profile,
                     configured_provider_ids,
                     ctx,
                     false,
@@ -1629,6 +1642,33 @@ mod tests {
         }
     }
 
+    /// A fixed hardware profile for discovery tests, in place of
+    /// `detect_hardware()`'s result on whatever machine happens to run the
+    /// test. Model-fit outcomes are a direct function of the hardware
+    /// profile, so exercising the real detector here would make these tests
+    /// pass or fail depending on the CI runner's actual RAM/VRAM rather than
+    /// on the discovery logic under test.
+    ///
+    /// 32GB of usable memory (ram_gb / 2.0, no GPU) is calibrated against the
+    /// real "Granite Language" 4.2 catalog entries: granite-4.2-8b's
+    /// smallest GGUF variant fully fits at its full 131072-token context,
+    /// while even granite-4.2-30b's smallest variant needs far more than
+    /// that for full context and only ever partially fits.
+    fn test_hardware_profile() -> HardwareProfile {
+        HardwareProfile {
+            os: "test".to_string(),
+            cpu_cores: 8,
+            cpu_arch: "test".to_string(),
+            gpu_vendor: None,
+            vram_gb: None,
+            ram_gb: 64.0,
+        }
+    }
+
+    async fn run_discovery(ctx: &crate::AppContext) -> DiscoveryResult {
+        Discover::run_with_hardware(ctx, &test_hardware_profile()).await
+    }
+
     fn ctx_with_provider(
         id: &str,
         provider_type: &str,
@@ -1664,7 +1704,7 @@ mod tests {
     #[tokio::test]
     async fn discover_providers_skips_configured() {
         let ctx = ctx_with_provider("ollama", "ollama", serde_json::json!({}));
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         assert!(
             result
                 .configured_provider_ids
@@ -1675,7 +1715,7 @@ mod tests {
     #[tokio::test]
     async fn discover_providers_recommends_unconfigured() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         let provider_recs: Vec<_> = result
             .recommendations
             .iter()
@@ -1693,7 +1733,7 @@ mod tests {
     #[tokio::test]
     async fn discover_models_groups_by_family() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         let model_recs: Vec<_> = result
             .recommendations
             .iter()
@@ -1709,7 +1749,7 @@ mod tests {
     #[tokio::test]
     async fn discover_models_recommendation_carries_real_registry_model_id() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         for rec in &result.recommendations {
             if let Recommendation::Model {
                 model_id, family, ..
@@ -1734,7 +1774,7 @@ mod tests {
         // never be the default recommendation, and whichever size *is*
         // recommended must be a full fit.
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
 
         let rec = result.recommendations.iter().find(
             |r| matches!(r, Recommendation::Model { family, .. } if family == "Granite Language"),
@@ -1764,7 +1804,7 @@ mod tests {
     #[tokio::test]
     async fn discover_all_model_candidates_includes_every_size_with_its_own_fit() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
 
         let granite_4_2: Vec<_> = result
             .all_model_candidates
@@ -1793,7 +1833,7 @@ mod tests {
     #[tokio::test]
     async fn discover_models_skips_configured() {
         let ctx = ctx_with_model("granite-3.1-8b-instruct", Some("ollama"));
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         assert!(
             result
                 .configured_model_ids
@@ -1815,7 +1855,7 @@ mod tests {
                 config: serde_json::json!({}),
             },
         );
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         assert!(
             result
                 .configured_launcher_ids
@@ -1826,7 +1866,7 @@ mod tests {
     #[tokio::test]
     async fn discover_launchers_recommends_unconfigured() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         let launcher_recs: Vec<_> = result
             .recommendations
             .iter()
@@ -1843,7 +1883,7 @@ mod tests {
     #[tokio::test]
     async fn discover_capabilities_recommends_unconfigured() {
         let ctx = test_ctx();
-        let result = Discover::run(&ctx).await;
+        let result = run_discovery(&ctx).await;
         let cap_recs: Vec<_> = result
             .recommendations
             .iter()
@@ -1960,7 +2000,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_models_filters_by_capability_requirements() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
 
         // agent-model requires Chat + ToolCalling support.
         let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
@@ -2050,7 +2090,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_models_excludes_multimodal_for_plain_chat_capability() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
 
         // agent-model only requires Chat + ToolCalling -- no multi-modal
         // function -- so vision/speech models must not show up even though
@@ -2076,7 +2116,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_models_still_includes_vision_for_vision_mcp() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
 
         let selected_caps: HashSet<String> = ["vision-mcp".to_string()].into_iter().collect();
         let filtered = Revaluator::for_models(&discovery.all_model_candidates, &selected_caps);
@@ -2090,7 +2130,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_models_with_no_requirements_returns_all() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
         let filtered = Revaluator::for_models(&discovery.recommendations, &HashSet::new());
         let all_models: Vec<_> = discovery
             .recommendations
@@ -2103,7 +2143,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_launchers_filters_by_binding_types() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
 
         // agent-model needs the AgentModel binding, which bob does not support.
         let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
@@ -2129,7 +2169,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_capabilities_filters_by_selected_launchers() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
 
         // bob only supports the Mcp binding, so only vision-mcp should show.
         let bob_only: HashSet<String> = ["bob".to_string()].into_iter().collect();
@@ -2145,7 +2185,7 @@ mod tests {
     #[tokio::test]
     async fn revaluator_for_capabilities_with_no_launchers_returns_none() {
         let ctx = test_ctx();
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
         let filtered = Revaluator::for_capabilities(&discovery, &HashSet::new());
         assert!(filtered.is_empty());
     }
@@ -2321,7 +2361,7 @@ mod tests {
             ui: capture.clone(),
         };
 
-        let discovery = Discover::run(&ctx).await;
+        let discovery = run_discovery(&ctx).await;
         let selected_caps: HashSet<String> = ["agent-model".to_string()].into_iter().collect();
 
         // granite-4.2-30b only partially fits, so it must not be in the
