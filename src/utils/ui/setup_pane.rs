@@ -438,7 +438,7 @@ impl SetupPane {
                 let list = List::new(list_items).block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!(" {} ", message)),
+                        .title(format!(" {message} ")),
                 );
                 frame.render_stateful_widget(list, area, list_state);
             }
@@ -472,7 +472,7 @@ impl SetupPane {
                 let list = List::new(list_items).block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!(" {} ", message)),
+                        .title(format!(" {message} ")),
                 );
                 frame.render_stateful_widget(list, area, list_state);
             }
@@ -497,7 +497,7 @@ impl SetupPane {
                 let para = Paragraph::new(line).block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!(" {} ", message)),
+                        .title(format!(" {message} ")),
                 );
                 frame.render_widget(para, area);
             }
@@ -516,7 +516,7 @@ impl SetupPane {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Yellow))
-                        .title(format!(" {} ", message)),
+                        .title(format!(" {message} ")),
                 );
                 frame.render_widget(para, area);
             }
@@ -560,7 +560,7 @@ fn render_pull_bars(frame: &mut Frame, area: Rect, pulls: &[PullState]) {
                     let filled = ((bar_width as f64) * pct) as usize;
                     let empty = bar_width.saturating_sub(filled);
                     Line::from(vec![
-                        Span::styled(format!("{} [", label), Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("{label} ["), Style::default().fg(Color::DarkGray)),
                         Span::styled("█".repeat(filled), Style::default().fg(Color::Cyan)),
                         Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
                         Span::styled(
