@@ -15,6 +15,7 @@ use_channel!("MODEL");
 pub static MODEL_REGISTRY: LazyLock<base::ModelFactory> = LazyLock::new(|| {
     let mut factory = base::ModelFactory::new();
     register_all_models(&mut factory);
+    factory.register::<custom::CustomModel>("custom");
     factory
 });
 
@@ -22,8 +23,9 @@ pub static MODEL_REGISTRY: LazyLock<base::ModelFactory> = LazyLock::new(|| {
 
 /// The real `Configured<dyn Model>`: eagerly constructs a live model instance
 /// for every model referenced by the config's `models` map, keyed by its
-/// catalog id (models have no separate instance nickname -- the config key
-/// *is* the catalog id).
+/// instance id (`ModelConfig.model_id`) -- distinct from the registry key
+/// it's constructed from (`ModelConfig.model_type`), so the same catalog
+/// type can be configured more than once.
 pub struct ModelSource {
     constructed: Vec<(String, Box<dyn Model>)>,
     model_proxy: Option<crate::proxy::ProxyHandle>,
@@ -35,18 +37,17 @@ impl ModelSource {
             .models
             .values()
             .filter_map(|model_config| {
-                let cfg = match model_config
+                let mut cfg = model_config.config.clone();
+                if let Some(provider_config) = model_config
                     .provider_id
                     .as_deref()
                     .and_then(|pid| config.get_provider(pid))
                 {
-                    Some(provider_config) => {
-                        serde_json::json!({ "provider_config": provider_config })
-                    }
-                    None => serde_json::json!({}),
-                };
+                    cfg["provider_config"] =
+                        serde_json::to_value(provider_config).unwrap_or_default();
+                }
                 let result = MODEL_REGISTRY.construct(
-                    &model_config.model_id,
+                    &model_config.model_type,
                     &model_config.model_id,
                     &cfg,
                     config,
@@ -69,10 +70,10 @@ impl ModelSource {
         }
     }
 
-    /// Removes and returns the constructed model for `model_id` (the catalog
-    /// id -- matches `ModelConfig.model_id`, which config loading enforces
-    /// equals the outer `config.models` key). `configured_variant` is the
-    /// caller's already-resolved `"format/precision"` string, used (on the
+    /// Removes and returns the constructed model for `model_id` (the
+    /// instance id -- matches `ModelConfig.model_id`, which config loading
+    /// enforces equals the outer `config.models` key). `configured_variant`
+    /// is the caller's already-resolved `"format/precision"` string, used (on the
     /// real, unwrapped provider) to compute the same alias
     /// `resolve_provider_endpoint` will use later, so the route registered
     /// here is keyed exactly how the launched process will address it.
@@ -150,6 +151,9 @@ pub use base::{
     ModelFunction, ModelMetadata, ModelType, ModelVariant,
 };
 
+mod custom;
+pub use custom::CustomModelConfig;
+
 pub(crate) mod context_fit;
 pub use context_fit::{ContextFit, required_gb};
 
@@ -171,6 +175,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -179,6 +185,8 @@ mod tests {
             "granite-guardian-3.1-8b".to_string(),
             ModelConfig {
                 model_id: "granite-guardian-3.1-8b".to_string(),
+                model_type: "granite-guardian-3.1-8b".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -214,6 +222,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: Some("ollama".to_string()),
                 variant: None,
             },
@@ -239,6 +249,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: Some("does-not-exist".to_string()),
                 variant: None,
             },
@@ -263,6 +275,8 @@ mod tests {
             "not-a-real-model".to_string(),
             ModelConfig {
                 model_id: "not-a-real-model".to_string(),
+                model_type: "not-a-real-model".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -281,6 +295,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -329,6 +345,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: Some("ollama".to_string()),
                 variant: None,
             },
