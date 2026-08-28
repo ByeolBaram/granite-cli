@@ -1003,7 +1003,7 @@ impl App {
 
     fn render_detail(&self, frame: &mut Frame, area: Rect, id: &str) {
         let bold = Style::default().fg(Color::Cyan);
-        let lines: Vec<Line> = match self.section {
+        let mut lines: Vec<Line> = match self.section {
             Section::Models | Section::Recommend => match ModelCommands::info_fields(id) {
                 None => vec![Line::from(format!("Model '{id}' not found."))],
                 Some(fields) => {
@@ -1264,6 +1264,12 @@ impl App {
                 })
                 .collect(),
         };
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Press [Enter] to enter setup",
+            Style::default().fg(Color::DarkGray),
+        )));
 
         let para = Paragraph::new(lines)
             .block(
