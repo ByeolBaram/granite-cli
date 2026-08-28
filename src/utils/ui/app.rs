@@ -240,23 +240,6 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(id) = self.selected_id() {
-                        if let Some(instances) = self.existing_instances(&id) {
-                            self.mode = AppMode::InstancePick {
-                                type_id: id,
-                                instances,
-                                cursor: 0,
-                            };
-                        } else {
-                            return AppAction::StartSetup(
-                                self.section.clone(),
-                                id,
-                                None,
-                            );
-                        }
-                    }
-                }
-                KeyCode::Char('d') => {
-                    if let Some(id) = self.selected_id() {
                         self.mode = AppMode::Detail(id);
                     }
                 }
@@ -1191,10 +1174,10 @@ impl App {
                     "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
                 }
                 AppMode::Browse if Self::configured_only_idx(&self.section).is_some() => {
-                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [f] Filter  [q] Quit  ✓ = configured"
+                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [f] Filter  [q] Quit  ✓ = configured"
                 }
                 AppMode::Browse => {
-                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [q] Quit  ✓ = configured"
+                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [q] Quit  ✓ = configured"
                 }
                 AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
                 AppMode::Detail(_) => "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back",
