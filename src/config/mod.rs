@@ -1,9 +1,16 @@
-use alog::{MessageLevel, alog_channel, use_channel};
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+// Standard
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+// Third Party
+use alog::{MessageLevel, alog_channel, use_channel};
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+use_channel!("CONF");
+
+const PATH_DELIM: &str = "---";
 
 trait ConfigId {
     fn config_id(&self) -> &str;
@@ -32,8 +39,6 @@ impl ConfigId for LauncherConfig {
         &self.launcher_id
     }
 }
-
-use_channel!("CONF");
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -215,17 +220,18 @@ impl Config {
                     .unwrap_or_default();
                 if let Ok(config) = Self::load_yaml_from_file::<V>(&path) {
                     let id = config.config_id().to_string();
-                    if id != file_name {
+                    let file_id = Self::id_from_filename(&file_name);
+                    if id != file_id {
                         let type_name = std::any::type_name::<V>();
                         alog_channel!(
                             MessageLevel::Warning,
                             "Found invalid config file {} with id \"{}\" (type: {})",
-                            file_name,
+                            file_id,
                             id,
                             type_name
                         );
                     } else {
-                        map.insert(into_key(&file_name), config);
+                        map.insert(into_key(&id), config);
                     }
                 }
             }
@@ -259,31 +265,39 @@ impl Config {
         Ok(config)
     }
 
+    fn id_to_filename(id: &str) -> String {
+        id.replace(std::path::MAIN_SEPARATOR, PATH_DELIM)
+    }
+
+    fn id_from_filename(id: &str) -> String {
+        id.replace(PATH_DELIM, std::path::MAIN_SEPARATOR_STR)
+    }
+
     fn save(&self) -> Result<()> {
         #[cfg(test)]
         Self::assert_test_isolated();
 
         // Save individual model files
         for (id, model) in &self.models {
-            let path = Self::models_dir()?.join(format!("{id}.yaml"));
+            let path = Self::models_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
             Self::save_yaml_to_file(&path, model)?;
         }
 
         // Save individual provider files
         for (id, provider) in &self.providers {
-            let path = Self::providers_dir()?.join(format!("{id}.yaml"));
+            let path = Self::providers_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
             Self::save_yaml_to_file(&path, provider)?;
         }
 
         // Save individual capability files
         for (id, capability) in &self.capabilities {
-            let path = Self::capabilities_dir()?.join(format!("{id}.yaml"));
+            let path = Self::capabilities_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
             Self::save_yaml_to_file(&path, capability)?;
         }
 
         // Save individual launcher files
         for (id, launcher) in &self.launchers {
-            let path = Self::launchers_dir()?.join(format!("{id}.yaml"));
+            let path = Self::launchers_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
             Self::save_yaml_to_file(&path, launcher)?;
         }
 
