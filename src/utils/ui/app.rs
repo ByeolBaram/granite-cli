@@ -1506,7 +1506,7 @@ fn spawn_setup(
             let iid = instance_id.as_deref();
             let result = match &section {
                 Section::Models | Section::Recommend => {
-                    ModelCommands::setup(&mut task_ctx, &id).await
+                    ModelCommands::setup(&mut task_ctx, &id, iid).await
                 }
                 Section::Providers => ProviderCommands::setup(&mut task_ctx, &id, iid).await,
                 Section::Launchers => LauncherCommands::setup(&mut task_ctx, &id, iid).await,
