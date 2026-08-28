@@ -4,12 +4,15 @@ use anyhow::Result;
 // Local
 use crate::commands::ProviderCommands;
 use crate::dependency::{self, Configured, DependsOn, Requirement};
-use crate::models::{ContextFit, MODEL_REGISTRY, ModelMetadata, ModelType, ModelVariant};
+use crate::models::{
+    ContextFit, MODEL_REGISTRY, ModelMetadata, ModelSource, ModelType, ModelVariant,
+};
 use crate::providers::{
     PROVIDER_REGISTRY, Provider, ProviderMetadata, ProviderSource, ProviderType, PullResult,
 };
 use crate::utils::Searchable;
 use crate::utils::hardware::detect_hardware;
+use crate::utils::prompt_from_schema;
 use crate::utils::ui::Ui;
 
 /// Compare semantic versions in descending order (higher versions first).
@@ -72,6 +75,33 @@ impl Requirement<dyn Provider> for VariantRequirement {
 }
 
 impl DependsOn<dyn Provider> for VariantRequirement {
+    type Requirement = Self;
+
+    fn requirement(&self) -> Self {
+        self.clone()
+    }
+}
+
+/// Fallback dependency for a model with no declared variants -- the expected
+/// shape for most custom models, which describe an endpoint that's already
+/// running rather than an artifact `granite-cli` would pull. Admits every
+/// provider type/instance unconditionally, so `select_provider` still offers
+/// "use an existing provider" / "configure a new one" without filtering by
+/// format/precision.
+#[derive(Clone)]
+struct AnyProviderRequirement;
+
+impl Requirement<dyn Provider> for AnyProviderRequirement {
+    fn admits_type(&self, _metadata: &ProviderMetadata) -> bool {
+        true
+    }
+
+    fn admits_instance(&self, _instance: &dyn Provider) -> bool {
+        true
+    }
+}
+
+impl DependsOn<dyn Provider> for AnyProviderRequirement {
     type Requirement = Self;
 
     fn requirement(&self) -> Self {
@@ -377,28 +407,30 @@ impl ModelCommands {
     }
 
     pub fn list(ctx: &crate::AppContext, filter_type: Option<ModelType>) -> Result<()> {
+        let source = ModelSource::from_config(&ctx.config);
         let mut enriched: Vec<(Vec<String>, ModelMetadata)> = Vec::new();
 
-        for (model_id, model_config) in &ctx.config.models {
-            if let Some(model_md) = MODEL_REGISTRY.get(model_id) {
-                if let Some(ref t) = filter_type
-                    && model_md.model_type != *t
-                {
-                    continue;
-                }
-                let row = vec![
-                    model_id.clone(),
-                    model_md.family.clone(),
-                    model_md.format_size(),
-                    model_md.context_length.to_string(),
-                    model_md.model_type.to_string(),
-                    model_config
-                        .provider_id
-                        .clone()
-                        .unwrap_or_else(|| "None".to_string()),
-                ];
-                enriched.push((row, model_md.clone()));
+        for (instance_id, model) in source.instances() {
+            let md = model.to_metadata();
+            if let Some(ref t) = filter_type
+                && md.model_type != *t
+            {
+                continue;
             }
+            let provider_id = ctx
+                .config
+                .get_model(&instance_id)
+                .and_then(|c| c.provider_id.clone())
+                .unwrap_or_else(|| "None".to_string());
+            let row = vec![
+                instance_id.clone(),
+                md.family.clone(),
+                md.format_size(),
+                md.context_length.to_string(),
+                md.model_type.to_string(),
+                provider_id,
+            ];
+            enriched.push((row, md));
         }
         sort_enriched_rows(&mut enriched);
 
@@ -412,10 +444,10 @@ impl ModelCommands {
         Ok(())
     }
 
-    /// Key-value fields for model detail. Returns `None` if the ID is not in the registry.
-    /// Shared by the CLI command and the TUI.
-    pub(crate) fn info_fields(model_id: &str) -> Option<Vec<(&'static str, String)>> {
-        let model = MODEL_REGISTRY.get(model_id)?;
+    /// Key-value fields describing `model`'s data -- shared by the catalog
+    /// path (`info_fields`, a static registry lookup) and `info`'s
+    /// configured-instance path (a live constructed model's real values).
+    fn metadata_fields(model: &ModelMetadata) -> Vec<(&'static str, String)> {
         let mut fields: Vec<(&'static str, String)> = vec![
             ("Family", model.family.clone()),
             ("Version", model.version.clone()),
@@ -449,23 +481,52 @@ impl ModelCommands {
             .collect::<Vec<_>>()
             .join(", ");
         fields.push(("Supported Functions", funcs_str));
-        Some(fields)
+        fields
     }
 
-    pub fn info(ctx: &crate::AppContext, model_id: &str) -> Result<()> {
-        match Self::info_fields(model_id) {
+    /// Key-value fields for a catalog model's detail. Returns `None` if the
+    /// registry key is not in the registry. Shared by the CLI command and
+    /// the TUI, which only ever browses the catalog, never a configured
+    /// instance's live values.
+    pub(crate) fn info_fields(model_type: &str) -> Option<Vec<(&'static str, String)>> {
+        MODEL_REGISTRY
+            .get(model_type)
+            .map(|m| Self::metadata_fields(&m))
+    }
+
+    pub fn info(ctx: &crate::AppContext, id: &str) -> Result<()> {
+        // Prefer a configured instance's real, live values (e.g. a custom
+        // model's user-entered fields aren't in the registry at all) --
+        // fall back to pure catalog browsing by registry key.
+        if let Some(model_config) = ctx.config.get_model(id) {
+            let source = ModelSource::from_config(&ctx.config);
+            if let Some((_, model)) = source.instances().into_iter().find(|(iid, _)| iid == id) {
+                let md = model.to_metadata();
+                let mut fields = Self::metadata_fields(&md);
+                fields.push(("Config: Type", model_config.model_type.clone()));
+                fields.push((
+                    "Config: Provider",
+                    format!("{:?}", model_config.provider_id),
+                ));
+                fields.push(("Config: Variant", format!("{:?}", model_config.variant)));
+                ctx.ui.detail(id, &fields);
+                return Ok(());
+            }
+        }
+
+        match Self::info_fields(id) {
             Some(mut fields) => {
-                if let Some(configured) = ctx.config.get_model(model_id) {
+                if let Some(configured) = ctx.config.get_model(id) {
                     fields.push(("Config: Provider", format!("{:?}", configured.provider_id)));
                     fields.push(("Config: Variant", format!("{:?}", configured.variant)));
                 }
 
-                ctx.ui.detail(model_id, &fields);
+                ctx.ui.detail(id, &fields);
                 Ok(())
             }
             None => {
                 ctx.ui
-                    .error(&format!("Model '{model_id}' not found in registry."));
+                    .error(&format!("Model '{id}' not found in registry."));
                 let available: Vec<_> = MODEL_REGISTRY
                     .entries()
                     .keys()
@@ -478,163 +539,201 @@ impl ModelCommands {
         }
     }
 
-    pub async fn setup(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
-        match MODEL_REGISTRY.get(model_id) {
-            Some(model) => {
-                ctx.ui.info(&format!("\nSetting up model: {model_id}"));
-                ctx.ui.info(
-                    model
-                        .description
-                        .as_deref()
-                        .unwrap_or("No description available."),
-                );
-                ctx.ui.info("");
-                ctx.ui.info(&format!(
-                    "Size: {} params, {} context",
-                    model.format_size(),
-                    model.context_length
-                ));
-                ctx.ui.info(&format!("Type: {}", model.model_type));
-                ctx.ui.info("");
+    /// Interactive model setup wizard. `model_type` is the catalog/registry
+    /// key (e.g. `granite-3.1-8b-instruct`, or `custom`). `instance_id` is
+    /// this instance's nickname, distinct from its type -- defaults to
+    /// `model_type` when not given, but a caller may pass a different value
+    /// to configure multiple named instances of one type (e.g. the same
+    /// catalog model against two different providers, or several custom
+    /// models).
+    pub async fn setup(
+        ctx: &mut crate::AppContext,
+        model_type: &str,
+        instance_id: Option<&str>,
+    ) -> Result<()> {
+        let Some(placeholder) = MODEL_REGISTRY.get(model_type) else {
+            ctx.ui
+                .error(&format!("Model type '{model_type}' not found in registry."));
+            let available: Vec<_> = MODEL_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect();
+            ctx.ui
+                .info(&format!("Available models: {}", available.join(", ")));
+            anyhow::bail!("Model not found");
+        };
 
-                let variant_options: Vec<_> = model
-                    .variants
-                    .iter()
-                    .map(|v| match (v.size_gb, v.precision.is_empty()) {
-                        (Some(size), false) => {
-                            format!("{} / {} ({:.1} GB)", v.format, v.precision, size)
-                        }
-                        (Some(size), true) => format!("{} ({:.1} GB)", v.format, size),
-                        (None, false) => format!("{} / {}", v.format, v.precision),
-                        (None, true) => v.format.clone(),
-                    })
-                    .collect();
+        ctx.ui.info(&format!("\nSetting up model: {model_type}"));
+        ctx.ui.info(
+            placeholder
+                .description
+                .as_deref()
+                .unwrap_or("No description available."),
+        );
+        ctx.ui.info("");
+        ctx.ui.info(&format!(
+            "Size: {} params, {} context",
+            placeholder.format_size(),
+            placeholder.context_length
+        ));
+        ctx.ui.info(&format!("Type: {}", placeholder.model_type));
+        ctx.ui.info("");
 
-                let variant_index = ctx
-                    .ui
-                    .select("Select model variant:", &variant_options, 0)?;
+        let instance_id = match instance_id {
+            Some(id) => id.to_string(),
+            None => ctx.ui.text("Instance name: ", model_type)?,
+        };
 
-                let selected_variant = &model.variants[variant_index];
-                ctx.ui.info(&format!(
-                    "\nSelected: {} / {}",
-                    selected_variant.format, selected_variant.precision
-                ));
-
-                if ctx.config.get_model(model_id).is_some() {
-                    let overwrite = ctx.ui.confirm(
-                        &format!("Model '{model_id}' is already configured. Overwrite?"),
-                        false,
-                    )?;
-                    if !overwrite {
-                        ctx.ui.info("Model setup skipped.");
-                        return Ok(());
-                    }
-                }
-
-                let requirement = VariantRequirement {
-                    format: selected_variant.format.clone(),
-                    precision: selected_variant.precision.clone(),
-                };
-                let source = ProviderSource::from_config(&ctx.config);
-                let resolution = dependency::resolve(&requirement, &source);
-
-                let provider_id = Self::select_provider(ctx, &resolution).await?;
-
-                let model_config = crate::config::ModelConfig {
-                    model_id: model_id.to_string(),
-                    provider_id: provider_id.clone(),
-                    variant: Some(format!(
-                        "{}/{}",
-                        selected_variant.format, selected_variant.precision
-                    )),
-                };
-
-                if let Err(e) = ctx.config.insert_model(model_id, model_config) {
-                    ctx.ui.warn(&format!("failed to save model config: {e}"));
-                }
-
-                ctx.ui
-                    .info(&format!("\nModel '{model_id}' configured successfully!"));
-
-                if let Some(pid) = &provider_id {
-                    let is_local = ctx
-                        .config
-                        .get_provider(pid)
-                        .and_then(|pc| PROVIDER_REGISTRY.get(&pc.provider_type))
-                        .map(|meta| meta.provider_type == ProviderType::Local)
-                        .unwrap_or(false);
-
-                    if is_local {
-                        let pull_now = ctx.ui.confirm(
-                            &format!(
-                                "'{}' is a local provider. Pull '{} ({}/{})' now?",
-                                pid, model_id, selected_variant.format, selected_variant.precision
-                            ),
-                            true,
-                        )?;
-                        if pull_now {
-                            let source = crate::models::ModelSource::from_config(&ctx.config);
-                            match source
-                                .instances()
-                                .into_iter()
-                                .find(|(id, _)| id == model_id)
-                                .map(|(_, m)| m.provider())
-                            {
-                                Some(Ok(provider)) => {
-                                    ensure_model_pulled(
-                                        provider.as_ref(),
-                                        &model,
-                                        selected_variant,
-                                        ctx.ui.as_ref(),
-                                    )
-                                    .await?;
-                                }
-                                Some(Err(e)) => ctx.ui.warn(&format!(
-                                    "Provider '{pid}' is not available; skipping pull: {e}"
-                                )),
-                                None => ctx.ui.warn(&format!(
-                                    "Provider '{pid}' is not available; skipping pull."
-                                )),
-                            }
-                        }
-                    }
-                }
-
-                Ok(())
-            }
-            None => {
-                ctx.ui
-                    .error(&format!("Model '{model_id}' not found in registry."));
-                let available: Vec<_> = MODEL_REGISTRY
-                    .entries()
-                    .keys()
-                    .map(|k| k.to_string())
-                    .collect();
-                ctx.ui
-                    .info(&format!("Available models: {}", available.join(", ")));
-                anyhow::bail!("Model not found");
+        let existing_config = ctx.config.get_model(&instance_id).cloned();
+        if existing_config.is_some() {
+            let overwrite = ctx.ui.confirm(
+                &format!("Model '{instance_id}' is already configured. Overwrite?"),
+                false,
+            )?;
+            if !overwrite {
+                ctx.ui.info("Model setup skipped.");
+                return Ok(());
             }
         }
+
+        let schema = MODEL_REGISTRY.config_schema(model_type).ok_or_else(|| {
+            anyhow::anyhow!("No config schema registered for model type '{model_type}'")
+        })?;
+        let defaults = existing_config
+            .as_ref()
+            .map(|c| c.config.clone())
+            .or_else(|| MODEL_REGISTRY.default_config(model_type))
+            .unwrap_or_else(|| serde_json::json!({}));
+        let model_specific_cfg = prompt_from_schema(&*ctx.ui, &schema, &defaults)?;
+
+        // Construct a live, provider-less instance now -- this replaces the
+        // placeholder as the source of truth for variants/description from
+        // here on (real for catalog models, user-entered for custom).
+        let live = MODEL_REGISTRY
+            .construct(model_type, &instance_id, &model_specific_cfg, &ctx.config)
+            .map_err(|e| anyhow::anyhow!("Failed to construct model '{model_type}': {e}"))?;
+
+        let selected_variant: Option<ModelVariant> = if live.variants().is_empty() {
+            None
+        } else {
+            let variant_options: Vec<_> = live
+                .variants()
+                .iter()
+                .map(|v| match (v.size_gb, v.precision.is_empty()) {
+                    (Some(size), false) => {
+                        format!("{} / {} ({:.1} GB)", v.format, v.precision, size)
+                    }
+                    (Some(size), true) => format!("{} ({:.1} GB)", v.format, size),
+                    (None, false) => format!("{} / {}", v.format, v.precision),
+                    (None, true) => v.format.clone(),
+                })
+                .collect();
+
+            let variant_index = ctx
+                .ui
+                .select("Select model variant:", &variant_options, 0)?;
+
+            let variant = live.variants()[variant_index].clone();
+            ctx.ui.info(&format!(
+                "\nSelected: {} / {}",
+                variant.format, variant.precision
+            ));
+            Some(variant)
+        };
+
+        let provider_source = ProviderSource::from_config(&ctx.config);
+        let provider_id = if let Some(variant) = &selected_variant {
+            let requirement = VariantRequirement {
+                format: variant.format.clone(),
+                precision: variant.precision.clone(),
+            };
+            let resolution = dependency::resolve(&requirement, &provider_source);
+            Self::select_provider(ctx, &resolution).await?
+        } else {
+            let resolution = dependency::resolve(&AnyProviderRequirement, &provider_source);
+            Self::select_provider(ctx, &resolution).await?
+        };
+
+        let model_config = crate::config::ModelConfig {
+            model_id: instance_id.clone(),
+            model_type: model_type.to_string(),
+            provider_id: provider_id.clone(),
+            variant: selected_variant
+                .as_ref()
+                .map(|v| format!("{}/{}", v.format, v.precision)),
+            config: model_specific_cfg,
+        };
+
+        if let Err(e) = ctx.config.insert_model(&instance_id, model_config) {
+            ctx.ui.warn(&format!("failed to save model config: {e}"));
+        }
+
+        ctx.ui
+            .info(&format!("\nModel '{instance_id}' configured successfully!"));
+
+        if let (Some(pid), Some(variant)) = (&provider_id, &selected_variant) {
+            let is_local = ctx
+                .config
+                .get_provider(pid)
+                .and_then(|pc| PROVIDER_REGISTRY.get(&pc.provider_type))
+                .map(|meta| meta.provider_type == ProviderType::Local)
+                .unwrap_or(false);
+
+            if is_local {
+                let pull_now = ctx.ui.confirm(
+                    &format!(
+                        "'{}' is a local provider. Pull '{} ({}/{})' now?",
+                        pid, instance_id, variant.format, variant.precision
+                    ),
+                    true,
+                )?;
+                if pull_now {
+                    let source = ModelSource::from_config(&ctx.config);
+                    match source
+                        .instances()
+                        .into_iter()
+                        .find(|(id, _)| id == &instance_id)
+                        .map(|(_, m)| m.provider())
+                    {
+                        Some(Ok(provider)) => {
+                            ensure_model_pulled(
+                                provider.as_ref(),
+                                &live.to_metadata(),
+                                variant,
+                                ctx.ui.as_ref(),
+                            )
+                            .await?;
+                        }
+                        Some(Err(e)) => ctx.ui.warn(&format!(
+                            "Provider '{pid}' is not available; skipping pull: {e}"
+                        )),
+                        None => ctx.ui.warn(&format!(
+                            "Provider '{pid}' is not available; skipping pull."
+                        )),
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn pull(ctx: &mut crate::AppContext, model_id: &str) -> Result<()> {
-        let model = match MODEL_REGISTRY.get(model_id) {
-            Some(model) => model,
-            None => {
-                ctx.ui
-                    .error(&format!("Model '{model_id}' not found in registry."));
-                let available: Vec<_> = MODEL_REGISTRY
-                    .entries()
-                    .keys()
-                    .map(|k| k.to_string())
-                    .collect();
-                ctx.ui
-                    .info(&format!("Available models: {}", available.join(", ")));
-                anyhow::bail!("Model not found");
-            }
-        };
-
         let configured = ctx.config.get_model(model_id);
+        if configured.is_none() && MODEL_REGISTRY.get(model_id).is_none() {
+            ctx.ui
+                .error(&format!("Model '{model_id}' not found in registry."));
+            let available: Vec<_> = MODEL_REGISTRY
+                .entries()
+                .keys()
+                .map(|k| k.to_string())
+                .collect();
+            ctx.ui
+                .info(&format!("Available models: {}", available.join(", ")));
+            anyhow::bail!("Model not found");
+        }
+
         let (variant_str, provider_id) = match configured {
             Some(c) if c.variant.is_some() && c.provider_id.is_some() => {
                 (c.variant.clone().unwrap(), c.provider_id.clone().unwrap())
@@ -650,8 +749,16 @@ impl ModelCommands {
             anyhow::anyhow!("Invalid stored variant '{variant_str}' for model '{model_id}'.")
         })?;
 
+        let source = ModelSource::from_config(&ctx.config);
+        let model = source
+            .instances()
+            .into_iter()
+            .find(|(id, _)| id == model_id)
+            .ok_or_else(|| anyhow::anyhow!("model '{model_id}' is not configured"))?
+            .1;
+
         let variant: &ModelVariant = model
-            .variants
+            .variants()
             .iter()
             .find(|v| v.format == format && v.precision == precision)
             .ok_or_else(|| {
@@ -660,30 +767,23 @@ impl ModelCommands {
                 )
             })?;
 
-        let source = crate::models::ModelSource::from_config(&ctx.config);
-        let provider = source
-            .instances()
-            .into_iter()
-            .find(|(id, _)| id == model_id)
-            .ok_or_else(|| anyhow::anyhow!("model '{model_id}' is not configured"))?
-            .1
-            .provider()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Provider '{provider_id}' is not configured or enabled. Run `provider setup` first: {e}"
-                )
-            })?;
+        let provider = model.provider().map_err(|e| {
+            anyhow::anyhow!(
+                "Provider '{provider_id}' is not configured or enabled. Run `provider setup` first: {e}"
+            )
+        })?;
 
-        let result = ensure_model_pulled(provider.as_ref(), &model, variant, ctx.ui.as_ref()).await;
+        let md = model.to_metadata();
+        let result = ensure_model_pulled(provider.as_ref(), &md, variant, ctx.ui.as_ref()).await;
         match result {
             Ok(PullResult::Success) => {
                 ctx.ui
-                    .info(&format!("Model '{}' pulled successfully.", model.family));
+                    .info(&format!("Model '{}' pulled successfully.", md.family));
             }
             Ok(PullResult::Unnecessary) => {
                 ctx.ui.info(&format!(
                     "No pull needed for '{}' ({}).",
-                    model.family,
+                    md.family,
                     provider.name()
                 ));
             }
@@ -847,8 +947,10 @@ mod tests {
             id.to_string(),
             ModelConfig {
                 model_id: id.to_string(),
+                model_type: id.to_string(),
                 provider_id: provider_id.map(String::from),
                 variant: None,
+                config: serde_json::json!({}),
             },
         );
         ctx
@@ -866,8 +968,10 @@ mod tests {
             model_id.to_string(),
             ModelConfig {
                 model_id: model_id.to_string(),
+                model_type: model_id.to_string(),
                 provider_id: Some(provider_id.to_string()),
                 variant: Some(variant.to_string()),
+                config: serde_json::json!({}),
             },
         );
         ctx_with_config(config)
@@ -1539,5 +1643,168 @@ mod tests {
         let tables = tables!(ctx);
         let (_, _, rows) = &tables[0];
         assert!(rows.is_empty());
+    }
+
+    // -- custom models --------------------------------------------------------
+
+    /// Configures a `"custom"`-typed model instance directly (bypassing the
+    /// interactive wizard) with `config_value` as its `CustomModelConfig`
+    /// JSON, so `list`/`info`/`pull` tests can assert on its real values
+    /// without needing to script every prompt.
+    fn ctx_with_custom_model(
+        instance_id: &str,
+        config_value: serde_json::Value,
+        provider_id: Option<&str>,
+    ) -> crate::AppContext {
+        let mut ctx = empty_ctx();
+        ctx.config.models.insert(
+            instance_id.to_string(),
+            ModelConfig {
+                model_id: instance_id.to_string(),
+                model_type: "custom".to_string(),
+                provider_id: provider_id.map(String::from),
+                variant: None,
+                config: config_value,
+            },
+        );
+        ctx
+    }
+
+    #[test]
+    fn list_shows_a_custom_models_real_values_not_the_registry_placeholder() {
+        let ctx = ctx_with_custom_model(
+            "my-custom",
+            serde_json::json!({
+                "family": "My Local Model",
+                "context_length": 4096,
+            }),
+            None,
+        );
+        ModelCommands::list(&ctx, None).unwrap();
+        let tables = tables!(ctx);
+        let (_, _, rows) = &tables[0];
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0][0], "my-custom");
+        assert!(
+            rows[0].iter().any(|c| c == "My Local Model"),
+            "expected the configured family, got {:?}",
+            rows[0]
+        );
+    }
+
+    #[test]
+    fn info_shows_a_custom_models_real_values_and_config_type() {
+        let ctx = ctx_with_custom_model(
+            "my-custom",
+            serde_json::json!({
+                "family": "My Local Model",
+                "context_length": 4096,
+            }),
+            None,
+        );
+        ModelCommands::info(&ctx, "my-custom").unwrap();
+        let details = details!(ctx);
+        assert_eq!(details.len(), 1);
+        let (title, fields) = &details[0];
+        assert_eq!(title, "my-custom");
+        assert!(
+            fields
+                .iter()
+                .any(|(k, v)| k == "Family" && v == "My Local Model")
+        );
+        assert!(
+            fields
+                .iter()
+                .any(|(k, v)| k == "Config: Type" && v == "custom")
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_uses_the_custom_models_own_variants_not_the_registry_placeholder() {
+        let mut config = config_with_provider(
+            "openai",
+            "openai-compatible",
+            serde_json::json!({ "base_url": "http://localhost:8080" }),
+        );
+        config.models.insert(
+            "my-custom".to_string(),
+            ModelConfig {
+                model_id: "my-custom".to_string(),
+                model_type: "custom".to_string(),
+                provider_id: Some("openai".to_string()),
+                variant: Some("safetensors/bfloat16".to_string()),
+                config: serde_json::json!({
+                    "family": "My Local Model",
+                    "variants": [
+                        { "format": "safetensors", "precision": "bfloat16", "size_gb": null, "url": "" }
+                    ],
+                }),
+            },
+        );
+        let mut ctx = ctx_with_config(config);
+
+        // OpenAIProvider::pull_model is a pure warning (no network call), so
+        // this exercises the full lookup path -- proving the variant came
+        // from the custom model's own config, not the (empty) registry
+        // placeholder for "custom".
+        let result = ModelCommands::pull(&mut ctx, "my-custom").await;
+        assert!(result.is_ok(), "{result:?}");
+        let warns = (&*(ctx.ui) as &dyn std::any::Any)
+            .downcast_ref::<CaptureUi>()
+            .unwrap()
+            .warns
+            .borrow();
+        assert!(!warns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn setup_custom_model_with_no_variants_skips_variant_selection_and_picks_existing_provider()
+     {
+        let _home = crate::config::TestConfigHome::new();
+        let mut ctx = ctx_with_config(config_with_provider(
+            "my-openai",
+            "openai-compatible",
+            serde_json::json!({ "base_url": "http://localhost:8080" }),
+        ));
+
+        ModelCommands::setup(&mut ctx, "custom", Some("my-custom"))
+            .await
+            .unwrap();
+
+        let configured = ctx
+            .config
+            .get_model("my-custom")
+            .expect("custom model should be saved under its instance id");
+        assert_eq!(configured.model_type, "custom");
+        assert_eq!(
+            configured.provider_id,
+            Some("my-openai".to_string()),
+            "with no variants to filter by, the sole existing provider should be selected"
+        );
+        assert!(
+            configured.variant.is_none(),
+            "a custom model with no declared variants should have no stored variant"
+        );
+
+        // Never prompted for a variant -- `live.variants()` was empty --
+        // even though the provider-selection prompt (auto-resolved to the
+        // sole existing provider via its default index) still ran.
+        assert!(
+            !capture_select_prompts(&ctx)
+                .iter()
+                .any(|p| p.contains("variant")),
+            "should not have prompted for a variant"
+        );
+    }
+
+    fn capture_select_prompts(ctx: &crate::AppContext) -> Vec<String> {
+        (&*(ctx.ui) as &dyn std::any::Any)
+            .downcast_ref::<CaptureUi>()
+            .unwrap()
+            .select_prompts
+            .borrow()
+            .iter()
+            .map(|(prompt, _, _)| prompt.clone())
+            .collect()
     }
 }

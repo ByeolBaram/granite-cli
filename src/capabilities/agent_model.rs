@@ -266,6 +266,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: variant_str.clone(),
             },
@@ -476,6 +478,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -498,6 +502,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
