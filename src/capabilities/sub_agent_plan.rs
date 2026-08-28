@@ -184,10 +184,7 @@ impl Capability for PlanSubAgentCapability {
         let model_id = &self.config.model_id;
 
         let configured_model = self.configured_model.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Model '{}' is not configured or could not be resolved",
-                model_id
-            )
+            anyhow::anyhow!("Model '{model_id}' is not configured or could not be resolved")
         })?;
         let (provider, endpoint, model_name) = configured_model.resolve_provider_endpoint(
             model_id,
