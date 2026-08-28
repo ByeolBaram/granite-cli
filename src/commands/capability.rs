@@ -331,7 +331,7 @@ impl CapabilityCommands {
             configurable_types[index]
         };
 
-        ModelCommands::setup(ctx, model_type).await?;
+        ModelCommands::setup(ctx, model_type, None).await?;
 
         let (usable_after, _) = Self::model_candidates(ctx, requirement);
         let new_usable: Vec<_> = usable_after

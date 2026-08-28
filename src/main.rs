@@ -203,8 +203,15 @@ enum ModelSubcommands {
 
     /// Interactive model setup wizard
     Setup {
-        /// Model ID to set up
-        model_id: String,
+        /// Catalog model type to set up (e.g. `granite-3.1-8b-instruct`, or `custom`)
+        model_type: String,
+
+        /// Nickname for this model instance. Defaults to `model_type`;
+        /// pass a distinct value to configure multiple named instances of
+        /// the same catalog type (e.g. two precisions of the same model
+        /// against different providers, or several custom models).
+        #[arg(long = "id")]
+        instance_id: Option<String>,
     },
 
     /// Pull (download) a configured model's weights via its provider
@@ -617,7 +624,10 @@ async fn run_model_command(ctx: &mut AppContext, subcmd: ModelSubcommands) -> an
             ModelCommands::recommend(ctx, filter, &providers, wide)
         }
         ModelSubcommands::Info { model_id } => ModelCommands::info(ctx, &model_id),
-        ModelSubcommands::Setup { model_id } => ModelCommands::setup(ctx, &model_id).await,
+        ModelSubcommands::Setup {
+            model_type,
+            instance_id,
+        } => ModelCommands::setup(ctx, &model_type, instance_id.as_deref()).await,
         ModelSubcommands::Pull { model_id } => ModelCommands::pull(ctx, &model_id).await,
         ModelSubcommands::Remove { model_id } => ModelCommands::remove(ctx, &model_id),
     }
