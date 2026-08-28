@@ -181,6 +181,28 @@ pub trait Model: crate::registry::Named + Send + Sync {
             )
             .map_err(|e| anyhow::anyhow!(e))
     }
+
+    /// Snapshot this instance's data into a `ModelMetadata` value, using the
+    /// same accessors the registry uses to describe a catalog entry. Lets
+    /// command code display a model uniformly whether it came from a static
+    /// catalog lookup or a live constructed instance (e.g. a `"custom"`
+    /// model, whose real values only exist on the instance).
+    fn to_metadata(&self) -> ModelMetadata {
+        ModelMetadata {
+            family: self.family().to_string(),
+            version: self.version().to_string(),
+            size: self.size(),
+            context_length: self.context_length(),
+            model_type: self.model_type().clone(),
+            huggingface_repo: self.huggingface_repo().to_string(),
+            native_dtype: self.native_dtype().to_string(),
+            architecture: self.architecture().clone(),
+            variants: self.variants().to_vec(),
+            description: self.description().map(str::to_string),
+            tags: self.tags().to_vec(),
+            supported_functions: self.supported_functions().to_vec(),
+        }
+    }
 }
 
 /*-- ConfiguredModel -----------------------------------------------------------*/
@@ -372,8 +394,9 @@ impl Searchable for ModelMetadata {
 
 /*-- Supporting Types --------------------------------------------------------*/
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub enum ModelType {
+    #[default]
     Text,
     Vision,
     Speech,
@@ -391,7 +414,7 @@ impl std::fmt::Display for ModelType {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModelVariant {
     pub format: String,
     pub precision: String,
@@ -519,6 +542,102 @@ mod searchable_tests {
         let fields = m.search_fields();
         assert!(fields.contains(&"instruct"));
         assert!(fields.contains(&"chat"));
+    }
+}
+
+#[cfg(test)]
+mod to_metadata_tests {
+    use super::*;
+
+    struct FullTestModel;
+
+    impl crate::registry::Named for FullTestModel {
+        fn instance_id(&self) -> &str {
+            "full-test-model"
+        }
+    }
+
+    impl Model for FullTestModel {
+        fn family(&self) -> &str {
+            "Test Family"
+        }
+        fn version(&self) -> &str {
+            "9.9"
+        }
+        fn size(&self) -> u64 {
+            42
+        }
+        fn context_length(&self) -> u64 {
+            2048
+        }
+        fn model_type(&self) -> &ModelType {
+            &ModelType::Vision
+        }
+        fn huggingface_repo(&self) -> &str {
+            "test/full"
+        }
+        fn native_dtype(&self) -> &str {
+            "float16"
+        }
+        fn architecture(&self) -> &ModelArchitecture {
+            static ARCH: std::sync::LazyLock<ModelArchitecture> =
+                std::sync::LazyLock::new(|| ModelArchitecture {
+                    num_hidden_layers: 1,
+                    hidden_size: 2,
+                    num_attention_heads: 3,
+                    num_key_value_heads: 4,
+                    head_dim: 5,
+                    layer_types: vec![LayerTypeCount {
+                        kind: LayerKind::FullAttention,
+                        count: 1,
+                    }],
+                });
+            &ARCH
+        }
+        fn variants(&self) -> &[ModelVariant] {
+            static VARIANTS: std::sync::LazyLock<Vec<ModelVariant>> =
+                std::sync::LazyLock::new(|| {
+                    vec![ModelVariant {
+                        format: "GGUF".to_string(),
+                        precision: "Q4_K_M".to_string(),
+                        size_gb: Some(1.0),
+                        url: "http://example.com".to_string(),
+                    }]
+                });
+            &VARIANTS
+        }
+        fn description(&self) -> Option<&str> {
+            Some("a description")
+        }
+        fn tags(&self) -> &[String] {
+            static TAGS: std::sync::LazyLock<Vec<String>> =
+                std::sync::LazyLock::new(|| vec!["tag1".to_string()]);
+            &TAGS
+        }
+        fn supported_functions(&self) -> &[ModelFunction] {
+            static FUNCS: std::sync::LazyLock<Vec<ModelFunction>> =
+                std::sync::LazyLock::new(|| vec![ModelFunction::Chat]);
+            &FUNCS
+        }
+    }
+
+    #[test]
+    fn to_metadata_round_trips_every_field() {
+        let model = FullTestModel;
+        let md = model.to_metadata();
+        assert_eq!(md.family, "Test Family");
+        assert_eq!(md.version, "9.9");
+        assert_eq!(md.size, 42);
+        assert_eq!(md.context_length, 2048);
+        assert_eq!(md.model_type, ModelType::Vision);
+        assert_eq!(md.huggingface_repo, "test/full");
+        assert_eq!(md.native_dtype, "float16");
+        assert_eq!(md.architecture.num_hidden_layers, 1);
+        assert_eq!(md.variants.len(), 1);
+        assert_eq!(md.variants[0].format, "GGUF");
+        assert_eq!(md.description, Some("a description".to_string()));
+        assert_eq!(md.tags, vec!["tag1".to_string()]);
+        assert_eq!(md.supported_functions, vec![ModelFunction::Chat]);
     }
 }
 
