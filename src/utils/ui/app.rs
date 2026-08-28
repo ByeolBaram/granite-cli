@@ -785,12 +785,10 @@ impl App {
                     };
                     let provider_line = match &mc.provider_id {
                         None => "Provider:  (not set)".to_string(),
-                        Some(pid) => {
-                            match self.ctx.config.get_provider(pid) {
-                                None => format!("Provider:  {pid}"),
-                                Some(pc) => format!("Provider:  {pid} ({})", pc.provider_type),
-                            }
-                        }
+                        Some(pid) => match self.ctx.config.get_provider(pid) {
+                            None => format!("Provider:  {pid}"),
+                            Some(pc) => format!("Provider:  {pid} ({})", pc.provider_type),
+                        },
                     };
                     format!("\n\n── Configured ──\n{provider_line}\n{variant_line}")
                 } else {
@@ -990,9 +988,7 @@ impl App {
                     "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [q] Quit  ✓ = configured"
                 }
                 AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
-                AppMode::Detail(_) => {
-                    "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back"
-                }
+                AppMode::Detail(_) => "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back",
             }
         };
         let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)));
@@ -1076,13 +1072,19 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
 /// a [`SetupPane`] wired to it via channels.
 fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPane {
     // Channels: task → TUI (prompts), TUI → task (answers), shared output log.
-    let (prompt_tx, prompt_rx) = std::sync::mpsc::sync_channel::<crate::utils::ui::tui_ui::Prompt>(0);
+    let (prompt_tx, prompt_rx) =
+        std::sync::mpsc::sync_channel::<crate::utils::ui::tui_ui::Prompt>(0);
     let (answer_tx, answer_rx) = std::sync::mpsc::sync_channel::<Answer>(0);
     let output: Arc<Mutex<Vec<OutputLine>>> = Arc::new(Mutex::new(Vec::new()));
     let pulls: Arc<Mutex<std::collections::HashMap<u64, crate::utils::ui::tui_ui::PullState>>> =
         Arc::new(Mutex::new(std::collections::HashMap::new()));
 
-    let tui_ui = Arc::new(TuiUi::new(prompt_tx, answer_rx, Arc::clone(&output), Arc::clone(&pulls)));
+    let tui_ui = Arc::new(TuiUi::new(
+        prompt_tx,
+        answer_rx,
+        Arc::clone(&output),
+        Arc::clone(&pulls),
+    ));
 
     // Build the pane title before the closure captures section/id.
     let section = section.clone();
@@ -1101,15 +1103,9 @@ fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPan
                 Section::Models | Section::Recommend => {
                     ModelCommands::setup(&mut task_ctx, &id).await
                 }
-                Section::Providers => {
-                    ProviderCommands::setup(&mut task_ctx, &id, None).await
-                }
-                Section::Launchers => {
-                    LauncherCommands::setup(&mut task_ctx, &id, None).await
-                }
-                Section::Capabilities => {
-                    CapabilityCommands::setup(&mut task_ctx, &id, None).await
-                }
+                Section::Providers => ProviderCommands::setup(&mut task_ctx, &id, None).await,
+                Section::Launchers => LauncherCommands::setup(&mut task_ctx, &id, None).await,
+                Section::Capabilities => CapabilityCommands::setup(&mut task_ctx, &id, None).await,
                 Section::Hardware => Ok(()),
             };
             if let Err(e) = result {

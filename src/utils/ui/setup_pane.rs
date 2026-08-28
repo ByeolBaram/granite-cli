@@ -295,9 +295,7 @@ impl SetupPane {
                 true
             }
             Some(PromptState::Text {
-                buf,
-                allow_empty,
-                ..
+                buf, allow_empty, ..
             }) => {
                 match key.code {
                     KeyCode::Char(c) => {
@@ -433,10 +431,7 @@ impl SetupPane {
                         } else {
                             Style::default()
                         };
-                        ListItem::new(Line::from(Span::styled(
-                            format!("{prefix}{item}"),
-                            style,
-                        )))
+                        ListItem::new(Line::from(Span::styled(format!("{prefix}{item}"), style)))
                     })
                     .collect();
 
@@ -490,9 +485,7 @@ impl SetupPane {
                     Style::default().fg(Color::DarkGray)
                 };
                 let no_style = if !*yes {
-                    Style::default()
-                        .fg(Color::Red)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
@@ -563,23 +556,13 @@ fn render_pull_bars(frame: &mut Frame, area: Rect, pulls: &[PullState]) {
                         p.label.clone()
                     };
                     let pct_text = format!(" {:3.0}%", pct * 100.0);
-                    let bar_width = inner_width
-                        .saturating_sub(label.len() + pct_text.len() + 3); // 3 = " [" + "]"
+                    let bar_width = inner_width.saturating_sub(label.len() + pct_text.len() + 3); // 3 = " [" + "]"
                     let filled = ((bar_width as f64) * pct) as usize;
                     let empty = bar_width.saturating_sub(filled);
                     Line::from(vec![
-                        Span::styled(
-                            format!("{} [", label),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                        Span::styled(
-                            "█".repeat(filled),
-                            Style::default().fg(Color::Cyan),
-                        ),
-                        Span::styled(
-                            "░".repeat(empty),
-                            Style::default().fg(Color::DarkGray),
-                        ),
+                        Span::styled(format!("{} [", label), Style::default().fg(Color::DarkGray)),
+                        Span::styled("█".repeat(filled), Style::default().fg(Color::Cyan)),
+                        Span::styled("░".repeat(empty), Style::default().fg(Color::DarkGray)),
                         Span::styled(
                             format!("]{}  {}", pct_text, format_bytes(p.downloaded)),
                             Style::default().fg(Color::DarkGray),
@@ -590,8 +573,7 @@ fn render_pull_bars(frame: &mut Frame, area: Rect, pulls: &[PullState]) {
                     // Spinner / unknown total — show downloaded bytes and a
                     // simple animated indicator using the downloaded count.
                     let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-                    let spin = spinner_chars
-                        [(p.downloaded as usize / 65536) % spinner_chars.len()];
+                    let spin = spinner_chars[(p.downloaded as usize / 65536) % spinner_chars.len()];
                     Line::from(vec![
                         Span::styled(
                             format!("{} {} ", p.label, spin),

@@ -140,7 +140,11 @@ impl Ui for TuiUi {
     fn status(&self, label: &str, ok: bool, detail: &str) {
         let mark = if ok { "✓" } else { "✗" };
         self.push_line(
-            if ok { OutputLevel::Info } else { OutputLevel::Warn },
+            if ok {
+                OutputLevel::Info
+            } else {
+                OutputLevel::Warn
+            },
             &format!("{mark} {label}  {detail}"),
         );
     }
@@ -162,33 +166,36 @@ impl Ui for TuiUi {
             *n += 1;
             id
         };
-        self.pulls.lock().unwrap().insert(id, PullState {
-            label: label.to_string(),
-            total: total_bytes,
-            downloaded: 0,
-            done: false,
-            error: None,
-        });
+        self.pulls.lock().unwrap().insert(
+            id,
+            PullState {
+                label: label.to_string(),
+                total: total_bytes,
+                downloaded: 0,
+                done: false,
+                error: None,
+            },
+        );
         PullHandle(id)
     }
 
     fn pull_progress(&self, handle: PullHandle, downloaded: u64, total: Option<u64>) {
-        if let Ok(mut guard) = self.pulls.lock() {
-            if let Some(state) = guard.get_mut(&handle.0) {
-                state.downloaded = downloaded;
-                if total.is_some() {
-                    state.total = total;
-                }
+        if let Ok(mut guard) = self.pulls.lock()
+            && let Some(state) = guard.get_mut(&handle.0)
+        {
+            state.downloaded = downloaded;
+            if total.is_some() {
+                state.total = total;
             }
         }
     }
 
     fn pull_finish(&self, handle: PullHandle, label: &str, error: Option<&str>) {
-        if let Ok(mut guard) = self.pulls.lock() {
-            if let Some(state) = guard.get_mut(&handle.0) {
-                state.done = true;
-                state.error = error.map(|e| e.to_string());
-            }
+        if let Ok(mut guard) = self.pulls.lock()
+            && let Some(state) = guard.get_mut(&handle.0)
+        {
+            state.done = true;
+            state.error = error.map(|e| e.to_string());
         }
         // Also push a summary line to the output log.
         match error {
