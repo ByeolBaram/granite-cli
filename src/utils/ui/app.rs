@@ -130,6 +130,11 @@ pub struct App {
     recommend_rows_cache: Vec<Vec<String>>,
     /// Active in-pane setup wizard, if one is running.
     pub setup_pane: Option<SetupPane>,
+    /// Per-section toggle: when true, only rows whose catalog type has at least
+    /// one configured instance are shown.  Defaults to true for a section when
+    /// it has any configured instances at startup, false otherwise.
+    /// Indices: 0=Models, 1=Providers, 2=Launchers, 3=Capabilities.
+    pub configured_only: [bool; 4],
 }
 
 impl App {
@@ -149,6 +154,12 @@ impl App {
                 ctx.ui.as_ref(),
             )
         };
+        let configured_only = [
+            !ctx.config.models.is_empty(),       // Models
+            !ctx.config.providers.is_empty(),    // Providers
+            !ctx.config.launchers.is_empty(),    // Launchers
+            !ctx.config.capabilities.is_empty(), // Capabilities
+        ];
         Self {
             ctx,
             section: Section::Models,
@@ -158,6 +169,7 @@ impl App {
             detail_scroll: 0,
             recommend_rows_cache,
             setup_pane: None,
+            configured_only,
         }
     }
 
@@ -246,6 +258,15 @@ impl App {
                 KeyCode::Char('d') => {
                     if let Some(id) = self.selected_id() {
                         self.mode = AppMode::Detail(id);
+                    }
+                }
+                KeyCode::Char('f') => {
+                    if let Some(idx) = Self::configured_only_idx(&self.section) {
+                        self.configured_only[idx] = !self.configured_only[idx];
+                        // Clamp cursor to the new (possibly shorter) list.
+                        let max = self.row_count().saturating_sub(1);
+                        self.row = self.row.min(max);
+                        self.sync_table_state();
                     }
                 }
                 _ => {}
@@ -366,6 +387,18 @@ impl App {
         }
     }
 
+    /// Index into `self.configured_only` for sections that support the toggle,
+    /// or `None` for sections that don't (Models, Recommend, Hardware).
+    fn configured_only_idx(section: &Section) -> Option<usize> {
+        match section {
+            Section::Models => Some(0),
+            Section::Providers => Some(1),
+            Section::Launchers => Some(2),
+            Section::Capabilities => Some(3),
+            _ => None,
+        }
+    }
+
     fn filtered_ids(&self, query: &str) -> Vec<String> {
         let q = query.to_lowercase();
         // IDs must be returned in the same order as the browse table renders
@@ -379,32 +412,65 @@ impl App {
         //                                   alphabetical sort here is correct.
         // Hardware: no selectable rows.
         let ids: Vec<String> = match self.section {
-            Section::Models => ModelCommands::catalog_rows(None)
-                .into_iter()
-                .map(|r| r[0].clone())
-                .collect(),
+            Section::Models => {
+                let only = self.configured_only[0];
+                let configured_ids: std::collections::HashSet<&str> =
+                    self.ctx.config.models.keys().map(|k| k.as_str()).collect();
+                ModelCommands::catalog_rows(None)
+                    .into_iter()
+                    .filter(|r| !only || configured_ids.contains(r[0].as_str()))
+                    .map(|r| r[0].clone())
+                    .collect()
+            }
             Section::Providers => {
+                let only = self.configured_only[1];
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .providers
+                    .values()
+                    .map(|c| c.provider_type.clone())
+                    .collect();
                 let mut v: Vec<String> = PROVIDER_REGISTRY
                     .entries()
                     .keys()
+                    .filter(|k| !only || configured_types.contains(**k))
                     .map(|k| k.to_string())
                     .collect();
                 v.sort();
                 v
             }
             Section::Launchers => {
+                let only = self.configured_only[2];
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .launchers
+                    .values()
+                    .map(|c| c.launcher_type.clone())
+                    .collect();
                 let mut v: Vec<String> = crate::launchers::LAUNCHER_REGISTRY
                     .entries()
                     .keys()
+                    .filter(|k| !only || configured_types.contains(**k))
                     .map(|k| k.to_string())
                     .collect();
                 v.sort();
                 v
             }
             Section::Capabilities => {
+                let only = self.configured_only[3];
+                let configured_types: std::collections::HashSet<String> = self
+                    .ctx
+                    .config
+                    .capabilities
+                    .values()
+                    .map(|c| c.capability_type.clone())
+                    .collect();
                 let mut v: Vec<String> = crate::capabilities::CAPABILITY_REGISTRY
                     .entries()
                     .keys()
+                    .filter(|k| !only || configured_types.contains(**k))
                     .map(|k| k.to_string())
                     .collect();
                 v.sort();
@@ -448,12 +514,53 @@ impl App {
         let items: Vec<ListItem> = sections
             .iter()
             .map(|s| {
+                // For sections with a configured_only toggle, show the
+                // filtered count (matching `filtered_ids`) rather than
+                // the total registry size.
                 let count = match s {
-                    Section::Models => MODEL_REGISTRY.entries().len(),
-                    Section::Providers => PROVIDER_REGISTRY.entries().len(),
-                    Section::Launchers => crate::launchers::LAUNCHER_REGISTRY.entries().len(),
+                    Section::Models => {
+                        let only = self.configured_only[0];
+                        if only {
+                            self.ctx.config.models.len()
+                        } else {
+                            MODEL_REGISTRY.entries().len()
+                        }
+                    }
+                    Section::Providers => {
+                        let only = self.configured_only[1];
+                        if only {
+                            let configured_types: std::collections::HashSet<String> = self
+                                .ctx.config.providers.values()
+                                .map(|c| c.provider_type.clone()).collect();
+                            PROVIDER_REGISTRY.entries().keys()
+                                .filter(|k| configured_types.contains(**k)).count()
+                        } else {
+                            PROVIDER_REGISTRY.entries().len()
+                        }
+                    }
+                    Section::Launchers => {
+                        let only = self.configured_only[2];
+                        if only {
+                            let configured_types: std::collections::HashSet<String> = self
+                                .ctx.config.launchers.values()
+                                .map(|c| c.launcher_type.clone()).collect();
+                            crate::launchers::LAUNCHER_REGISTRY.entries().keys()
+                                .filter(|k| configured_types.contains(**k)).count()
+                        } else {
+                            crate::launchers::LAUNCHER_REGISTRY.entries().len()
+                        }
+                    }
                     Section::Capabilities => {
-                        crate::capabilities::CAPABILITY_REGISTRY.entries().len()
+                        let only = self.configured_only[3];
+                        if only {
+                            let configured_types: std::collections::HashSet<String> = self
+                                .ctx.config.capabilities.values()
+                                .map(|c| c.capability_type.clone()).collect();
+                            crate::capabilities::CAPABILITY_REGISTRY.entries().keys()
+                                .filter(|k| configured_types.contains(**k)).count()
+                        } else {
+                            crate::capabilities::CAPABILITY_REGISTRY.entries().len()
+                        }
                     }
                     Section::Recommend => self.recommend_rows_cache.len(),
                     Section::Hardware => 0,
@@ -553,7 +660,10 @@ impl App {
                     ],
                 )
                 .header(header)
-                .block(Block::default().borders(Borders::ALL).title(" Models "));
+                .block(Block::default().borders(Borders::ALL).title(
+                    if self.configured_only[0] { " Models [f: show all] " }
+                    else { " Models [f: configured only] " }
+                ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -617,7 +727,10 @@ impl App {
                     ],
                 )
                 .header(header)
-                .block(Block::default().borders(Borders::ALL).title(" Providers "));
+                .block(Block::default().borders(Borders::ALL).title(
+                    if self.configured_only[0] { " Providers [f: show all] " }
+                    else { " Providers [f: configured only] " }
+                ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -684,7 +797,10 @@ impl App {
                     ],
                 )
                 .header(header)
-                .block(Block::default().borders(Borders::ALL).title(" Launchers "));
+                .block(Block::default().borders(Borders::ALL).title(
+                    if self.configured_only[1] { " Launchers [f: show all] " }
+                    else { " Launchers [f: configured only] " }
+                ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -751,19 +867,21 @@ impl App {
                     ],
                 )
                 .header(header)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Capabilities "),
-                );
+                .block(Block::default().borders(Borders::ALL).title(
+                    if self.configured_only[2] { " Capabilities [f: show all] " }
+                    else { " Capabilities [f: configured only] " }
+                ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
             Section::Recommend => {
                 let all_rows = &self.recommend_rows_cache;
 
+                let configured_ids: std::collections::HashSet<&str> =
+                    self.ctx.config.models.keys().map(|k| k.as_str()).collect();
+
                 // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
-                let header = Row::new(vec!["ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
+                let header = Row::new(vec!["", "ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
                     .style(
                         Style::default()
                             .fg(Color::Cyan)
@@ -781,6 +899,11 @@ impl App {
                         } else {
                             Style::default().bg(Color::Rgb(20, 20, 20))
                         };
+                        let marker = if configured_ids.contains(r[0].as_str()) {
+                            Cell::from("✓").style(Style::default().fg(Color::Green))
+                        } else {
+                            Cell::from("")
+                        };
                         let fit_display = strip_ansi(&r[4]);
                         let fit_style = if fit_display.starts_with("Partial") {
                             Style::default().fg(Color::Yellow)
@@ -788,6 +911,7 @@ impl App {
                             Style::default()
                         };
                         Row::new(vec![
+                            marker,
                             Cell::from(r[0].clone()),
                             Cell::from(r[1].clone()),
                             Cell::from(r[2].clone()),
@@ -802,9 +926,10 @@ impl App {
                 let table = Table::new(
                     rows,
                     [
-                        Constraint::Percentage(22),
+                        Constraint::Length(2),
+                        Constraint::Percentage(21),
                         Constraint::Percentage(10),
-                        Constraint::Percentage(25),
+                        Constraint::Percentage(24),
                         Constraint::Percentage(10),
                         Constraint::Percentage(13),
                         Constraint::Percentage(20),
@@ -1064,6 +1189,9 @@ impl App {
             match &self.mode {
                 AppMode::Browse if self.section == Section::Hardware => {
                     "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
+                }
+                AppMode::Browse if Self::configured_only_idx(&self.section).is_some() => {
+                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [f] Filter  [q] Quit  ✓ = configured"
                 }
                 AppMode::Browse => {
                     "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [q] Quit  ✓ = configured"
