@@ -305,11 +305,7 @@ impl App {
                             cursor: 0,
                         };
                     } else {
-                        return AppAction::StartSetup(
-                            self.section.clone(),
-                            id,
-                            None,
-                        );
+                        return AppAction::StartSetup(self.section.clone(), id, None);
                     }
                 }
                 _ => {}
@@ -513,10 +509,17 @@ impl App {
                         let only = self.configured_only[1];
                         if only {
                             let configured_types: std::collections::HashSet<String> = self
-                                .ctx.config.providers.values()
-                                .map(|c| c.provider_type.clone()).collect();
-                            PROVIDER_REGISTRY.entries().keys()
-                                .filter(|k| configured_types.contains(**k)).count()
+                                .ctx
+                                .config
+                                .providers
+                                .values()
+                                .map(|c| c.provider_type.clone())
+                                .collect();
+                            PROVIDER_REGISTRY
+                                .entries()
+                                .keys()
+                                .filter(|k| configured_types.contains(**k))
+                                .count()
                         } else {
                             PROVIDER_REGISTRY.entries().len()
                         }
@@ -525,10 +528,17 @@ impl App {
                         let only = self.configured_only[2];
                         if only {
                             let configured_types: std::collections::HashSet<String> = self
-                                .ctx.config.launchers.values()
-                                .map(|c| c.launcher_type.clone()).collect();
-                            crate::launchers::LAUNCHER_REGISTRY.entries().keys()
-                                .filter(|k| configured_types.contains(**k)).count()
+                                .ctx
+                                .config
+                                .launchers
+                                .values()
+                                .map(|c| c.launcher_type.clone())
+                                .collect();
+                            crate::launchers::LAUNCHER_REGISTRY
+                                .entries()
+                                .keys()
+                                .filter(|k| configured_types.contains(**k))
+                                .count()
                         } else {
                             crate::launchers::LAUNCHER_REGISTRY.entries().len()
                         }
@@ -537,10 +547,17 @@ impl App {
                         let only = self.configured_only[3];
                         if only {
                             let configured_types: std::collections::HashSet<String> = self
-                                .ctx.config.capabilities.values()
-                                .map(|c| c.capability_type.clone()).collect();
-                            crate::capabilities::CAPABILITY_REGISTRY.entries().keys()
-                                .filter(|k| configured_types.contains(**k)).count()
+                                .ctx
+                                .config
+                                .capabilities
+                                .values()
+                                .map(|c| c.capability_type.clone())
+                                .collect();
+                            crate::capabilities::CAPABILITY_REGISTRY
+                                .entries()
+                                .keys()
+                                .filter(|k| configured_types.contains(**k))
+                                .count()
                         } else {
                             crate::capabilities::CAPABILITY_REGISTRY.entries().len()
                         }
@@ -632,21 +649,25 @@ impl App {
                     })
                     .collect();
 
-                let table = Table::new(
-                    rows,
-                    [
-                        Constraint::Length(2),
-                        Constraint::Percentage(43),
-                        Constraint::Percentage(25),
-                        Constraint::Percentage(10),
-                        Constraint::Percentage(20),
-                    ],
-                )
-                .header(header)
-                .block(Block::default().borders(Borders::ALL).title(
-                    if self.configured_only[0] { " Models [f: show all] " }
-                    else { " Models [f: configured only] " }
-                ));
+                let table =
+                    Table::new(
+                        rows,
+                        [
+                            Constraint::Length(2),
+                            Constraint::Percentage(43),
+                            Constraint::Percentage(25),
+                            Constraint::Percentage(10),
+                            Constraint::Percentage(20),
+                        ],
+                    )
+                    .header(header)
+                    .block(Block::default().borders(Borders::ALL).title(
+                        if self.configured_only[0] {
+                            " Models [f: show all] "
+                        } else {
+                            " Models [f: configured only] "
+                        },
+                    ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -701,19 +722,23 @@ impl App {
                     })
                     .collect();
 
-                let table = Table::new(
-                    rows,
-                    [
-                        Constraint::Length(2),
-                        Constraint::Percentage(30),
-                        Constraint::Percentage(68),
-                    ],
-                )
-                .header(header)
-                .block(Block::default().borders(Borders::ALL).title(
-                    if self.configured_only[0] { " Providers [f: show all] " }
-                    else { " Providers [f: configured only] " }
-                ));
+                let table =
+                    Table::new(
+                        rows,
+                        [
+                            Constraint::Length(2),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(68),
+                        ],
+                    )
+                    .header(header)
+                    .block(Block::default().borders(Borders::ALL).title(
+                        if self.configured_only[0] {
+                            " Providers [f: show all] "
+                        } else {
+                            " Providers [f: configured only] "
+                        },
+                    ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -771,19 +796,23 @@ impl App {
                     })
                     .collect();
 
-                let table = Table::new(
-                    rows,
-                    [
-                        Constraint::Length(2),
-                        Constraint::Percentage(30),
-                        Constraint::Percentage(68),
-                    ],
-                )
-                .header(header)
-                .block(Block::default().borders(Borders::ALL).title(
-                    if self.configured_only[1] { " Launchers [f: show all] " }
-                    else { " Launchers [f: configured only] " }
-                ));
+                let table =
+                    Table::new(
+                        rows,
+                        [
+                            Constraint::Length(2),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(68),
+                        ],
+                    )
+                    .header(header)
+                    .block(Block::default().borders(Borders::ALL).title(
+                        if self.configured_only[1] {
+                            " Launchers [f: show all] "
+                        } else {
+                            " Launchers [f: configured only] "
+                        },
+                    ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -841,19 +870,23 @@ impl App {
                     })
                     .collect();
 
-                let table = Table::new(
-                    rows,
-                    [
-                        Constraint::Length(2),
-                        Constraint::Percentage(30),
-                        Constraint::Percentage(68),
-                    ],
-                )
-                .header(header)
-                .block(Block::default().borders(Borders::ALL).title(
-                    if self.configured_only[2] { " Capabilities [f: show all] " }
-                    else { " Capabilities [f: configured only] " }
-                ));
+                let table =
+                    Table::new(
+                        rows,
+                        [
+                            Constraint::Length(2),
+                            Constraint::Percentage(30),
+                            Constraint::Percentage(68),
+                        ],
+                    )
+                    .header(header)
+                    .block(Block::default().borders(Borders::ALL).title(
+                        if self.configured_only[2] {
+                            " Capabilities [f: show all] "
+                        } else {
+                            " Capabilities [f: configured only] "
+                        },
+                    ));
 
                 frame.render_stateful_widget(table, table_area, &mut self.table_state);
             }
@@ -864,12 +897,20 @@ impl App {
                     self.ctx.config.models.keys().map(|k| k.as_str()).collect();
 
                 // columns: [0]=id [1]=size [2]=variant [3]=type [4]=fit [5]=providers
-                let header = Row::new(vec!["", "ID", "SIZE", "VARIANT", "TYPE", "FIT", "PROVIDERS"])
-                    .style(
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    );
+                let header = Row::new(vec![
+                    "",
+                    "ID",
+                    "SIZE",
+                    "VARIANT",
+                    "TYPE",
+                    "FIT",
+                    "PROVIDERS",
+                ])
+                .style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
 
                 let rows: Vec<Row> = all_rows
                     .iter()
@@ -925,12 +966,17 @@ impl App {
             }
             Section::Hardware => {
                 // Hardware is a single static detail pane — no rows to browse
-                let content = HardwareCommands::hardware_fields()
+                let label_style = Style::default().fg(Color::Cyan);
+                let lines: Vec<Line> = HardwareCommands::hardware_fields()
                     .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let para = Paragraph::new(content)
+                    .map(|(k, v)| {
+                        Line::from(vec![
+                            Span::styled(format!("{k}: "), label_style),
+                            Span::raw(v.clone()),
+                        ])
+                    })
+                    .collect();
+                let para = Paragraph::new(lines)
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
@@ -956,36 +1002,48 @@ impl App {
     }
 
     fn render_detail(&self, frame: &mut Frame, area: Rect, id: &str) {
-        let content = match self.section {
-            Section::Models | Section::Recommend => {
-                let catalog = match ModelCommands::info_fields(id) {
-                    Some(fields) => fields
+        let bold = Style::default().fg(Color::Cyan);
+        let lines: Vec<Line> = match self.section {
+            Section::Models | Section::Recommend => match ModelCommands::info_fields(id) {
+                None => vec![Line::from(format!("Model '{id}' not found."))],
+                Some(fields) => {
+                    let mut lines: Vec<Line> = fields
                         .iter()
-                        .map(|(k, v)| format!("{k}: {v}"))
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    None => format!("Model '{id}' not found."),
-                };
-
-                let config_block = if let Some(mc) = self.ctx.config.get_model(id) {
-                    let variant_line = match &mc.variant {
-                        Some(v) => format!("Variant:   {v}"),
-                        None => "Variant:   (not set)".to_string(),
-                    };
-                    let provider_line = match &mc.provider_id {
-                        None => "Provider:  (not set)".to_string(),
-                        Some(pid) => match self.ctx.config.get_provider(pid) {
-                            None => format!("Provider:  {pid}"),
-                            Some(pc) => format!("Provider:  {pid} ({})", pc.provider_type),
-                        },
-                    };
-                    format!("\n\n── Configured ──\n{provider_line}\n{variant_line}")
-                } else {
-                    "\n\n── Not configured ──".to_string()
-                };
-
-                format!("{catalog}{config_block}")
-            }
+                        .map(|(k, v)| {
+                            Line::from(vec![
+                                Span::styled(format!("{k}: "), bold),
+                                Span::raw(v.clone()),
+                            ])
+                        })
+                        .collect();
+                    lines.push(Line::from(""));
+                    if let Some(mc) = self.ctx.config.get_model(id) {
+                        let provider_val = match &mc.provider_id {
+                            None => "(not set)".to_string(),
+                            Some(pid) => match self.ctx.config.get_provider(pid) {
+                                None => pid.clone(),
+                                Some(pc) => format!("{pid} ({})", pc.provider_type),
+                            },
+                        };
+                        let variant_val = match &mc.variant {
+                            Some(v) => v.clone(),
+                            None => "(not set)".to_string(),
+                        };
+                        lines.push(Line::from("── Configured ──"));
+                        lines.push(Line::from(vec![
+                            Span::styled("Provider: ", bold),
+                            Span::raw(provider_val),
+                        ]));
+                        lines.push(Line::from(vec![
+                            Span::styled("Variant: ", bold),
+                            Span::raw(variant_val),
+                        ]));
+                    } else {
+                        lines.push(Line::from("── Not configured ──"));
+                    }
+                    lines
+                }
+            },
             Section::Providers => {
                 if let Some(p) = PROVIDER_REGISTRY.get(id) {
                     let api_types = p
@@ -1000,7 +1058,7 @@ impl App {
                         .map(|f| f.to_string())
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let mut endpoints_lines: Vec<String> = p
+                    let mut endpoints_lines: Vec<(String, String)> = p
                         .default_function_endpoints
                         .iter()
                         .map(|(func, eps)| {
@@ -1009,11 +1067,10 @@ impl App {
                                 .map(|ep| format!("{} ({})", ep.api_type(), ep.path()))
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            format!("  {func}: {ep_strs}")
+                            (func.to_string(), ep_strs)
                         })
                         .collect();
-                    endpoints_lines.sort();
-                    let endpoints = endpoints_lines.join("\n");
+                    endpoints_lines.sort_by(|a, b| a.0.cmp(&b.0));
                     let mut instances: Vec<String> = self
                         .ctx
                         .config
@@ -1028,20 +1085,47 @@ impl App {
                     } else {
                         instances.join(", ")
                     };
-                    format!(
-                        "Provider: {}\n\nName: {}\nType: {}\nDefault URL: {}\nAPI Types: {}\nFormats: {}\n\nEndpoints:\n{}\n\nConfigured instances: {}\n\nDescription: {}",
-                        id,
-                        p.name,
-                        p.provider_type,
-                        p.default_endpoint,
-                        api_types,
-                        formats,
-                        endpoints,
-                        instances_str,
-                        p.description
-                    )
+                    let mut lines = vec![
+                        Line::from(vec![
+                            Span::styled("Name: ", bold),
+                            Span::raw(p.name.clone()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Type: ", bold),
+                            Span::raw(p.provider_type.to_string()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Default URL: ", bold),
+                            Span::raw(p.default_endpoint.clone()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("API Types: ", bold),
+                            Span::raw(api_types),
+                        ]),
+                        Line::from(vec![Span::styled("Formats: ", bold), Span::raw(formats)]),
+                        Line::from(""),
+                        Line::from(Span::styled("Endpoints:", bold)),
+                    ];
+                    for (func, ep_strs) in &endpoints_lines {
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(format!("{func}: "), bold),
+                            Span::raw(ep_strs.clone()),
+                        ]));
+                    }
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("Configured instances: ", bold),
+                        Span::raw(instances_str),
+                    ]));
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled("Description: ", bold),
+                        Span::raw(p.description.clone()),
+                    ]));
+                    lines
                 } else {
-                    format!("Provider '{id}' not found.")
+                    vec![Line::from(format!("Provider '{id}' not found."))]
                 }
             }
             Section::Launchers => {
@@ -1054,43 +1138,54 @@ impl App {
                         .filter(|c| c.launcher_type == id)
                         .collect();
                     configured.sort_by(|a, b| a.launcher_id.cmp(&b.launcher_id));
-
-                    let instances_block = if configured.is_empty() {
-                        "(none)".to_string()
+                    let supported_caps = if l.supported_capabilities.is_empty() {
+                        "(none yet)".to_string()
                     } else {
-                        configured
+                        let mut caps: Vec<String> = l
+                            .supported_capabilities
                             .iter()
-                            .map(|c| {
-                                let caps = if c.enabled_capabilities.is_empty() {
-                                    "(none)".to_string()
-                                } else {
-                                    c.enabled_capabilities.join(", ")
-                                };
-                                format!("  {}\n    Capabilities: {}", c.launcher_id, caps)
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n")
+                            .map(|c| c.to_string())
+                            .collect();
+                        caps.sort();
+                        caps.join(", ")
                     };
-
-                    format!(
-                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}\n\nConfigured instances:\n{}",
-                        l.default_command,
-                        l.description,
-                        if l.supported_capabilities.is_empty() {
-                            "(none yet)".to_string()
-                        } else {
-                            let mut caps: Vec<String> = l
-                                .supported_capabilities
-                                .iter()
-                                .map(|c| c.to_string())
-                                .collect();
-                            caps.sort();
-                            caps.join(", ")
-                        },
-                        instances_block,
-                    )
+                    let mut lines = vec![
+                        Line::from(vec![
+                            Span::styled("Default command: ", bold),
+                            Span::raw(l.default_command.clone()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Description: ", bold),
+                            Span::raw(l.description.clone()),
+                        ]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Supported capabilities: ", bold),
+                            Span::raw(supported_caps),
+                        ]),
+                        Line::from(""),
+                        Line::from(Span::styled("Configured instances:", bold)),
+                    ];
+                    if configured.is_empty() {
+                        lines.push(Line::from("  (none)"));
+                    } else {
+                        for c in &configured {
+                            let caps = if c.enabled_capabilities.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                c.enabled_capabilities.join(", ")
+                            };
+                            lines.push(Line::from(format!("  {}", c.launcher_id)));
+                            lines.push(Line::from(vec![
+                                Span::raw("    "),
+                                Span::styled("Capabilities: ", bold),
+                                Span::raw(caps),
+                            ]));
+                        }
+                    }
+                    lines
                 } else {
-                    format!("Launcher '{id}' not found.")
+                    vec![Line::from(format!("Launcher '{id}' not found."))]
                 }
             }
             Section::Capabilities => {
@@ -1134,23 +1229,43 @@ impl App {
                     } else {
                         instances.join(", ")
                     };
-                    format!(
-                        "Capability: {id}\n\nName: {}\nDescription: {}\nBinding Types: {}\nTags: {}\nDependencies: {}\n\nConfigured instances: {}",
-                        c.name, c.description, binding_types, tags, deps, instances_str
-                    )
+                    vec![
+                        Line::from(vec![
+                            Span::styled("Name: ", bold),
+                            Span::raw(c.name.clone()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Description: ", bold),
+                            Span::raw(c.description.clone()),
+                        ]),
+                        Line::from(vec![
+                            Span::styled("Binding Types: ", bold),
+                            Span::raw(binding_types),
+                        ]),
+                        Line::from(vec![Span::styled("Tags: ", bold), Span::raw(tags)]),
+                        Line::from(vec![Span::styled("Dependencies: ", bold), Span::raw(deps)]),
+                        Line::from(""),
+                        Line::from(vec![
+                            Span::styled("Configured instances: ", bold),
+                            Span::raw(instances_str),
+                        ]),
+                    ]
                 } else {
-                    format!("Capability '{id}' not found.")
+                    vec![Line::from(format!("Capability '{id}' not found."))]
                 }
             }
-            // Hardware has no per-row detail — render the full profile
             Section::Hardware => HardwareCommands::hardware_fields()
                 .iter()
-                .map(|(k, v)| format!("{k}: {v}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
+                .map(|(k, v)| {
+                    Line::from(vec![
+                        Span::styled(format!("{k}: "), bold),
+                        Span::raw(v.clone()),
+                    ])
+                })
+                .collect(),
         };
 
-        let para = Paragraph::new(content)
+        let para = Paragraph::new(lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -1181,9 +1296,7 @@ impl App {
                 }
                 AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
                 AppMode::Detail(_) => "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back",
-                AppMode::InstancePick { .. } => {
-                    "[↑↓/jk] Move  [Enter] Select  [Esc] Cancel"
-                }
+                AppMode::InstancePick { .. } => "[↑↓/jk] Move  [Enter] Select  [Esc] Cancel",
             }
         };
         let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)));
@@ -1255,10 +1368,7 @@ impl App {
                 } else {
                     Style::default()
                 };
-                ListItem::new(Line::from(Span::styled(
-                    format!("{prefix}{label}"),
-                    style,
-                )))
+                ListItem::new(Line::from(Span::styled(format!("{prefix}{label}"), style)))
             })
             .collect();
 
@@ -1335,8 +1445,7 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
         match action {
             AppAction::Quit => break,
             AppAction::StartSetup(section, id, instance_id) => {
-                app.setup_pane =
-                    Some(spawn_setup(&app.ctx, &section, &id, instance_id.as_deref()));
+                app.setup_pane = Some(spawn_setup(&app.ctx, &section, &id, instance_id.as_deref()));
             }
             AppAction::None => {}
         }
@@ -1395,9 +1504,7 @@ fn spawn_setup(
                 }
                 Section::Providers => ProviderCommands::setup(&mut task_ctx, &id, iid).await,
                 Section::Launchers => LauncherCommands::setup(&mut task_ctx, &id, iid).await,
-                Section::Capabilities => {
-                    CapabilityCommands::setup(&mut task_ctx, &id, iid).await
-                }
+                Section::Capabilities => CapabilityCommands::setup(&mut task_ctx, &id, iid).await,
                 Section::Hardware => Ok(()),
             };
             if let Err(e) = result {
@@ -1503,24 +1610,9 @@ mod tests {
     }
 
     #[test]
-    fn app_enter_emits_start_setup_with_id() {
+    fn app_enter_sets_detail_mode_with_id() {
         let mut a = app();
-        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        match action {
-            AppAction::StartSetup(section, id, _) => {
-                assert_eq!(section, Section::Models);
-                assert!(!id.is_empty());
-            }
-            _ => panic!("expected StartSetup action"),
-        }
-        // Mode must not change to Detail
-        assert_eq!(a.mode, AppMode::Browse);
-    }
-
-    #[test]
-    fn app_d_sets_detail_mode_with_id() {
-        let mut a = app();
-        a.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match &a.mode {
             AppMode::Detail(id) => assert!(!id.is_empty()),
             _ => panic!("expected Detail mode"),
@@ -1757,27 +1849,21 @@ mod tests {
     }
 
     #[test]
-    fn browse_enter_uses_current_section() {
+    fn browse_enter_goes_to_detail() {
+        // Enter from Browse now navigates to Detail for the selected item.
         let mut a = app();
         a.section = Section::Providers;
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        match action {
-            AppAction::StartSetup(section, _, _) => assert_eq!(section, Section::Providers),
-            // With no configured instances, Enter either emits StartSetup or
-            // enters InstancePick mode (if instances exist). Either is valid.
-            AppAction::None => {}
-            _ => panic!("unexpected action"),
-        }
+        assert_eq!(action, AppAction::None);
+        assert!(matches!(a.mode, AppMode::Detail(_)));
     }
 
     #[test]
-    fn browse_enter_does_not_change_mode() {
-        // Models section: no instance picker — Enter emits StartSetup and mode
-        // stays Browse.
+    fn browse_enter_models_goes_to_detail() {
         let mut a = app();
         a.section = Section::Models;
         a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(a.mode, AppMode::Browse);
+        assert!(matches!(a.mode, AppMode::Detail(_)));
     }
 
     #[test]
@@ -1804,7 +1890,7 @@ mod tests {
     // -- InstancePick mode ----------------------------------------------------
 
     #[test]
-    fn enter_on_provider_with_existing_instance_enters_instance_pick_mode() {
+    fn enter_on_provider_with_existing_instance_goes_to_detail_first() {
         let _home = crate::config::TestConfigHome::new();
         let mut cfg = crate::config::Config::new().unwrap();
         cfg.insert_provider(
@@ -1821,13 +1907,18 @@ mod tests {
             ui: Arc::new(CaptureUi::default()),
         });
         a.section = Section::Providers;
-        // Find the row index for "ollama"
         let ids = a.filtered_ids("");
         a.row = ids.iter().position(|id| id == "ollama").unwrap_or(0);
         a.sync_table_state();
 
+        // Enter from Browse now goes to Detail, not straight to InstancePick.
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(action, AppAction::None);
+        assert!(matches!(&a.mode, AppMode::Detail(id) if id == "ollama"));
+
+        // A second Enter from Detail triggers InstancePick (existing instance exists).
+        let action2 = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action2, AppAction::None);
         match &a.mode {
             AppMode::InstancePick {
                 type_id,
