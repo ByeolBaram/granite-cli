@@ -620,6 +620,8 @@ mod tests {
             model_id.to_string(),
             crate::config::ModelConfig {
                 model_id: model_id.to_string(),
+                model_type: model_id.to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
