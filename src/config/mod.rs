@@ -53,9 +53,20 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelConfig {
+    /// Instance id -- the config/file key this model is stored under.
+    /// Defaults to `model_type` (see `commands::ModelCommands::setup`), but
+    /// may differ to let the same catalog type be configured more than once
+    /// (e.g. against different providers or precisions).
     pub model_id: String,
+    /// Registry key: the catalog id this instance was constructed from (a
+    /// `resources/models.yaml` id, or `"custom"`).
+    pub model_type: String,
     pub provider_id: Option<String>,
     pub variant: Option<String>,
+    /// Model-type-specific config (e.g. `CustomModelConfig`'s fields for a
+    /// `"custom"` instance). `{}` for catalog models, which take no config
+    /// beyond `provider_config`.
+    pub config: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
