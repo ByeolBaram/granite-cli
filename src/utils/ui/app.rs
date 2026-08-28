@@ -1,3 +1,6 @@
+use std::sync::{Arc, Mutex};
+
+use alog::Filters as AlogFilters;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
@@ -7,11 +10,15 @@ use ratatui::{
     widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState},
 };
 
-use crate::commands::{HardwareCommands, ModelCommands};
+use crate::commands::{
+    CapabilityCommands, HardwareCommands, LauncherCommands, ModelCommands, ProviderCommands,
+};
 use crate::dependency::Configured;
 use crate::models::MODEL_REGISTRY;
 use crate::providers::PROVIDER_REGISTRY;
+use crate::utils::ui::setup_pane::SetupPane;
 use crate::utils::ui::tui::{restore_terminal, setup_terminal};
+use crate::utils::ui::tui_ui::{Answer, OutputLine, TuiUi};
 
 /*-- private --*/
 
@@ -86,6 +93,18 @@ pub enum AppMode {
     Detail(String),
 }
 
+/// Action returned by [`App::handle_key`] to drive the event loop in
+/// [`run_interactive_tui`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppAction {
+    /// No special action; keep running the TUI.
+    None,
+    /// User requested quit.
+    Quit,
+    /// Open the in-pane setup wizard for the given section + id.
+    StartSetup(Section, String),
+}
+
 pub struct App {
     pub ctx: crate::AppContext,
     pub section: Section,
@@ -97,6 +116,8 @@ pub struct App {
     /// (DXGI/NVML/Metal calls) on every render, which is the main cause of
     /// sluggish arrow-key navigation on Windows.
     recommend_rows_cache: Vec<Vec<String>>,
+    /// Active in-pane setup wizard, if one is running.
+    pub setup_pane: Option<SetupPane>,
 }
 
 impl App {
@@ -124,19 +145,20 @@ impl App {
             table_state,
             detail_scroll: 0,
             recommend_rows_cache,
+            setup_pane: None,
         }
     }
 
-    /// Handle a key event and return whether the app should quit.
-    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+    /// Handle a key event and return an [`AppAction`].
+    pub fn handle_key(&mut self, key: KeyEvent) -> AppAction {
         // Ctrl-C always quits from any mode
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            return true;
+            return AppAction::Quit;
         }
 
         match self.mode.clone() {
             AppMode::Browse => match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return true,
+                KeyCode::Char('q') | KeyCode::Esc => return AppAction::Quit,
                 KeyCode::Char('/') => {
                     self.mode = AppMode::Search(String::new());
                 }
@@ -155,6 +177,11 @@ impl App {
                     self.sync_table_state();
                 }
                 KeyCode::Enter => {
+                    if let Some(id) = self.selected_id() {
+                        return AppAction::StartSetup(self.section.clone(), id);
+                    }
+                }
+                KeyCode::Char('d') => {
                     if let Some(id) = self.selected_id() {
                         self.mode = AppMode::Detail(id);
                     }
@@ -192,7 +219,7 @@ impl App {
                     _ => {}
                 }
             }
-            AppMode::Detail(_) => match key.code {
+            AppMode::Detail(ref id) => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => {
                     self.mode = AppMode::Browse;
                     self.detail_scroll = 0;
@@ -203,10 +230,14 @@ impl App {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.detail_scroll = self.detail_scroll.saturating_sub(1);
                 }
+                KeyCode::Enter => {
+                    let id = id.clone();
+                    return AppAction::StartSetup(self.section.clone(), id);
+                }
                 _ => {}
             },
         }
-        false
+        AppAction::None
     }
 
     /// Render the full application layout into the given frame.
@@ -226,11 +257,17 @@ impl App {
             .split(outer[0]);
 
         self.render_nav(frame, inner[0]);
-        let mode = self.mode.clone();
-        match mode {
-            AppMode::Browse => self.render_browse(frame, inner[1], ""),
-            AppMode::Search(ref q) => self.render_browse(frame, inner[1], q),
-            AppMode::Detail(ref id) => self.render_detail(frame, inner[1], id),
+
+        // When a setup pane is active it replaces the normal content area.
+        if let Some(pane) = &mut self.setup_pane {
+            pane.render(frame, inner[1]);
+        } else {
+            let mode = self.mode.clone();
+            match mode {
+                AppMode::Browse => self.render_browse(frame, inner[1], ""),
+                AppMode::Search(ref q) => self.render_browse(frame, inner[1], q),
+                AppMode::Detail(ref id) => self.render_detail(frame, inner[1], id),
+            }
         }
         self.render_footer(frame, outer[1]);
     }
@@ -731,16 +768,36 @@ impl App {
 
     fn render_detail(&self, frame: &mut Frame, area: Rect, id: &str) {
         let content = match self.section {
-            Section::Models => {
-                // Use the shared data layer — no registry access here
-                match ModelCommands::info_fields(id) {
+            Section::Models | Section::Recommend => {
+                let catalog = match ModelCommands::info_fields(id) {
                     Some(fields) => fields
                         .iter()
                         .map(|(k, v)| format!("{k}: {v}"))
                         .collect::<Vec<_>>()
                         .join("\n"),
                     None => format!("Model '{id}' not found."),
-                }
+                };
+
+                let config_block = if let Some(mc) = self.ctx.config.get_model(id) {
+                    let variant_line = match &mc.variant {
+                        Some(v) => format!("Variant:   {v}"),
+                        None => "Variant:   (not set)".to_string(),
+                    };
+                    let provider_line = match &mc.provider_id {
+                        None => "Provider:  (not set)".to_string(),
+                        Some(pid) => {
+                            match self.ctx.config.get_provider(pid) {
+                                None => format!("Provider:  {pid}"),
+                                Some(pc) => format!("Provider:  {pid} ({})", pc.provider_type),
+                            }
+                        }
+                    };
+                    format!("\n\n── Configured ──\n{provider_line}\n{variant_line}")
+                } else {
+                    "\n\n── Not configured ──".to_string()
+                };
+
+                format!("{catalog}{config_block}")
             }
             Section::Providers => {
                 if let Some(p) = PROVIDER_REGISTRY.get(id) {
@@ -802,22 +859,34 @@ impl App {
             }
             Section::Launchers => {
                 if let Some(l) = crate::launchers::LAUNCHER_REGISTRY.get(id) {
-                    let mut instances: Vec<String> = self
+                    let mut configured: Vec<&crate::config::LauncherConfig> = self
                         .ctx
                         .config
                         .launchers
-                        .iter()
-                        .filter(|(_, c)| c.launcher_type == id)
-                        .map(|(k, _)| k.clone())
+                        .values()
+                        .filter(|c| c.launcher_type == id)
                         .collect();
-                    instances.sort();
-                    let instances_str = if instances.is_empty() {
+                    configured.sort_by(|a, b| a.launcher_id.cmp(&b.launcher_id));
+
+                    let instances_block = if configured.is_empty() {
                         "(none)".to_string()
                     } else {
-                        instances.join(", ")
+                        configured
+                            .iter()
+                            .map(|c| {
+                                let caps = if c.enabled_capabilities.is_empty() {
+                                    "(none)".to_string()
+                                } else {
+                                    c.enabled_capabilities.join(", ")
+                                };
+                                format!("  {}\n    Capabilities: {}", c.launcher_id, caps)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     };
+
                     format!(
-                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}\n\nConfigured instances: {}",
+                        "Launcher: {id}\n\nDefault command: {}\nDescription: {}\n\nSupported capabilities: {}\n\nConfigured instances:\n{}",
                         l.default_command,
                         l.description,
                         if l.supported_capabilities.is_empty() {
@@ -831,7 +900,7 @@ impl App {
                             caps.sort();
                             caps.join(", ")
                         },
-                        instances_str,
+                        instances_block,
                     )
                 } else {
                     format!("Launcher '{id}' not found.")
@@ -886,15 +955,6 @@ impl App {
                     format!("Capability '{id}' not found.")
                 }
             }
-            // Recommend detail reuses the Model info_fields
-            Section::Recommend => match ModelCommands::info_fields(id) {
-                Some(fields) => fields
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-                None => format!("Model '{id}' not found."),
-            },
             // Hardware has no per-row detail — render the full profile
             Section::Hardware => HardwareCommands::hardware_fields()
                 .iter()
@@ -915,15 +975,25 @@ impl App {
     }
 
     fn render_footer(&self, frame: &mut Frame, area: Rect) {
-        let hints = match &self.mode {
-            AppMode::Browse if self.section == Section::Hardware => {
-                "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
+        let hints = if self.setup_pane.is_some() {
+            // Delegate hint rendering to the setup pane.
+            match &self.setup_pane {
+                Some(pane) => pane.hint(),
+                None => "",
             }
-            AppMode::Browse => {
-                "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail  [/] Search  [q] Quit  ✓ = configured"
+        } else {
+            match &self.mode {
+                AppMode::Browse if self.section == Section::Hardware => {
+                    "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
+                }
+                AppMode::Browse => {
+                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Setup  [d] Detail  [/] Search  [q] Quit  ✓ = configured"
+                }
+                AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
+                AppMode::Detail(_) => {
+                    "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back"
+                }
             }
-            AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
-            AppMode::Detail(_) => "[↑↓/jk] Scroll  [Backspace/Esc/q] Back",
         };
         let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)));
         frame.render_widget(para, area);
@@ -932,22 +1002,127 @@ impl App {
 
 /// Launch the interactive TUI application. Runs until the user quits.
 pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
+    // Silence the global logger for the entire TUI session.  The logger is
+    // wired to TerminalOutput which calls println! directly — any log line
+    // emitted from a setup task thread would write to stdout while ratatui
+    // owns the alternate screen, shifting the display up one line per call.
+    alog::adjust_levels(alog::Level::Off, AlogFilters::None);
+
     let mut terminal = setup_terminal()?;
     let mut app = App::new(ctx);
 
     loop {
+        // When a setup pane is active, poll for new prompts before drawing.
+        // This must happen before draw so the pane renders the latest state.
+        if let Some(pane) = &mut app.setup_pane {
+            pane.poll();
+            if pane.finished {
+                if let Ok(fresh) = crate::config::Config::new() {
+                    app.ctx.config = fresh;
+                }
+                app.setup_pane = None;
+            }
+        }
+
         terminal.draw(|frame| app.render(frame))?;
 
-        if let Event::Key(key) = event::read()?
+        // When setup is active use a short timeout so we wake up to redraw
+        // whenever the task sends a new prompt — without waiting for a key.
+        // When idle, block indefinitely (no timeout needed, saves CPU).
+        let has_event = if app.setup_pane.is_some() {
+            event::poll(std::time::Duration::from_millis(16))?
+        } else {
+            event::poll(std::time::Duration::from_secs(3600))?
+        };
+
+        if !has_event {
+            continue;
+        }
+
+        let action = if let Event::Key(key) = event::read()?
             && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-            && app.handle_key(key)
         {
-            break;
+            // Route keys to the setup pane first when it is active.
+            if let Some(pane) = &mut app.setup_pane {
+                pane.handle_key(key);
+                if pane.finished {
+                    if let Ok(fresh) = crate::config::Config::new() {
+                        app.ctx.config = fresh;
+                    }
+                    app.setup_pane = None;
+                }
+                AppAction::None
+            } else {
+                app.handle_key(key)
+            }
+        } else {
+            AppAction::None
+        };
+
+        match action {
+            AppAction::Quit => break,
+            AppAction::StartSetup(section, id) => {
+                app.setup_pane = Some(spawn_setup(&app.ctx, &section, &id));
+            }
+            AppAction::None => {}
         }
     }
 
     restore_terminal(terminal)?;
     Ok(())
+}
+
+/// Spawn a setup task for `id` in `section` on a blocking thread and return
+/// a [`SetupPane`] wired to it via channels.
+fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPane {
+    // Channels: task → TUI (prompts), TUI → task (answers), shared output log.
+    let (prompt_tx, prompt_rx) = std::sync::mpsc::sync_channel::<crate::utils::ui::tui_ui::Prompt>(0);
+    let (answer_tx, answer_rx) = std::sync::mpsc::sync_channel::<Answer>(0);
+    let output: Arc<Mutex<Vec<OutputLine>>> = Arc::new(Mutex::new(Vec::new()));
+    let pulls: Arc<Mutex<std::collections::HashMap<u64, crate::utils::ui::tui_ui::PullState>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
+
+    let tui_ui = Arc::new(TuiUi::new(prompt_tx, answer_rx, Arc::clone(&output), Arc::clone(&pulls)));
+
+    // Build the pane title before the closure captures section/id.
+    let section = section.clone();
+    let id = id.to_string();
+    let title = format!("{} — {}", section.label().to_lowercase(), id);
+
+    let mut task_ctx = crate::AppContext {
+        config: ctx.config.clone(),
+        ui: tui_ui,
+    };
+
+    tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async move {
+            let result = match &section {
+                Section::Models | Section::Recommend => {
+                    ModelCommands::setup(&mut task_ctx, &id).await
+                }
+                Section::Providers => {
+                    ProviderCommands::setup(&mut task_ctx, &id, None).await
+                }
+                Section::Launchers => {
+                    LauncherCommands::setup(&mut task_ctx, &id, None).await
+                }
+                Section::Capabilities => {
+                    CapabilityCommands::setup(&mut task_ctx, &id, None).await
+                }
+                Section::Hardware => Ok(()),
+            };
+            if let Err(e) = result {
+                task_ctx.ui.error(&format!("Setup failed: {e}"));
+            }
+            // Write config back from the task context so changes persist.
+            // (The task_ctx.config was cloned before the task started; the
+            // setup commands call ctx.config.insert_* which already persist
+            // each entry to disk, so the main ctx just needs a reload.)
+        });
+    });
+
+    SetupPane::new(title, output, pulls, prompt_rx, answer_tx)
 }
 
 /*-- tests --*/
@@ -1040,9 +1215,24 @@ mod tests {
     }
 
     #[test]
-    fn app_enter_sets_detail_mode_with_id() {
+    fn app_enter_emits_start_setup_with_id() {
         let mut a = app();
-        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        match action {
+            AppAction::StartSetup(section, id) => {
+                assert_eq!(section, Section::Models);
+                assert!(!id.is_empty());
+            }
+            _ => panic!("expected StartSetup action"),
+        }
+        // Mode must not change to Detail
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn app_d_sets_detail_mode_with_id() {
+        let mut a = app();
+        a.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
         match &a.mode {
             AppMode::Detail(id) => assert!(!id.is_empty()),
             _ => panic!("expected Detail mode"),
@@ -1058,10 +1248,19 @@ mod tests {
     }
 
     #[test]
-    fn app_q_returns_true_to_signal_quit() {
+    fn detail_enter_emits_start_setup() {
         let mut a = app();
-        let quit = a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
-        assert!(quit);
+        let detail_id = "granite-3.1-8b-instruct".to_string();
+        a.mode = AppMode::Detail(detail_id.clone());
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, AppAction::StartSetup(Section::Models, detail_id));
+    }
+
+    #[test]
+    fn app_q_returns_quit_action() {
+        let mut a = app();
+        let action = a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert_eq!(action, AppAction::Quit);
     }
 
     // -- scroll: TableState stays in sync ------------------------------------
@@ -1148,8 +1347,8 @@ mod tests {
     fn search_q_does_not_quit() {
         let mut a = app();
         a.mode = AppMode::Search(String::new());
-        let quit = a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
-        assert!(!quit);
+        let action = a.handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
+        assert_ne!(action, AppAction::Quit);
         assert_eq!(a.mode, AppMode::Search("q".to_string()));
     }
 
@@ -1253,5 +1452,46 @@ mod tests {
         let keys: Vec<&str> = fields.iter().map(|(k, _)| *k).collect();
         assert!(keys.contains(&"CPU Cores"));
         assert!(keys.contains(&"RAM"));
+    }
+
+    // -- Enter triggers StartSetup --------------------------------------------
+
+    #[test]
+    fn browse_enter_on_hardware_section_does_not_emit_start_setup() {
+        // Hardware has no rows, so selected_id() returns None and no action is emitted
+        let mut a = app();
+        a.section = Section::Hardware;
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, AppAction::None);
+    }
+
+    #[test]
+    fn browse_enter_uses_current_section() {
+        let mut a = app();
+        a.section = Section::Providers;
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        match action {
+            AppAction::StartSetup(section, _) => assert_eq!(section, Section::Providers),
+            _ => panic!("expected StartSetup"),
+        }
+    }
+
+    #[test]
+    fn browse_enter_does_not_change_mode() {
+        let mut a = app();
+        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn detail_enter_uses_current_section() {
+        let mut a = app();
+        a.section = Section::Providers;
+        a.mode = AppMode::Detail("ollama".to_string());
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            action,
+            AppAction::StartSetup(Section::Providers, "ollama".to_string())
+        );
     }
 }
