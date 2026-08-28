@@ -91,6 +91,16 @@ pub enum AppMode {
     Browse,
     Search(String),
     Detail(String),
+    /// Intermediate mode: user picks an existing instance (or "New instance")
+    /// before the setup wizard starts.
+    InstancePick {
+        /// The catalog type id (provider type, launcher type, capability type).
+        type_id: String,
+        /// Sorted list of existing instance ids for this type.
+        instances: Vec<String>,
+        /// Currently highlighted item index (0 = "New instance", 1..N = existing).
+        cursor: usize,
+    },
 }
 
 /// Action returned by [`App::handle_key`] to drive the event loop in
@@ -101,8 +111,10 @@ pub enum AppAction {
     None,
     /// User requested quit.
     Quit,
-    /// Open the in-pane setup wizard for the given section + id.
-    StartSetup(Section, String),
+    /// Open the in-pane setup wizard for the given section + type id.
+    /// `instance_id` is `Some(id)` when editing an existing instance or
+    /// `None` when creating a new one.
+    StartSetup(Section, String, Option<String>),
 }
 
 pub struct App {
@@ -156,6 +168,44 @@ impl App {
             return AppAction::Quit;
         }
 
+        // For InstancePick we need mutable access to the cursor field
+        // without borrowing self entirely, so handle it before the clone-based
+        // match that drives the other modes.
+        if let AppMode::InstancePick {
+            ref type_id,
+            ref instances,
+            ref mut cursor,
+        } = self.mode
+        {
+            match key.code {
+                KeyCode::Esc => {
+                    self.mode = AppMode::Browse;
+                    return AppAction::None;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = instances.len();
+                    *cursor = (*cursor + 1).min(max);
+                    return AppAction::None;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    *cursor = cursor.saturating_sub(1);
+                    return AppAction::None;
+                }
+                KeyCode::Enter => {
+                    let instance_id = if *cursor == 0 {
+                        None
+                    } else {
+                        Some(instances[*cursor - 1].clone())
+                    };
+                    let section = self.section.clone();
+                    let type_id = type_id.clone();
+                    self.mode = AppMode::Browse;
+                    return AppAction::StartSetup(section, type_id, instance_id);
+                }
+                _ => return AppAction::None,
+            }
+        }
+
         match self.mode.clone() {
             AppMode::Browse => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => return AppAction::Quit,
@@ -178,7 +228,19 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(id) = self.selected_id() {
-                        return AppAction::StartSetup(self.section.clone(), id);
+                        if let Some(instances) = self.existing_instances(&id) {
+                            self.mode = AppMode::InstancePick {
+                                type_id: id,
+                                instances,
+                                cursor: 0,
+                            };
+                        } else {
+                            return AppAction::StartSetup(
+                                self.section.clone(),
+                                id,
+                                None,
+                            );
+                        }
                     }
                 }
                 KeyCode::Char('d') => {
@@ -232,10 +294,24 @@ impl App {
                 }
                 KeyCode::Enter => {
                     let id = id.clone();
-                    return AppAction::StartSetup(self.section.clone(), id);
+                    if let Some(instances) = self.existing_instances(&id) {
+                        self.mode = AppMode::InstancePick {
+                            type_id: id,
+                            instances,
+                            cursor: 0,
+                        };
+                    } else {
+                        return AppAction::StartSetup(
+                            self.section.clone(),
+                            id,
+                            None,
+                        );
+                    }
                 }
                 _ => {}
             },
+            // InstancePick is handled above before the clone-based match.
+            AppMode::InstancePick { .. } => {}
         }
         AppAction::None
     }
@@ -267,6 +343,11 @@ impl App {
                 AppMode::Browse => self.render_browse(frame, inner[1], ""),
                 AppMode::Search(ref q) => self.render_browse(frame, inner[1], q),
                 AppMode::Detail(ref id) => self.render_detail(frame, inner[1], id),
+                AppMode::InstancePick {
+                    ref type_id,
+                    ref instances,
+                    cursor,
+                } => self.render_instance_pick(frame, inner[1], type_id, instances, cursor),
             }
         }
         self.render_footer(frame, outer[1]);
@@ -989,10 +1070,95 @@ impl App {
                 }
                 AppMode::Search(_) => "[typing] Filter  [Enter] Confirm  [Esc] Cancel",
                 AppMode::Detail(_) => "[↑↓/jk] Scroll  [Enter] Setup  [Backspace/Esc/q] Back",
+                AppMode::InstancePick { .. } => {
+                    "[↑↓/jk] Move  [Enter] Select  [Esc] Cancel"
+                }
             }
         };
         let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)));
         frame.render_widget(para, area);
+    }
+
+    /// Returns existing instance ids for `type_id` in the current section,
+    /// sorted.  Returns `None` for sections where the picker is not applicable
+    /// (Models / Recommend / Hardware) or when there are no existing instances.
+    fn existing_instances(&self, type_id: &str) -> Option<Vec<String>> {
+        let mut instances: Vec<String> = match self.section {
+            Section::Providers => self
+                .ctx
+                .config
+                .providers
+                .values()
+                .filter(|c| c.provider_type == type_id)
+                .map(|c| c.provider_id.clone())
+                .collect(),
+            Section::Launchers => self
+                .ctx
+                .config
+                .launchers
+                .values()
+                .filter(|c| c.launcher_type == type_id)
+                .map(|c| c.launcher_id.clone())
+                .collect(),
+            Section::Capabilities => self
+                .ctx
+                .config
+                .capabilities
+                .values()
+                .filter(|c| c.capability_type == type_id)
+                .map(|c| c.capability_id.clone())
+                .collect(),
+            // Models are keyed by model id directly — no picker needed.
+            // Recommend / Hardware also bypass the picker.
+            _ => return None,
+        };
+        if instances.is_empty() {
+            return None;
+        }
+        instances.sort();
+        Some(instances)
+    }
+
+    /// Render the instance picker list for `InstancePick` mode.
+    fn render_instance_pick(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        type_id: &str,
+        instances: &[String],
+        cursor: usize,
+    ) {
+        // Build list items: "New instance" first, then each existing instance.
+        let mut all_items: Vec<String> = vec!["✦ New instance".to_string()];
+        all_items.extend(instances.iter().cloned());
+
+        let list_items: Vec<ListItem> = all_items
+            .iter()
+            .enumerate()
+            .map(|(i, label)| {
+                let prefix = if i == cursor { "▶ " } else { "  " };
+                let style = if i == cursor {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                ListItem::new(Line::from(Span::styled(
+                    format!("{prefix}{label}"),
+                    style,
+                )))
+            })
+            .collect();
+
+        let list = List::new(list_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {type_id} — Select instance ")),
+        );
+        let mut list_state = ListState::default();
+        list_state.select(Some(cursor));
+        frame.render_stateful_widget(list, area, &mut list_state);
     }
 }
 
@@ -1057,8 +1223,9 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
 
         match action {
             AppAction::Quit => break,
-            AppAction::StartSetup(section, id) => {
-                app.setup_pane = Some(spawn_setup(&app.ctx, &section, &id));
+            AppAction::StartSetup(section, id, instance_id) => {
+                app.setup_pane =
+                    Some(spawn_setup(&app.ctx, &section, &id, instance_id.as_deref()));
             }
             AppAction::None => {}
         }
@@ -1069,8 +1236,15 @@ pub async fn run_interactive_tui(ctx: crate::AppContext) -> anyhow::Result<()> {
 }
 
 /// Spawn a setup task for `id` in `section` on a blocking thread and return
-/// a [`SetupPane`] wired to it via channels.
-fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPane {
+/// a [`SetupPane`] wired to it via channels.  `instance_id` is forwarded to
+/// the setup commands that support per-instance configuration (Providers,
+/// Launchers, Capabilities); `None` means "new instance".
+fn spawn_setup(
+    ctx: &crate::AppContext,
+    section: &Section,
+    id: &str,
+    instance_id: Option<&str>,
+) -> SetupPane {
     // Channels: task → TUI (prompts), TUI → task (answers), shared output log.
     let (prompt_tx, prompt_rx) =
         std::sync::mpsc::sync_channel::<crate::utils::ui::tui_ui::Prompt>(0);
@@ -1086,10 +1260,14 @@ fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPan
         Arc::clone(&pulls),
     ));
 
-    // Build the pane title before the closure captures section/id.
+    // Build the pane title before the closure captures section/id/instance_id.
     let section = section.clone();
     let id = id.to_string();
-    let title = format!("{} — {}", section.label().to_lowercase(), id);
+    let instance_id: Option<String> = instance_id.map(|s| s.to_string());
+    let title = match &instance_id {
+        Some(iid) => format!("{} — {iid}", section.label().to_lowercase()),
+        None => format!("{} — {id}", section.label().to_lowercase()),
+    };
 
     let mut task_ctx = crate::AppContext {
         config: ctx.config.clone(),
@@ -1099,13 +1277,16 @@ fn spawn_setup(ctx: &crate::AppContext, section: &Section, id: &str) -> SetupPan
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
+            let iid = instance_id.as_deref();
             let result = match &section {
                 Section::Models | Section::Recommend => {
                     ModelCommands::setup(&mut task_ctx, &id).await
                 }
-                Section::Providers => ProviderCommands::setup(&mut task_ctx, &id, None).await,
-                Section::Launchers => LauncherCommands::setup(&mut task_ctx, &id, None).await,
-                Section::Capabilities => CapabilityCommands::setup(&mut task_ctx, &id, None).await,
+                Section::Providers => ProviderCommands::setup(&mut task_ctx, &id, iid).await,
+                Section::Launchers => LauncherCommands::setup(&mut task_ctx, &id, iid).await,
+                Section::Capabilities => {
+                    CapabilityCommands::setup(&mut task_ctx, &id, iid).await
+                }
                 Section::Hardware => Ok(()),
             };
             if let Err(e) = result {
@@ -1215,7 +1396,7 @@ mod tests {
         let mut a = app();
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match action {
-            AppAction::StartSetup(section, id) => {
+            AppAction::StartSetup(section, id, _) => {
                 assert_eq!(section, Section::Models);
                 assert!(!id.is_empty());
             }
@@ -1249,7 +1430,10 @@ mod tests {
         let detail_id = "granite-3.1-8b-instruct".to_string();
         a.mode = AppMode::Detail(detail_id.clone());
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(action, AppAction::StartSetup(Section::Models, detail_id));
+        assert_eq!(
+            action,
+            AppAction::StartSetup(Section::Models, detail_id, None)
+        );
     }
 
     #[test]
@@ -1467,14 +1651,20 @@ mod tests {
         a.section = Section::Providers;
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         match action {
-            AppAction::StartSetup(section, _) => assert_eq!(section, Section::Providers),
-            _ => panic!("expected StartSetup"),
+            AppAction::StartSetup(section, _, _) => assert_eq!(section, Section::Providers),
+            // With no configured instances, Enter either emits StartSetup or
+            // enters InstancePick mode (if instances exist). Either is valid.
+            AppAction::None => {}
+            _ => panic!("unexpected action"),
         }
     }
 
     #[test]
     fn browse_enter_does_not_change_mode() {
+        // Models section: no instance picker — Enter emits StartSetup and mode
+        // stays Browse.
         let mut a = app();
+        a.section = Section::Models;
         a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(a.mode, AppMode::Browse);
     }
@@ -1485,9 +1675,146 @@ mod tests {
         a.section = Section::Providers;
         a.mode = AppMode::Detail("ollama".to_string());
         let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        // No configured instances → directly emits StartSetup (or enters
+        // InstancePick if there were instances, but config is empty here).
+        match action {
+            AppAction::StartSetup(section, id, _) => {
+                assert_eq!(section, Section::Providers);
+                assert_eq!(id, "ollama");
+            }
+            AppAction::None => {
+                // InstancePick mode entered instead — also acceptable.
+                assert!(matches!(a.mode, AppMode::InstancePick { .. }));
+            }
+            _ => panic!("unexpected action"),
+        }
+    }
+
+    // -- InstancePick mode ----------------------------------------------------
+
+    #[test]
+    fn enter_on_provider_with_existing_instance_enters_instance_pick_mode() {
+        let _home = crate::config::TestConfigHome::new();
+        let mut cfg = crate::config::Config::new().unwrap();
+        cfg.insert_provider(
+            "my-ollama",
+            crate::config::ProviderConfig {
+                provider_id: "my-ollama".to_string(),
+                provider_type: "ollama".to_string(),
+                config: serde_json::json!({}),
+            },
+        )
+        .unwrap();
+        let mut a = App::new(crate::AppContext {
+            config: cfg,
+            ui: Arc::new(CaptureUi::default()),
+        });
+        a.section = Section::Providers;
+        // Find the row index for "ollama"
+        let ids = a.filtered_ids("");
+        a.row = ids.iter().position(|id| id == "ollama").unwrap_or(0);
+        a.sync_table_state();
+
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(action, AppAction::None);
+        match &a.mode {
+            AppMode::InstancePick {
+                type_id,
+                instances,
+                cursor,
+            } => {
+                assert_eq!(type_id, "ollama");
+                assert!(instances.contains(&"my-ollama".to_string()));
+                assert_eq!(*cursor, 0);
+            }
+            _ => panic!("expected InstancePick mode, got {:?}", a.mode),
+        }
+    }
+
+    #[test]
+    fn instance_pick_enter_on_new_emits_start_setup_with_none_instance() {
+        let mut a = app();
+        a.mode = AppMode::InstancePick {
+            type_id: "ollama".to_string(),
+            instances: vec!["my-ollama".to_string()],
+            cursor: 0,
+        };
+        a.section = Section::Providers;
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(
             action,
-            AppAction::StartSetup(Section::Providers, "ollama".to_string())
+            AppAction::StartSetup(Section::Providers, "ollama".to_string(), None)
         );
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn instance_pick_enter_on_existing_emits_start_setup_with_instance_id() {
+        let mut a = app();
+        a.mode = AppMode::InstancePick {
+            type_id: "ollama".to_string(),
+            instances: vec!["my-ollama".to_string()],
+            cursor: 1,
+        };
+        a.section = Section::Providers;
+        let action = a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(
+            action,
+            AppAction::StartSetup(
+                Section::Providers,
+                "ollama".to_string(),
+                Some("my-ollama".to_string())
+            )
+        );
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn instance_pick_esc_returns_to_browse() {
+        let mut a = app();
+        a.mode = AppMode::InstancePick {
+            type_id: "ollama".to_string(),
+            instances: vec!["my-ollama".to_string()],
+            cursor: 0,
+        };
+        a.section = Section::Providers;
+        let action = a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(action, AppAction::None);
+        assert_eq!(a.mode, AppMode::Browse);
+    }
+
+    #[test]
+    fn instance_pick_down_increments_cursor() {
+        let mut a = app();
+        a.mode = AppMode::InstancePick {
+            type_id: "ollama".to_string(),
+            instances: vec!["my-ollama".to_string()],
+            cursor: 0,
+        };
+        a.section = Section::Providers;
+        a.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(
+            a.mode,
+            AppMode::InstancePick {
+                type_id: "ollama".to_string(),
+                instances: vec!["my-ollama".to_string()],
+                cursor: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn existing_instances_returns_none_for_models_section() {
+        let a = app();
+        // Models section never uses the picker
+        assert!(a.existing_instances("granite-3.1-8b-instruct").is_none());
+    }
+
+    #[test]
+    fn existing_instances_returns_none_when_no_instances_configured() {
+        let mut a = app();
+        a.section = Section::Providers;
+        // Empty config — no instances for any provider type
+        assert!(a.existing_instances("ollama").is_none());
     }
 }
