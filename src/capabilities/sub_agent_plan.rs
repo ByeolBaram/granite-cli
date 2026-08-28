@@ -94,7 +94,7 @@ REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or
 pub struct PlanSubAgentCapability {
     instance_id: String,
     config: PlanSubAgentCapabilityConfig,
-    configured_model: ConfiguredModel,
+    configured_model: Option<ConfiguredModel>,
     /// Static prompt for the plan sub-agent (placeholder for now; user can
     /// override by editing this field later).
     pub prompt: String,
@@ -116,7 +116,7 @@ impl ConfigConstructable for PlanSubAgentCapability {
     ) -> Self {
         let config: PlanSubAgentCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
+        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config).ok();
 
         // Static prompt
         // TODO: Make prompt a template that should be expanded by the launcher
@@ -183,7 +183,13 @@ impl Capability for PlanSubAgentCapability {
         };
         let model_id = &self.config.model_id;
 
-        let (provider, endpoint, model_name) = self.configured_model.resolve_provider_endpoint(
+        let configured_model = self.configured_model.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Model '{}' is not configured or could not be resolved",
+                model_id
+            )
+        })?;
+        let (provider, endpoint, model_name) = configured_model.resolve_provider_endpoint(
             model_id,
             api_type.clone(),
             ModelFunction::Chat,
@@ -202,7 +208,7 @@ impl Capability for PlanSubAgentCapability {
                 endpoint_path: endpoint.path().to_string(),
                 api_key: provider.api_key().cloned(),
                 verify_ssl: provider.verify_ssl(),
-                context_length: Some(self.configured_model.model.context_length()),
+                context_length: Some(configured_model.model.context_length()),
             },
             known_type: Some(KnownSubAgent::Plan),
         }))
@@ -404,13 +410,13 @@ mod tests {
         PlanSubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: crate::models::ConfiguredModel::for_test(
+            configured_model: Some(crate::models::ConfiguredModel::for_test(
                 Arc::new(TestModel {
                     supported_functions: functions,
                     provider,
                 }),
                 None,
-            ),
+            )),
             prompt: cap.prompt,
             tools: cap.tools,
         }
@@ -444,13 +450,13 @@ mod tests {
         let cap = PlanSubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: crate::models::ConfiguredModel::for_test(
+            configured_model: Some(crate::models::ConfiguredModel::for_test(
                 Arc::new(TestModel {
                     supported_functions: vec![ModelFunction::Chat],
                     provider: ok_provider(),
                 }),
                 None,
-            ),
+            )),
             prompt: cap.prompt,
             tools: cap.tools,
         };

@@ -41,7 +41,7 @@ pub struct SubAgentCapabilityConfig {
 pub struct SubAgentCapability {
     instance_id: String,
     config: SubAgentCapabilityConfig,
-    configured_model: ConfiguredModel,
+    configured_model: Option<ConfiguredModel>,
 }
 
 impl ConfigConstructable for SubAgentCapability {
@@ -58,7 +58,7 @@ impl ConfigConstructable for SubAgentCapability {
     ) -> Self {
         let config: SubAgentCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
+        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config).ok();
         Self {
             instance_id: instance_id.to_string(),
             config,
@@ -109,7 +109,13 @@ impl Capability for SubAgentCapability {
         };
         let model_id = &self.config.model_id;
 
-        let (provider, endpoint, model_name) = self.configured_model.resolve_provider_endpoint(
+        let configured_model = self.configured_model.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Model '{}' is not configured or could not be resolved",
+                model_id
+            )
+        })?;
+        let (provider, endpoint, model_name) = configured_model.resolve_provider_endpoint(
             model_id,
             api_type.clone(),
             ModelFunction::Chat,
@@ -128,7 +134,7 @@ impl Capability for SubAgentCapability {
                 endpoint_path: endpoint.path().to_string(),
                 api_key: provider.api_key().cloned(),
                 verify_ssl: provider.verify_ssl(),
-                context_length: Some(self.configured_model.model.context_length()),
+                context_length: Some(configured_model.model.context_length()),
             },
             known_type: None,
         }))
@@ -331,13 +337,13 @@ mod tests {
         SubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: crate::models::ConfiguredModel::for_test(
+            configured_model: Some(crate::models::ConfiguredModel::for_test(
                 Arc::new(TestModel {
                     supported_functions: functions,
                     provider,
                 }),
                 None,
-            ),
+            )),
         }
     }
 
@@ -371,13 +377,13 @@ mod tests {
         let cap = SubAgentCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: crate::models::ConfiguredModel::for_test(
+            configured_model: Some(crate::models::ConfiguredModel::for_test(
                 Arc::new(TestModel {
                     supported_functions: vec![ModelFunction::Chat],
                     provider: ok_provider(),
                 }),
                 None,
-            ),
+            )),
         };
 
         let binding = cap.bind(request(ApiType::Anthropic)).await.unwrap();

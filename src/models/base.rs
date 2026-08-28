@@ -245,10 +245,8 @@ impl ConfiguredModel {
     /// computed first (rather than after, as it used to be) so it can be
     /// passed into `take`, which needs it to compute the same provider alias
     /// `resolve_provider_endpoint` will use later as the route's dispatch
-    /// key. Panics if the model isn't found/constructible -- capabilities'
-    /// `ConfigConstructable::new` is infallible by trait signature, so this
-    /// preserves that contract exactly.
-    pub fn resolve(model_id: &str, global_config: &crate::config::Config) -> Self {
+    /// key. Returns an error if the model isn't found or can't be constructed.
+    pub fn resolve(model_id: &str, global_config: &crate::config::Config) -> anyhow::Result<Self> {
         let configured_variant = global_config
             .models
             .get(model_id)
@@ -256,13 +254,15 @@ impl ConfiguredModel {
         let mut source = crate::models::ModelSource::from_config(global_config);
         let model = source
             .take(model_id, configured_variant.as_deref())
-            .unwrap_or_else(|| {
-                panic!("Configured model '{model_id}' not found or could not be constructed")
-            });
-        Self {
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Configured model '{model_id}' not found or could not be constructed"
+                )
+            })?;
+        Ok(Self {
             model,
             configured_variant,
-        }
+        })
     }
 
     /// Test-only escape hatch so capability unit tests can inject a fake
