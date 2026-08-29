@@ -1,6 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 #
-# build-granite-cli.sh — build granite-cli under Termux on Android (aarch64).
+# build-termux.sh — build under Termux on Android (aarch64).
+#
+# Passes all arguments through to cargo while setting up Termux-specific
+# environment variables (system OpenSSL, gnu17 C standard, etc.).
 #
 # Works around two Termux-specific build failures:
 #   1. openssl-sys falling back to vendoring and compiling OpenSSL from source,
@@ -11,35 +14,35 @@
 #      Fix: build C deps as gnu17 with the missing headers force-included.
 #
 # Usage:
-#   ./build-granite-cli.sh              # release build in the current directory
-#   ./build-granite-cli.sh --debug      # debug build
-#   ./build-granite-cli.sh /path/to/repo
-#   source ./build-granite-cli.sh --env-only   # just export, don't build
+#   ./build-termux.sh                 # passthrough: cargo build --release
+#   ./build-termux.sh build           # passthrough: cargo build
+#   ./build-termux.sh build --debug   # passthrough: cargo build --debug
+#   ./build-termux.sh run --example foo  # passthrough: cargo run --example foo
+#   ./build-termux.sh --env-only      # just export, don't build
 #
 set -euo pipefail
 
 # --- argument parsing -------------------------------------------------------
 
 PROJECT_DIR="$PWD"
-CARGO_PROFILE_ARGS=(--release)
 ENV_ONLY=0
+CARGO_ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
-        --debug)    CARGO_PROFILE_ARGS=() ;;
-        --release)  CARGO_PROFILE_ARGS=(--release) ;;
         --env-only) ENV_ONLY=1 ;;
         -h|--help)
-            sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
-        -*)
-            echo "unknown option: $arg" >&2
-            exit 2
-            ;;
-        *)          PROJECT_DIR="$arg" ;;
+        *) CARGO_ARGS+=("$arg") ;;
     esac
 done
+
+# Default to "build --release" if no cargo subcommand was specified.
+if [ ${#CARGO_ARGS[@]} -eq 0 ]; then
+    CARGO_ARGS=(build --release)
+fi
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m warn:\033[0m %s\n' "$*" >&2; }
@@ -122,9 +125,5 @@ cd "$PROJECT_DIR"
 [ -f Cargo.toml ] || die "No Cargo.toml in $PROJECT_DIR"
 
 log "Building in $PROJECT_DIR"
-cargo build "${CARGO_PROFILE_ARGS[@]}"
-
-PROFILE_DIR="debug"
-[ ${#CARGO_PROFILE_ARGS[@]} -gt 0 ] && PROFILE_DIR="release"
-log "Done. Binaries are in $PROJECT_DIR/target/$PROFILE_DIR/"
+cargo "${CARGO_ARGS[@]}"
 
