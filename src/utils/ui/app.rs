@@ -243,10 +243,23 @@ impl App {
                         self.mode = AppMode::Detail(id);
                     }
                 }
-                KeyCode::Char('f') => {
-                    if let Some(idx) = Self::configured_only_idx(&self.section) {
-                        self.configured_only[idx] = !self.configured_only[idx];
-                        // Clamp cursor to the new (possibly shorter) list.
+                KeyCode::Char('s') => {
+                    // Show catalog (only when configured_only is true)
+                    if let Some(idx) = Self::configured_only_idx(&self.section)
+                        && self.configured_only[idx]
+                    {
+                        self.configured_only[idx] = false;
+                        let max = self.row_count().saturating_sub(1);
+                        self.row = self.row.min(max);
+                        self.sync_table_state();
+                    }
+                }
+                KeyCode::Char('h') => {
+                    // Hide catalog (only when configured_only is false)
+                    if let Some(idx) = Self::configured_only_idx(&self.section)
+                        && !self.configured_only[idx]
+                    {
+                        self.configured_only[idx] = true;
                         let max = self.row_count().saturating_sub(1);
                         self.row = self.row.min(max);
                         self.sync_table_state();
@@ -663,9 +676,9 @@ impl App {
                     .header(header)
                     .block(Block::default().borders(Borders::ALL).title(
                         if self.configured_only[0] {
-                            " Models [f: show all] "
+                            " Models [s: show catalog] "
                         } else {
-                            " Models [f: configured only] "
+                            " Models [h: hide catalog] "
                         },
                     ));
 
@@ -733,10 +746,10 @@ impl App {
                     )
                     .header(header)
                     .block(Block::default().borders(Borders::ALL).title(
-                        if self.configured_only[0] {
-                            " Providers [f: show all] "
+                        if self.configured_only[1] {
+                            " Providers [s: show catalog] "
                         } else {
-                            " Providers [f: configured only] "
+                            " Providers [h: hide catalog] "
                         },
                     ));
 
@@ -807,10 +820,10 @@ impl App {
                     )
                     .header(header)
                     .block(Block::default().borders(Borders::ALL).title(
-                        if self.configured_only[1] {
-                            " Launchers [f: show all] "
+                        if self.configured_only[2] {
+                            " Launchers [s: show catalog] "
                         } else {
-                            " Launchers [f: configured only] "
+                            " Launchers [h: hide catalog] "
                         },
                     ));
 
@@ -881,10 +894,10 @@ impl App {
                     )
                     .header(header)
                     .block(Block::default().borders(Borders::ALL).title(
-                        if self.configured_only[2] {
-                            " Capabilities [f: show all] "
+                        if self.configured_only[3] {
+                            " Capabilities [s: show catalog] "
                         } else {
-                            " Capabilities [f: configured only] "
+                            " Capabilities [h: hide catalog] "
                         },
                     ));
 
@@ -1295,7 +1308,14 @@ impl App {
                     "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
                 }
                 AppMode::Browse if Self::configured_only_idx(&self.section).is_some() => {
-                    "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [f] Filter  [q] Quit  ✓ = configured"
+                    let hint = if self.configured_only
+                        [Self::configured_only_idx(&self.section).unwrap()]
+                    {
+                        "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [s] Show catalog  [q] Quit  ✓ = configured"
+                    } else {
+                        "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [h] Hide catalog  [q] Quit  ✓ = configured"
+                    };
+                    hint
                 }
                 AppMode::Browse => {
                     "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [q] Quit  ✓ = configured"
