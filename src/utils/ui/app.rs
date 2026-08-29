@@ -1308,14 +1308,11 @@ impl App {
                     "[↑↓/jk] Scroll  [Tab] Section  [q] Quit"
                 }
                 AppMode::Browse if Self::configured_only_idx(&self.section).is_some() => {
-                    let hint = if self.configured_only
-                        [Self::configured_only_idx(&self.section).unwrap()]
-                    {
+                    if self.configured_only[Self::configured_only_idx(&self.section).unwrap()] {
                         "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [s] Show catalog  [q] Quit  ✓ = configured"
                     } else {
                         "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [h] Hide catalog  [q] Quit  ✓ = configured"
-                    };
-                    hint
+                    }
                 }
                 AppMode::Browse => {
                     "[↑↓/jk] Navigate  [Tab] Section  [Enter] Detail/Setup  [/] Search  [q] Quit  ✓ = configured"
