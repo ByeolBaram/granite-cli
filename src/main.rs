@@ -30,6 +30,7 @@ extern crate paste;
 #[derive(Parser, Debug)]
 #[command(name = "granite-cli")]
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
+
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -545,8 +546,7 @@ async fn main() {
             .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
-            let _ctx =
-                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
+            // Version info is simple text — no UI backend or config needed.
             println!("{}", version::version_string());
             Ok(())
         }
