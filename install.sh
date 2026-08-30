@@ -394,6 +394,12 @@ install_from_cargo() {
         return 1
     fi
 
+    # Set up Termux-specific build environment if applicable
+    if is_termux; then
+        info "Setting up Termux build environment…"
+        setup_termux_build_env
+    fi
+
     local cargo_args=("--locked")
     if [[ -n "$VERSION" ]]; then
         cargo_args+=("--version" "$VERSION")
@@ -401,7 +407,10 @@ install_from_cargo() {
 
     info "Running: cargo install granite-cli ${cargo_args[*]}"
 
-    CARGO_INSTALL_ROOT="$INSTALL_DIR" cargo install "${BIN_NAME}" "${cargo_args[@]}" 2>&1
+    CARGO_INSTALL_ROOT="$INSTALL_DIR" cargo install "${BIN_NAME}" "${cargo_args[@]}" 2>&1 || {
+        error "cargo install failed"
+        return 1
+    }
 
     ok "Installed via cargo install"
     return 0
@@ -525,14 +534,16 @@ main() {
     # If no existing install, the function returns 1 — we continue to install.
     check_existing_install || true
 
-    # --- Attempt 1: prebuilt binary ---
-    if install_from_release; then
-        echo "Installation complete!"
-        exit 0
-    fi
+    # --- Attempt 1: prebuilt binary (skip on Termux — glibc binaries incompatible with Bionic) ---
+    if ! is_termux; then
+        if install_from_release; then
+            echo "Installation complete!"
+            exit 0
+        fi
 
-    warn "Prebuilt binary not available for ${OS}/${ARCH}."
-    echo ""
+        warn "Prebuilt binary not available for ${OS}/${ARCH}."
+        echo ""
+    fi
 
     # --- Attempt 2: cargo install ---
     if install_from_cargo; then
