@@ -28,8 +28,29 @@ error()   { printf "${RED}✗ %s${NC}\n" "$*" >&2; }
 
 is_ci() {
     # Non-interactive mode: skip all prompts, auto-update if newer
-    [[ -n "$CI" || -n "$NONINTERACTIVE" || -n "$CI_MODE" || -n "$GITHUB_ACTIONS" || -n "$BUILDKITE" || -n "$GITLAB_CI" || -n "$CIRCLECI" || -n "$TRAVIS" || -n "$JENKINS_URL" ]] || return 1
+    [[ -n "$CI" || -n "$NONINTERACTIVE" ]] || return 1
     return 0
+}
+
+get_latest_release_version() {
+    local tags_url latest_tag
+    tags_url="https://api.github.com/repos/${OWNER}/${REPO}/releases/latest"
+
+    if command -v curl &>/dev/null; then
+        latest_tag="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github.v3+json" "$tags_url" 2>/dev/null \
+                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+    elif command -v wget &>/dev/null; then
+        latest_tag="$(wget -qO- --timeout=15 "$tags_url" 2>/dev/null \
+                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+    fi
+
+    if [[ -z "$latest_tag" ]]; then
+        error "Could not fetch latest release from GitHub API."
+        error "Specify GRANITE_CLI_VERSION=<tag> and try again."
+        exit 1
+    fi
+
+    echo "${latest_tag}"
 }
 
 # ── configuration ─────────────────────────────────────────────────────────────
@@ -37,7 +58,8 @@ readonly OWNER="ibm-granite-community"
 readonly REPO="granite-cli"
 readonly BIN_NAME="granite-cli"
 
-VERSION="${GRANITE_CLI_VERSION:-}"
+VERSION="${GRANITE_CLI_VERSION:-$(get_latest_release_version)}"
+VERSION="v$(echo ${VERSION} | sed 's,^v,,')"
 PREFERRED_INSTALL_DIR="${GRANITE_CLI_INSTALL_DIR:-}"
 VERBOSE="${VERBOSE:-}"
 CI="${CI:-}"
@@ -106,7 +128,6 @@ get_release_url() {
     if [[ -n "$VERSION" ]]; then
         url="https://github.com/${OWNER}/${REPO}/releases/download/${VERSION}/"
     else
-        VERSION="$(get_latest_release_version)"
         url="https://github.com/${OWNER}/${REPO}/releases/download/${VERSION}/"
     fi
     echo "$url"
@@ -137,27 +158,6 @@ get_asset_url() {
     # Add .exe extension for Windows assets
     [[ "$OS" == *windows* ]] && asset_name="${asset_name}.exe"
     echo "${url}${asset_name}"
-}
-
-get_latest_release_version() {
-    local tags_url latest_tag
-    tags_url="https://api.github.com/repos/${OWNER}/${REPO}/releases/latest"
-
-    if command -v curl &>/dev/null; then
-        latest_tag="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github.v3+json" "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
-    elif command -v wget &>/dev/null; then
-        latest_tag="$(wget -qO- --timeout=15 "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
-    fi
-
-    if [[ -z "$latest_tag" ]]; then
-        error "Could not fetch latest release from GitHub API."
-        error "Specify GRANITE_CLI_VERSION=<tag> and try again."
-        exit 1
-    fi
-
-    echo "${latest_tag}"
 }
 
 # ── installation directory selection ─────────────────────────────────────────
@@ -315,9 +315,17 @@ check_existing_install() {
     fi
 
     # Interactive mode: ask user
-    printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} "
-    local response
-    read -r response
+    # Use /dev/tty to ensure we read from the terminal even if stdin is redirected
+    if [ -e /dev/tty ]; then
+        printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} " >/dev/tty 2>/dev/null || true
+        if ! read -r response </dev/tty 2>/dev/null; then
+            info "Could not read response; skipping update."
+            exit 0
+        fi
+    else
+        printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} "
+        read -r response
+    fi
     case "$response" in
         [yY][eE][sS]|[yY]|'')
             ok "Updating to version ${latest_version}."
