@@ -113,10 +113,21 @@ get_release_url() {
 }
 
 get_asset_url() {
-    local url bin_name archive_name
+    local url
     url="$(get_release_url)"
-    archive_name="$(get_archive_name)"
-    echo "${url}${archive_name}"
+    # Release assets are named: granite-cli-{os}-{arch}
+    # (e.g., granite-cli-linux-x86_64, granite-cli-macos-aarch64)
+    local os_name arch_name
+    case "$OS" in
+        *linux*)  os_name="linux" ;;
+        *darwin*) os_name="macos" ;;
+        *windows*) os_name="windows" ;;
+        *)        os_name="$OS" ;;
+    esac
+    local asset_name="granite-cli-${os_name}-${ARCH}"
+    # Add .exe extension for Windows assets
+    [[ "$OS" == *windows* ]] && asset_name="${asset_name}.exe"
+    echo "${url}${asset_name}"
 }
 
 get_latest_release_version() {
@@ -316,20 +327,20 @@ check_existing_install() {
 
 # ── prebuilt binary install ──────────────────────────────────────────────────
 install_from_release() {
-    local asset_url bin_name tmp_dir archive
+    local asset_url bin_name tmp_dir
 
     asset_url="$(get_asset_url)"
     bin_name="$(get_binary_name)"
     tmp_dir="$(mktemp -d)"
-    archive="${tmp_dir}/archive"
+    local dest_bin="${tmp_dir}/${bin_name}"
 
     info "Downloading release from: ${asset_url}"
 
     if command -v curl &>/dev/null; then
-        curl -fsSL --progress-bar -o "${archive}" "${asset_url}" \
+        curl -fsSL --progress-bar -o "${dest_bin}" "${asset_url}" \
             || { error "Download failed"; cleanup_tmp "$tmp_dir"; return 1; }
     elif command -v wget &>/dev/null; then
-        wget -q --show-progress -O "${archive}" "${asset_url}" \
+        wget -q --show-progress -O "${dest_bin}" "${asset_url}" \
             || { error "Download failed"; cleanup_tmp "$tmp_dir"; return 1; }
     else
         error "Neither curl nor wget found. Cannot download binary."
@@ -337,39 +348,16 @@ install_from_release() {
         return 1
     fi
 
-    info "Extracting binary…"
-
-    case "$OS" in
-        *windows*)
-            unzip -o "${archive}" -d "${tmp_dir}" || {
-                error "Failed to extract archive"
-                cleanup_tmp "$tmp_dir"
-                return 1
-            }
-            ;;
-        *)
-            tar -xzf "${archive}" -C "${tmp_dir}" || {
-                error "Failed to extract archive"
-                cleanup_tmp "$tmp_dir"
-                return 1
-            }
-            ;;
-    esac
-
-    local src_bin="${tmp_dir}/${bin_name}"
-    if [[ ! -f "$src_bin" ]]; then
-        # Try to find the binary in subdirectories
-        src_bin="$(find "${tmp_dir}" -maxdepth 2 -name "${bin_name}" -type f 2>/dev/null | head -n1)"
-        if [[ -z "$src_bin" ]]; then
-            error "Could not find binary '${bin_name}' in archive"
-            cleanup_tmp "$tmp_dir"
-            return 1
-        fi
+    # Verify the download succeeded (release binaries are non-empty executables)
+    if [[ ! -s "$dest_bin" ]]; then
+        error "Downloaded file is empty — asset may not exist for this platform"
+        cleanup_tmp "$tmp_dir"
+        return 1
     fi
 
     # Ensure install directory exists and copy binary
     mkdir -p "$INSTALL_DIR"
-    cp -f "${src_bin}" "${INSTALL_DIR}/${bin_name}"
+    cp -f "${dest_bin}" "${INSTALL_DIR}/${bin_name}"
     chmod +x "${INSTALL_DIR}/${bin_name}"
 
     cleanup_tmp "$tmp_dir"
