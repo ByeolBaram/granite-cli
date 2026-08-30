@@ -30,7 +30,6 @@ extern crate paste;
 #[derive(Parser, Debug)]
 #[command(name = "granite-cli")]
 #[command(about = "Universal Model Adapter with Capabilities", long_about = None)]
-
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
