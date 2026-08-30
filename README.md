@@ -6,16 +6,52 @@ A command-line tool for discovering, configuring, and launching Granite-powered 
 
 ## Quick Start
 
+### Install with the one-liner script
+
 ```sh
-# Clone and build
-git clone https://github.com/ibm-granite/granite-cli.git
+curl -fsSL https://raw.githubusercontent.com/IBM-granite-community/granite-cli/main/install.sh | bash
+```
+
+This script automatically:
+- Downloads the latest prebuilt binary (when available for your platform)
+- Falls back to `cargo install` if no binary exists
+- Builds from source as a last resort
+
+**Environment variables:**
+
+| Variable | Purpose |
+|---|---|
+| `GRANITE_CLI_VERSION` | Release tag to install (default: latest release) |
+| `GRANITE_CLI_INSTALL_DIR` | Custom installation directory |
+| `VERBOSE` | Set to `1` for verbose output |
+| `CI` or `NONINTERACTIVE` | Set to `1` for non-interactive / CI mode |
+
+### Install from source
+
+```sh
+git clone https://github.com/IBM-granite-community/granite-cli.git
 cd granite-cli
-cargo build --release
-
-# Install to ~/.cargo/bin
 cargo install --path .
+```
 
-# Verify installation
+The binary will be placed in `~/.cargo/bin` (or `$CARGO_INSTALL_ROOT/bin` if set).
+
+### Install on Termux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/IBM-granite-community/granite-cli/main/install.sh | bash
+```
+
+On Termux the script will:
+- Use `~/bin` as the default install directory (already on PATH)
+- Detect the Termux environment and automatically install required packages (`openssl`, `pkg-config`, `clang`, `perl`, `binutils`)
+- Configure the build to use Termux's system OpenSSL and gnu17 C standard
+
+If building from source is required, the script handles all Termux-specific build configuration automatically.
+
+### Verify installation
+
+```sh
 granite-cli --help
 ```
 

@@ -545,8 +545,7 @@ async fn main() {
             .map_err(|e| ctx.ui.error(&e.to_string()))
         }
         Some(Commands::Version) => {
-            let _ctx =
-                construct_context("warning", &log_level, &log_filters, log_json, log_thread_id);
+            // Version info is simple text — no UI backend or config needed.
             println!("{}", version::version_string());
             Ok(())
         }
