@@ -315,9 +315,17 @@ check_existing_install() {
     fi
 
     # Interactive mode: ask user
-    printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} "
-    local response
-    read -r response
+    # Use /dev/tty to ensure we read from the terminal even if stdin is redirected
+    if [ -e /dev/tty ]; then
+        printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} " >/dev/tty 2>/dev/null || true
+        if ! read -r response </dev/tty 2>/dev/null; then
+            info "Could not read response; skipping update."
+            exit 0
+        fi
+    else
+        printf "\n${YELLOW}Do you want to update to version ${latest_version}? [Y/n]${NC} "
+        read -r response
+    fi
     case "$response" in
         [yY][eE][sS]|[yY]|'')
             ok "Updating to version ${latest_version}."
