@@ -117,12 +117,21 @@ get_asset_url() {
     url="$(get_release_url)"
     # Release assets are named: granite-cli-{os}-{arch}
     # (e.g., granite-cli-linux-x86_64, granite-cli-macos-aarch64)
-    local os_name arch_name
+    local os_name
     case "$OS" in
         *linux*)  os_name="linux" ;;
         *darwin*) os_name="macos" ;;
         *windows*) os_name="windows" ;;
-        *)        os_name="$OS" ;;
+        unknown)
+            # detect_os() returns "unknown" for Linux; fall back to uname
+            case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+                linux*) os_name="linux" ;;
+                darwin*) os_name="macos" ;;
+                cygwin*|msys*|mingw*) os_name="windows" ;;
+                *) os_name="$OS" ;;
+            esac
+            ;;
+        *) os_name="$OS" ;;
     esac
     local asset_name="granite-cli-${os_name}-${ARCH}"
     # Add .exe extension for Windows assets
