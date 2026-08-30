@@ -28,7 +28,7 @@ error()   { printf "${RED}✗ %s${NC}\n" "$*" >&2; }
 
 is_ci() {
     # Non-interactive mode: skip all prompts, auto-update if newer
-    [[ -n "$CI" || -n "$NONINTERACTIVE" || -n "$CI_MODE" || -n "$GITHUB_ACTIONS" || -n "$BUILDKITE" || -n "$GITLAB_CI" || -n "$CIRCLECI" || -n "$TRAVIS" || -n "$JENKINS_URL" ]] || return 1
+    [[ -n "$CI" || -n "$NONINTERACTIVE" ]] || return 1
     return 0
 }
 
