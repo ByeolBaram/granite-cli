@@ -6,7 +6,7 @@ use crate::capabilities::base::KnownSubAgent;
 use crate::capabilities::base::ToolName;
 use crate::declare_sub_agent_basic;
 
-const DESCRIPTION: &str = "Use this sub-agent to accomplish a narrowly scoped coding task. The task should have clear file references, architectural guidance, and outcome descriptions. The task should not include modifying the local development environment.";
+const DESCRIPTION: &str = "Use this sub-agent to accomplish a narrowly scoped coding task. The task description must have clear file references, architectural guidance, and outcome descriptions. The task should not include modifying the local development environment.";
 const PROMPT: &str = "You are a coding specialist. You excel at performing development tasks precisely. You require fully scoped tasks and execute them efficiently as specified.
 
 === CRITICAL: LOCAL-ONLY MODE ===
