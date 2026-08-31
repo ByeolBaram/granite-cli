@@ -38,10 +38,10 @@ get_latest_release_version() {
 
     if command -v curl &>/dev/null; then
         latest_tag="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github.v3+json" "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+                      | awk -F'"' '/tag_name/ {print $4}')"
     elif command -v wget &>/dev/null; then
         latest_tag="$(wget -qO- --timeout=15 "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+                      | awk -F'"' '/tag_name/ {print $4}')"
     fi
 
     if [[ -z "$latest_tag" ]]; then
@@ -236,7 +236,7 @@ get_current_version() {
     output="$(${BIN_NAME} version 2>&1)" || true
     # Extract semver: "0.1.0+dev (commit: abc123)" -> "0.1.0"
     # (the old multi-flag fallback was removed — only `granite-cli version` works now)
-    version="$(echo "$output" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+    version="$(echo "$output" | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) {print $i; exit}}')"
     if [[ -n "$version" ]]; then
         echo "$version"
         return 0
