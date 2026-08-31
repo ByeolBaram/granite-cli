@@ -38,10 +38,10 @@ get_latest_release_version() {
 
     if command -v curl &>/dev/null; then
         latest_tag="$(curl -fsSL --max-time 15 -H "Accept: application/vnd.github.v3+json" "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+                      | awk -F'"' '/tag_name/ {print $4}')"
     elif command -v wget &>/dev/null; then
         latest_tag="$(wget -qO- --timeout=15 "$tags_url" 2>/dev/null \
-                      | grep -oP '"tag_name":\s*"\K[^"]+' || true)"
+                      | awk -F'"' '/tag_name/ {print $4}')"
     fi
 
     if [[ -z "$latest_tag" ]]; then
