@@ -281,8 +281,10 @@ mod tests {
             "granite-docling-258M".to_string(),
             ModelConfig {
                 model_id: "granite-docling-258M".to_string(),
+                model_type: "granite-docling-258M".to_string(),
                 provider_id: None,
                 variant: None,
+                config: serde_json::json!({}),
             },
         );
         let cap = DoclingMCPCapability::new(
