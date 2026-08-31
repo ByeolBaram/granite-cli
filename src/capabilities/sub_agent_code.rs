@@ -209,6 +209,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -247,6 +249,8 @@ mod tests {
             "granite-3.1-8b-instruct".to_string(),
             ModelConfig {
                 model_id: "granite-3.1-8b-instruct".to_string(),
+                model_type: "granite-3.1-8b-instruct".to_string(),
+                config: serde_json::json!({}),
                 provider_id: None,
                 variant: None,
             },
@@ -281,7 +285,13 @@ mod tests {
         assert_eq!(binding.prompt, PROMPT.to_string());
         assert_eq!(
             binding.tools,
-            vec![ToolName::FileRead, ToolName::Search, ToolName::Shell,]
+            vec![
+                ToolName::FileRead,
+                ToolName::Search,
+                ToolName::Shell,
+                ToolName::FileWrite,
+                ToolName::FileEdit,
+            ]
         );
         assert_eq!(binding.model.base_url, "http://localhost:11434");
         assert_eq!(binding.model.model_name, "granite-3.1-8b-instruct");
