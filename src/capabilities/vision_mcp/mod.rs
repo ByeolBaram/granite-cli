@@ -80,7 +80,7 @@ impl Default for VisionMCPCapabilityConfig {
 pub struct VisionMCPCapability {
     instance_id: String,
     config: VisionMCPCapabilityConfig,
-    configured_model: Option<ConfiguredModel>,
+    configured_model: ConfiguredModel,
     /// The in-process Streamable HTTP server started by `bind()`. `None`
     /// before `bind()` runs.
     http_server: Mutex<Option<SubServer>>,
@@ -100,7 +100,7 @@ impl ConfigConstructable for VisionMCPCapability {
     ) -> Self {
         let config: VisionMCPCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config).ok();
+        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
         Self {
             instance_id: instance_id.to_string(),
             config,
@@ -166,10 +166,7 @@ impl Capability for VisionMCPCapability {
         // support ImageUnderstanding, but the endpoint is looked up via
         // Chat, since that's the endpoint that actually serves vision
         // requests.
-        let configured_model = self.configured_model.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("Model '{model_id}' is not configured or could not be resolved")
-        })?;
-        let (provider, endpoint, model_name) = configured_model.resolve_provider_endpoint(
+        let (provider, endpoint, model_name) = self.configured_model.resolve_provider_endpoint(
             model_id,
             ApiType::OpenAI,
             ModelFunction::ImageUnderstanding,
@@ -409,13 +406,13 @@ mod tests {
         VisionMCPCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: Some(ConfiguredModel::for_test(
+            configured_model: ConfiguredModel::for_test(
                 Arc::new(TestVisionModel {
                     supported_functions: functions,
                     provider,
                 }),
                 None,
-            )),
+            ),
             http_server: Mutex::new(None),
         }
     }

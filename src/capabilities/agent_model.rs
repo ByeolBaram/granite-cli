@@ -28,7 +28,7 @@ pub struct AgentModelCapabilityConfig {
 pub struct AgentModelCapability {
     instance_id: String,
     config: AgentModelCapabilityConfig,
-    configured_model: Option<ConfiguredModel>,
+    configured_model: ConfiguredModel,
 }
 
 impl ConfigConstructable for AgentModelCapability {
@@ -50,7 +50,7 @@ impl ConfigConstructable for AgentModelCapability {
     ) -> Self {
         let config: AgentModelCapabilityConfig =
             serde_json::from_value(cfg.clone()).unwrap_or_default();
-        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config).ok();
+        let configured_model = ConfiguredModel::resolve(&config.model_id, global_config);
         Self {
             instance_id: instance_id.to_string(),
             config,
@@ -108,10 +108,7 @@ impl Capability for AgentModelCapability {
         };
         let model_id = &self.config.model_id;
 
-        let configured_model = self.configured_model.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("Model '{model_id}' is not configured or could not be resolved")
-        })?;
-        let (provider, endpoint, model_name) = configured_model.resolve_provider_endpoint(
+        let (provider, endpoint, model_name) = self.configured_model.resolve_provider_endpoint(
             model_id,
             api_type.clone(),
             ModelFunction::Chat,
@@ -126,7 +123,7 @@ impl Capability for AgentModelCapability {
             endpoint_path: endpoint.path().to_string(),
             api_key: provider.api_key().cloned(),
             verify_ssl: provider.verify_ssl(),
-            context_length: Some(configured_model.model.context_length()),
+            context_length: Some(self.configured_model.model.context_length()),
         }))
     }
 }
@@ -285,14 +282,14 @@ mod tests {
         AgentModelCapability {
             instance_id: cap.instance_id,
             config: cap.config,
-            configured_model: Some(crate::models::ConfiguredModel::for_test(
+            configured_model: crate::models::ConfiguredModel::for_test(
                 Arc::new(TestModelWithVariants {
                     supported_functions: functions,
                     provider,
                     variants,
                 }),
                 variant_str,
-            )),
+            ),
         }
     }
 
