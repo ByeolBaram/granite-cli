@@ -183,6 +183,12 @@ get_asset_url() {
 
 # ── installation directory selection ─────────────────────────────────────────
 user_bin_dir() {
+    # WSL runs Linux (detectable via /proc/version) so use Linux paths.
+    # Native Windows uses ~/AppData/Local/bin. WSL users expect ~/.local/bin.
+    if is_wsl; then
+        echo "${HOME}/.local/bin"
+        return
+    fi
     case "$OS" in
         *windows*) echo "${HOME}/AppData/Local/bin" ;;
         *)
@@ -196,6 +202,13 @@ user_bin_dir() {
 }
 
 system_bin_dir() {
+    # WSL runs Linux (detectable via /proc/version) so use Linux paths.
+    # Native Windows uses C:/Program Files (requires admin). WSL users are in
+    # a Linux environment and expect /usr/local/bin or ~/.local/bin.
+    if is_wsl; then
+        echo "/usr/local/bin"
+        return
+    fi
     case "$OS" in
         *windows*) echo "C:/Program Files/${BIN_NAME}" ;;
         *)
@@ -253,8 +266,9 @@ info "Install directory: ${INSTALL_DIR}"
 
 # ── version checking ────────────────────────────────────────────────────────
 get_current_version() {
-    local output version
-    output="$(${BIN_NAME} version 2>&1)" || true
+    local bin_name output version
+    bin_name="$(get_binary_name)"
+    output="$(${bin_name} version 2>&1)" || true
     # Extract semver: "0.1.0+dev (commit: abc123)" -> "0.1.0"
     # (the old multi-flag fallback was removed — only `granite-cli version` works now)
     version="$(echo "$output" | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+$/) {print $i; exit}}')"
@@ -290,10 +304,11 @@ compare_versions() {
 }
 
 check_existing_install() {
+    local bin_name="$(get_binary_name)"
     local current_version latest_version
 
-    # Only check if granite-cli is on PATH
-    if ! command -v "${BIN_NAME}" &>/dev/null; then
+    # Only check if the (platform-appropriate) binary is on PATH
+    if ! command -v "${bin_name}" &>/dev/null; then
         return 1
     fi
 
@@ -304,7 +319,7 @@ check_existing_install() {
 
     latest_version="$(echo "$VERSION" | tr -d 'v')"
 
-    info "Found existing ${BIN_NAME} at $(command -v "${BIN_NAME}") (version ${current_version})"
+    info "Found existing ${bin_name} at $(command -v "${bin_name}") (version ${current_version})"
 
     if [[ "$current_version" == "$latest_version" ]]; then
         ok "Already up to date (version ${current_version}). Nothing to do."
