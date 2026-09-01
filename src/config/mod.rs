@@ -266,11 +266,15 @@ impl Config {
     }
 
     fn id_to_filename(id: &str) -> String {
-        id.replace(std::path::MAIN_SEPARATOR, PATH_DELIM)
+        // NOTE: This replaces huggingface-style '/' delimiters which are not
+        // platform-specific
+        id.replace('/', PATH_DELIM)
     }
 
     fn id_from_filename(id: &str) -> String {
-        id.replace(PATH_DELIM, std::path::MAIN_SEPARATOR_STR)
+        // NOTE: This replaces huggingface-style '/' delimiters which are not
+        // platform-specific
+        id.replace(PATH_DELIM, "/")
     }
 
     fn save(&self) -> Result<()> {
@@ -280,24 +284,28 @@ impl Config {
         // Save individual model files
         for (id, model) in &self.models {
             let path = Self::models_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
+            alog_channel!(MessageLevel::Debug3, "Saving to {:#?}", path);
             Self::save_yaml_to_file(&path, model)?;
         }
 
         // Save individual provider files
         for (id, provider) in &self.providers {
             let path = Self::providers_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
+            alog_channel!(MessageLevel::Debug3, "Saving to {:#?}", path);
             Self::save_yaml_to_file(&path, provider)?;
         }
 
         // Save individual capability files
         for (id, capability) in &self.capabilities {
             let path = Self::capabilities_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
+            alog_channel!(MessageLevel::Debug3, "Saving to {:#?}", path);
             Self::save_yaml_to_file(&path, capability)?;
         }
 
         // Save individual launcher files
         for (id, launcher) in &self.launchers {
             let path = Self::launchers_dir()?.join(format!("{}.yaml", Self::id_to_filename(id)));
+            alog_channel!(MessageLevel::Debug3, "Saving to {:#?}", path);
             Self::save_yaml_to_file(&path, launcher)?;
         }
 
@@ -318,7 +326,7 @@ impl Config {
     pub fn remove_model(&mut self, id: &str) -> Result<()> {
         self.models.remove(id);
         let path = Self::models_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
+            let p = d.join(format!("{}.yaml", Self::id_to_filename(id)));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -350,7 +358,7 @@ impl Config {
     pub fn remove_provider(&mut self, id: &str) -> Result<()> {
         self.providers.remove(id);
         let path = Self::providers_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
+            let p = d.join(format!("{}.yaml", Self::id_to_filename(id)));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -382,7 +390,7 @@ impl Config {
     pub fn remove_capability(&mut self, id: &str) -> Result<()> {
         self.capabilities.remove(id);
         let path = Self::capabilities_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
+            let p = d.join(format!("{}.yaml", Self::id_to_filename(id)));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
@@ -418,7 +426,7 @@ impl Config {
     pub fn remove_launcher(&mut self, id: &str) -> Result<()> {
         self.launchers.remove(id);
         let path = Self::launchers_dir().ok().and_then(|d| {
-            let p = d.join(format!("{id}.yaml"));
+            let p = d.join(format!("{}.yaml", Self::id_to_filename(id)));
             if p.exists() { Some(p) } else { None }
         });
         if let Some(p) = path {
